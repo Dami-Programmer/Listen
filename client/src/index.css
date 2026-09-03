@@ -71,3 +71,91 @@ h1 {
   color: #9aa0a6;
   font-size: 0.9rem;
 }
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.topbar h1 {
+  font-size: 1.75rem;
+}
+
+.join {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+}
+
+.join label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: #9aa0a6;
+}
+
+.join input {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #2a2e37;
+  background: #0f1115;
+  color: #e8e8ea;
+  font-size: 1rem;
+}
+
+.join input:focus {
+  outline: none;
+  border-color: #7ee787;
+}
+
+button {
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: #7ee787;
+  color: #0f1115;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+button.ghost {
+  background: transparent;
+  border-color: #2a2e37;
+  color: #e8e8ea;
+  font-weight: 500;
+}
+
+.row.header span {
+  color: #e8e8ea;
+  font-weight: 600;
+}
+
+.err {
+  color: #ff7b72;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.raw summary {
+  cursor: pointer;
+  padding: 12px 0;
+  color: #9aa0a6;
+  font-size: 0.85rem;
+}
+
+.raw pre {
+  margin: 0 0 12px;
+  font-size: 0.8rem;
+  color: #7ee787;
+  overflow-x: auto;
+}

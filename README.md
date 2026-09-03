@@ -36,9 +36,6 @@ npm run dev
 - Client: http://localhost:5173
 - Server health check: http://localhost:3001/health
 
-The placeholder page fetches the health check, so if both are running you'll see
-"server ok (phase 0)".
-
 ## Other scripts
 
 | Command          | What it does                   |
@@ -49,4 +46,12 @@ The placeholder page fetches the health check, so if both are running you'll see
 
 ## Current status
 
-**Phase 0 complete.** Next: Phase 1 (Socket.IO signaling + in-memory room registry).
+**Phase 1 complete.** The server owns room state via Socket.IO:
+
+- `join-room {roomId, name}` adds a participant; the first joiner becomes host.
+- Every change broadcasts a full `room-state` snapshot to the room.
+- On `disconnect` the participant is removed; if the host left, the next
+  participant is promoted; an empty room is closed.
+
+Open two tabs at http://localhost:5173/?room=demo and watch the participant
+list and server logs. Next: Phase 2 (getUserMedia + mesh WebRTC).

@@ -35,6 +35,9 @@ and shows the shared enums.
 
 **Deliverable:** two browser tabs connect, server logs show both in the room, host assigned.
 
+**Status: done.** `server/src/rooms.js` holds the registry; `server/src/index.js`
+wires the Socket.IO handlers. Client has a join screen + live participant list.
+
 ## Phase 2 — Basic multi-party call (the "Google Meet" base layer)
 
 **Goal:** friends can see and hear each other. No moderation yet.
