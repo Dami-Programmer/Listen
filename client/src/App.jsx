@@ -1,8 +1,17 @@
-import { useEffect, useState } from 'react';
-import { ROLES } from '@listen/shared';
-import { socket } from './socket.js';
+// Phase 2 — the client is now split into two screens:
+//
+//   <JoinScreen/>  room id + name form  (unchanged from Phase 1)
+//   <CallView/>    the actual video call (camera tiles + mic/camera/leave)
+//
+// <App/> owns the Socket.IO lifecycle and the "have we joined yet?" flag, and
+// swaps between the two screens. All media logic lives in webrtc.js (the
+// useCall hook); this file is UI only.
 
-// Room id lives in the URL (?room=…). No accounts, no persistence.
+import { useEffect, useState } from 'react';
+import { socket } from './socket.js';
+import { useCall } from './webrtc.js';
+import VideoTile from './VideoTile.jsx';
+
 function readRoomFromUrl() {
   return new URLSearchParams(window.location.search).get('room') ?? '';
 }
@@ -12,11 +21,10 @@ export default function App() {
   const [name, setName] = useState('');
   const [joined, setJoined] = useState(false);
   const [selfId, setSelfId] = useState(null);
-  const [state, setState] = useState(null); // latest room-state snapshot
+  const [state, setState] = useState(null);
   const [error, setError] = useState(null);
   const [connected, setConnected] = useState(false);
 
-  // Wire socket listeners once.
   useEffect(() => {
     function onConnect() {
       setConnected(true);
@@ -52,7 +60,6 @@ export default function App() {
     const id = roomId.trim();
     if (!id || !name.trim()) return;
 
-    // Reflect the room in the URL so it's shareable.
     const url = new URL(window.location.href);
     url.searchParams.set('room', id);
     window.history.replaceState({}, '', url);
@@ -78,53 +85,100 @@ export default function App() {
 
   if (!joined) {
     return (
-      <main className="page">
-        <h1>Listen</h1>
-        <p className="tagline">Moderated group calls. Phase 1 — signaling.</p>
-
-        <form className="card join" onSubmit={handleJoin}>
-          <label>
-            <span>Room</span>
-            <input
-              value={roomId}
-              onChange={(e) => setRoomId(e.target.value)}
-              placeholder="e.g. friday-standup"
-              autoComplete="off"
-            />
-          </label>
-          <label>
-            <span>Your name</span>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Sam"
-              autoComplete="off"
-            />
-          </label>
-          <button type="submit" disabled={!roomId.trim() || !name.trim()}>
-            Join room
-          </button>
-          {error && <p className="err">{error}</p>}
-        </form>
-      </main>
+      <JoinScreen
+        roomId={roomId}
+        name={name}
+        error={error}
+        onRoomId={setRoomId}
+        onName={setName}
+        onSubmit={handleJoin}
+      />
     );
   }
 
+  return <CallView state={state} selfId={selfId} connected={connected} onLeave={handleLeave} />;
+}
+
+function JoinScreen({ roomId, name, error, onRoomId, onName, onSubmit }) {
+  return (
+    <main className="page">
+      <h1>Listen</h1>
+      <p className="tagline">Moderated group calls. Phase 2 — the call.</p>
+
+      <form className="card join" onSubmit={onSubmit}>
+        <label>
+          <span>Room</span>
+          <input
+            value={roomId}
+            onChange={(e) => onRoomId(e.target.value)}
+            placeholder="e.g. friday-standup"
+            autoComplete="off"
+          />
+        </label>
+        <label>
+          <span>Your name</span>
+          <input
+            value={name}
+            onChange={(e) => onName(e.target.value)}
+            placeholder="e.g. Sam"
+            autoComplete="off"
+          />
+        </label>
+        <button type="submit" disabled={!roomId.trim() || !name.trim()}>
+          Join room
+        </button>
+        {error && <p className="err">{error}</p>}
+      </form>
+    </main>
+  );
+}
+
+function CallView({ state, selfId, connected, onLeave }) {
   const participants = state?.participants ?? [];
   const self = participants.find((p) => p.id === selfId);
 
+  const { localStream, remotes, micOn, camOn, toggleMic, toggleCam, mediaError } = useCall({
+    selfId,
+    participants,
+    inCall: true,
+  });
+
+  const peerOf = (id) => participants.find((p) => p.id === id);
+
   return (
-    <main className="page">
+    <main className="page call">
       <div className="topbar">
         <div>
           <h1>{state?.roomId}</h1>
           <p className="tagline">
-            {connected ? 'connected' : 'reconnecting…'} · mode: {state?.mode} · you are{' '}
-            <strong>{self?.role ?? '—'}</strong>
+            {connected ? 'connected' : 'reconnecting…'} · {participants.length} in room
           </p>
         </div>
-        <button className="ghost" onClick={handleLeave}>
+        <button className="ghost" onClick={onLeave}>
           Leave
+        </button>
+      </div>
+
+      {mediaError && <p className="err">{mediaError}</p>}
+
+      <div className="grid">
+        {localStream && (
+          <VideoTile stream={localStream} label={`${self?.name ?? 'You'} (you)`} muted mirror />
+        )}
+        {remotes.map(({ id, stream }) => (
+          <VideoTile key={id} stream={stream} label={peerOf(id)?.name ?? 'Guest'} />
+        ))}
+      </div>
+
+      <div className="controls">
+        <button className={micOn ? '' : 'off'} onClick={toggleMic}>
+          {micOn ? 'Mute mic' : 'Unmute mic'}
+        </button>
+        <button className={camOn ? '' : 'off'} onClick={toggleCam}>
+          {camOn ? 'Stop camera' : 'Start camera'}
+        </button>
+        <button className="ghost" onClick={onLeave}>
+          Leave call
         </button>
       </div>
 
@@ -138,10 +192,7 @@ export default function App() {
               {p.name}
               {p.id === selfId ? ' (you)' : ''}
             </span>
-            <code>
-              {p.role === ROLES.HOST ? '★ host' : p.role}
-              {p.id === state?.hostId && p.role !== ROLES.HOST ? ' ★' : ''}
-            </code>
+            <code>{p.id === state?.hostId ? '★ host' : p.role}</code>
           </div>
         ))}
       </div>
@@ -152,8 +203,8 @@ export default function App() {
       </details>
 
       <p className="next">
-        Next up: <strong>Phase 2</strong> — getUserMedia + mesh WebRTC so people can see and hear
-        each other.
+        Next up: <strong>Phase 3</strong> — roles: host / speaker / listener, visible but not yet
+        enforced.
       </p>
     </main>
   );

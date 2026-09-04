@@ -11,10 +11,16 @@ export const EVENTS = {
   GRANT_FLOOR: 'grant-floor',
   REVOKE_FLOOR: 'revoke-floor',
 
-  // WebRTC signaling relay (added in Phase 2)
-  RTC_OFFER: 'rtc-offer',
-  RTC_ANSWER: 'rtc-answer',
-  RTC_ICE: 'rtc-ice',
+  // WebRTC signaling relay (Phase 2).
+  // One event carries every kind of negotiation message between two peers:
+  // an SDP offer, an SDP answer, or an ICE candidate. The server doesn't look
+  // inside the payload — it just forwards it to the target socket.
+  //
+  // Payload shape (client <-> server):
+  //   { targetId, description }  -> an RTCSessionDescription (offer or answer)
+  //   { targetId, candidate }    -> an RTCIceCandidate
+  // The server adds `from` (the sender's socket id) before relaying.
+  RTC_SIGNAL: 'rtc-signal',
 
   // server -> client
   ROOM_STATE: 'room-state', // full snapshot on every change

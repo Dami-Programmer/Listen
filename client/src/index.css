@@ -159,3 +159,66 @@ button.ghost {
   color: #7ee787;
   overflow-x: auto;
 }
+
+/* --- Phase 2: call view --- */
+
+/* The call needs more room than the Phase 1 forms. */
+.page.call {
+  max-width: 900px;
+}
+
+/* Responsive tile grid: as many ~260px columns as fit, then wrap. */
+.grid {
+  margin-top: 24px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.tile {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: #000;
+  border: 1px solid #2a2e37;
+  border-radius: 12px;
+  overflow: hidden;
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.tile video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover; /* fill the square, crop the overflow */
+  display: block;
+}
+
+/* Your own webcam feels natural flipped like a mirror. */
+.tile video.mirror {
+  transform: scaleX(-1);
+}
+
+.tile-label {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #e8e8ea;
+  font-size: 0.8rem;
+}
+
+.controls {
+  margin-top: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* A control that is currently "off" (muted mic / stopped camera). */
+.controls button.off {
+  background: #ff7b72;
+  color: #0f1115;
+}

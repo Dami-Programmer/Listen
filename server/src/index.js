@@ -1,7 +1,14 @@
-// Phase 1: signaling server skeleton.
-// Express health route + Socket.IO. The server owns all room state (see
-// rooms.js); there is no media yet. Every state change is broadcast as a full
-// room-state snapshot so clients never have to reconstruct state incrementally.
+// Phase 1 + 2: signaling server.
+//
+// Phase 1 — the server owns all room state (see rooms.js). Every state change is
+// broadcast as a full room-state snapshot so clients never reconstruct state
+// incrementally.
+//
+// Phase 2 — the server also relays WebRTC negotiation messages between peers
+// (the RTC_SIGNAL handler below). The media itself (audio/video) flows
+// browser-to-browser and never touches this server; all we do is pass the
+// "let's connect" paperwork (SDP offers/answers and ICE candidates) from one
+// socket to another. This is what "signaling server" means.
 
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -11,7 +18,7 @@ import express from 'express';
 import cors from 'cors';
 import { Server } from 'socket.io';
 import { EVENTS } from '@listen/shared';
-import { addParticipant, removeParticipant, snapshot } from './rooms.js';
+import { addParticipant, getRoom, removeParticipant, snapshot } from './rooms.js';
 
 // Load the single .env from the repo root (two levels up from server/src).
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -25,7 +32,7 @@ app.use(cors({ origin: CLIENT_ORIGIN }));
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, phase: 1, time: new Date().toISOString() });
+  res.json({ ok: true, phase: 2, time: new Date().toISOString() });
 });
 
 const server = http.createServer(app);
@@ -69,6 +76,27 @@ io.on('connection', (socket) => {
 
     ack?.({ ok: true, selfId: socket.id, state: snapshot(id) });
     broadcastRoom(id);
+  });
+
+  // --- Phase 2: WebRTC signaling relay -------------------------------------
+  // A peer wants to send an offer / answer / ICE candidate to ONE other peer.
+  // We don't inspect or store the payload; we just forward it to `targetId`,
+  // stamped with `from` so the receiver knows who it came from.
+  //
+  // Safety checks:
+  //  - the sender must already be in a room (can't relay before joining)
+  //  - the target must be in the SAME room (can't poke sockets in other rooms)
+  socket.on(EVENTS.RTC_SIGNAL, ({ targetId, description, candidate } = {}) => {
+    if (!joinedRoomId || !targetId) return;
+
+    const room = getRoom(joinedRoomId);
+    if (!room || !room.participants[targetId]) return; // target not a roommate
+
+    io.to(targetId).emit(EVENTS.RTC_SIGNAL, {
+      from: socket.id,
+      description, // present for an SDP offer/answer, undefined for ICE
+      candidate, // present for an ICE candidate, undefined for SDP
+    });
   });
 
   socket.on('disconnect', (reason) => {

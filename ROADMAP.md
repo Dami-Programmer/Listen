@@ -51,6 +51,13 @@ wires the Socket.IO handlers. Client has a join screen + live participant list.
 
 **Deliverable:** 3-4 people in a working video/voice call. This alone is a usable app.
 
+**Status: done.** `client/src/webrtc.js` holds the `useCall` hook (getUserMedia,
+one `RTCPeerConnection` per peer, offer/answer/ICE); `client/src/VideoTile.jsx`
+binds a stream to a `<video>`; `App.jsx` splits into join screen + call view
+with mic/camera/leave. Server relays peer negotiation via one `rtc-signal`
+event. Peer discovery reuses the `room-state` snapshot; the greater socket id in
+each pair sends the offer. STUN only — TURN is Phase 8.
+
 ## Phase 3 — Roles foundation
 
 **Goal:** the data model that moderation will sit on.

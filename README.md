@@ -7,7 +7,7 @@ Moderated group video-call app. See [ROADMAP.md](./ROADMAP.md) for the plan.
 ```
 Listen/
 ├── client/    React + Vite frontend
-├── server/    Node + Express (+ Socket.IO from Phase 1) backend
+├── server/    Node + Express + Socket.IO backend
 ├── shared/    constants imported by both sides (event names, role/mode enums)
 ├── .env       single config file (port + signaling URL)
 └── package.json   npm workspaces + the "dev" script that runs both
@@ -23,9 +23,6 @@ Listen/
 ```bash
 npm install
 ```
-
-Run once from the `Listen/` folder. npm workspaces installs `client`, `server`,
-and `shared` together and links `shared` into the other two.
 
 ## Run in development
 
@@ -46,12 +43,12 @@ npm run dev
 
 ## Current status
 
-**Phase 1 complete.** The server owns room state via Socket.IO:
+**Phase 2 complete.** A working mesh video/voice call:
 
-- `join-room {roomId, name}` adds a participant; the first joiner becomes host.
-- Every change broadcasts a full `room-state` snapshot to the room.
-- On `disconnect` the participant is removed; if the host left, the next
-  participant is promoted; an empty room is closed.
+- Join screen → in-call view. `getUserMedia({ audio, video })`, local preview.
+- One `RTCPeerConnection` per other participant; offer/answer/ICE relayed by the
+  server over a single `rtc-signal` event. The greater socket id in each pair
+  sends the offer, so there's exactly one per pair.
+- Remote tiles in a responsive grid; mute mic / stop camera / leave.
 
-Open two tabs at http://localhost:5173/?room=demo and watch the participant
-list and server logs. Next: Phase 2 (getUserMedia + mesh WebRTC).
+STUN only (localhost / same Wi-Fi); TURN is Phase 8. Next: Phase 3 (roles).
