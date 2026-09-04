@@ -10,13 +10,12 @@
 //   4. expose the remote MediaStreams so the UI can drop them into <video> tiles
 //   5. expose mic / camera on-off toggles
 //
-// "Mesh" = with N people in a room, every browser holds N-1 peer connections and
-// uploads its camera N-1 times. That's fine for 3-6 friends. A bigger room needs
-// an SFU (a media server that fans out one upload), which the roadmap leaves as
-// a post-v1 rewrite.
+// Phase 4 adds effect D: when the server sets my role to 'listener' (moderated
+// room), my client silences its own outbound tracks — the server can't, because
+// media is peer-to-peer.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { EVENTS } from '@listen/shared';
+import { EVENTS, ROLES } from '@listen/shared';
 import { socket } from './socket.js';
 
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
@@ -37,16 +36,20 @@ function friendlyMediaError(err) {
 }
 
 export function useCall({ selfId, participants, inCall }) {
+  // My current role, straight from the latest room-state snapshot. The server
+  // decides this; the client only reacts. `listener` (Phase 4) means the room
+  // is moderated and I'm not cleared to speak.
+  const myRole = participants.find((p) => p.id === selfId)?.role ?? null;
+  const isListener = myRole === ROLES.LISTENER;
+
   const [localStream, setLocalStream] = useState(null);
   const [remotes, setRemotes] = useState([]); // [{ id, stream }]
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
   const [mediaError, setMediaError] = useState(null);
 
-  // peerId -> { pc: RTCPeerConnection, stream: MediaStream|null }
   const peersRef = useRef(new Map());
   const localStreamRef = useRef(null);
-  // signals that arrived before the local stream was ready — replayed later.
   const pendingRef = useRef(new Map());
 
   const syncRemotes = useCallback(() => {
@@ -109,7 +112,6 @@ export function useCall({ selfId, participants, inCall }) {
     [syncRemotes, removePeer],
   );
 
-  // I am the caller for this pair: build an offer and send it.
   const callPeer = useCallback(
     async (peerId) => {
       const { pc } = addPeer(peerId);
@@ -126,10 +128,6 @@ export function useCall({ selfId, participants, inCall }) {
     [addPeer],
   );
 
-  // A signaling message came in from another peer (relayed by the server, which
-  // added `from`). It is either an SDP description (offer/answer) or an ICE
-  // candidate. One deterministic offer per pair (see effect C), so there is
-  // never a "glare" collision to resolve.
   const handleSignal = useCallback(
     async ({ from, description, candidate }) => {
       if (!from) return;
@@ -212,8 +210,6 @@ export function useCall({ selfId, participants, inCall }) {
   }, [inCall, selfId, localStream, handleSignal, removePeer]);
 
   // --- effect C: keep exactly one connection per other participant ----------
-  // Deterministic rule: for each pair, the peer whose socket id sorts GREATER
-  // makes the offer; the other prepares to answer. Exactly one offer per pair.
   useEffect(() => {
     if (!inCall || !selfId || !localStream) return;
 
@@ -230,20 +226,40 @@ export function useCall({ selfId, participants, inCall }) {
     }
   }, [inCall, selfId, localStream, participants, callPeer, addPeer, removePeer]);
 
+  // --- effect D: moderation follows your role -----------------------------
+  // Phase 4. When the host moderates the room the server sets my role to
+  // 'listener'; my client then silences its OWN outbound tracks — the server
+  // can't, because media is peer-to-peer. Back to speaker/host: re-enable both.
+  // This only runs when `myRole` changes, so it never fights the manual
+  // mute/camera buttons below (those don't change the role).
+  useEffect(() => {
+    const stream = localStreamRef.current;
+    if (!stream || !myRole) return;
+
+    const allowed = myRole !== ROLES.LISTENER;
+    for (const track of stream.getTracks()) track.enabled = allowed;
+    setMicOn(allowed && stream.getAudioTracks().length > 0);
+    setCamOn(allowed && stream.getVideoTracks().length > 0);
+  }, [myRole, localStream]);
+
   // --- controls: flip the track's `enabled` flag ---------------------------
+  // A listener can't use these — in a moderated room the mic isn't theirs to
+  // un-mute. The UI hides the buttons too; this is the belt-and-braces guard.
   const toggleMic = useCallback(() => {
+    if (isListener) return;
     const track = localStreamRef.current?.getAudioTracks()[0];
     if (!track) return;
     track.enabled = !track.enabled;
     setMicOn(track.enabled);
-  }, []);
+  }, [isListener]);
 
   const toggleCam = useCallback(() => {
+    if (isListener) return;
     const track = localStreamRef.current?.getVideoTracks()[0];
     if (!track) return;
     track.enabled = !track.enabled;
     setCamOn(track.enabled);
-  }, []);
+  }, [isListener]);
 
-  return { localStream, remotes, micOn, camOn, toggleMic, toggleCam, mediaError };
+  return { localStream, remotes, micOn, camOn, toggleMic, toggleCam, mediaError, myRole, isListener };
 }

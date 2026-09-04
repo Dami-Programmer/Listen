@@ -43,7 +43,7 @@ npm run dev
 
 ## Current status
 
-**Phase 3 complete.** Roles on top of the Phase 2 call:
+**Phase 4 complete.** The host-only Moderated switch, on top of Phases 2-3.
 
 - Join screen → in-call view. `getUserMedia({ audio, video })`, local preview.
 - One `RTCPeerConnection` per other participant; offer/answer/ICE relayed by the

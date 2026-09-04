@@ -254,3 +254,51 @@ button.ghost {
   right: 8px;
   bottom: 8px;
 }
+
+/* --- Phase 4: moderation --- */
+
+/* Non-host's read-only "the room is locked down" notice. */
+.banner {
+  margin-top: 16px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #3a2f00;
+  color: #ffd54a;
+  font-size: 0.9rem;
+}
+
+/* Host's segmented Open | Moderated switch. */
+.mode-toggle {
+  margin-top: 16px;
+  display: inline-flex;
+  border: 1px solid #2a2e37;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.mode-toggle button {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #9aa0a6;
+  font-weight: 600;
+  padding: 8px 18px;
+}
+.mode-toggle button.active {
+  background: #7ee787;
+  color: #0f1115;
+}
+
+/* A listener's "listening only" note. */
+.listener-note {
+  margin-top: 20px;
+  color: #9aa0a6;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.listener-note p {
+  margin: 0;
+}

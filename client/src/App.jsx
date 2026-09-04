@@ -1,19 +1,17 @@
 // Phase 2 — the client is split into two screens (JoinScreen / CallView).
-// Phase 3 — the participant list and each video tile now show roles.
+// Phase 3 — roles shown in the participant list and on each tile.
+// Phase 4 — the host-only Open | Moderated switch; listeners lose their mic/cam.
 //
-// <App/> owns the Socket.IO lifecycle and the "have we joined yet?" flag; all
-// media logic lives in webrtc.js (the useCall hook). This file is UI only.
+// <App/> owns the Socket.IO lifecycle; all media logic lives in webrtc.js.
 
 import { useEffect, useState } from 'react';
-import { ROLES } from '@listen/shared';
+import { MODES, ROLES } from '@listen/shared';
 import { socket } from './socket.js';
 import { useCall } from './webrtc.js';
 import VideoTile from './VideoTile.jsx';
 
-// Display order for the participant list: host, then speakers, then listeners.
 const ROLE_RANK = { [ROLES.HOST]: 0, [ROLES.SPEAKER]: 1, [ROLES.LISTENER]: 2 };
 
-// A small coloured role label. Purely visual — the server owns the actual role.
 function RolePill({ role }) {
   return <span className={`pill pill-${role}`}>{role === ROLES.HOST ? '★ host' : role}</span>;
 }
@@ -109,7 +107,7 @@ function JoinScreen({ roomId, name, error, onRoomId, onName, onSubmit }) {
   return (
     <main className="page">
       <h1>Listen</h1>
-      <p className="tagline">Moderated group calls. Phase 3 — roles.</p>
+      <p className="tagline">Moderated group calls. Phase 4 — the Moderated switch.</p>
 
       <form className="card join" onSubmit={onSubmit}>
         <label>
@@ -143,18 +141,25 @@ function CallView({ state, selfId, connected, onLeave }) {
   const participants = state?.participants ?? [];
   const self = participants.find((p) => p.id === selfId);
 
-  const { localStream, remotes, micOn, camOn, toggleMic, toggleCam, mediaError } = useCall({
-    selfId,
-    participants,
-    inCall: true,
-  });
+  const { localStream, remotes, micOn, camOn, toggleMic, toggleCam, mediaError, isListener } =
+    useCall({ selfId, participants, inCall: true });
+
+  const isHost = self?.role === ROLES.HOST;
+  const moderated = state?.mode === MODES.MODERATED;
 
   const peerOf = (id) => participants.find((p) => p.id === id);
-
-  // Participant list sorted host-first, then speakers, then listeners, then A-Z.
   const ordered = [...participants].sort(
     (a, b) => (ROLE_RANK[a.role] ?? 9) - (ROLE_RANK[b.role] ?? 9) || a.name.localeCompare(b.name),
   );
+
+  // Host-only: ask the server to flip the room mode. The server re-checks that
+  // we're the host and rejects otherwise — this button just can't be seen by
+  // anyone else.
+  function changeMode(mode) {
+    socket.emit('set-mode', { mode }, (ack) => {
+      if (!ack?.ok) console.warn('[set-mode] rejected:', ack?.error);
+    });
+  }
 
   return (
     <main className="page call">
@@ -170,6 +175,19 @@ function CallView({ state, selfId, connected, onLeave }) {
           Leave
         </button>
       </div>
+
+      {isHost ? (
+        <div className="mode-toggle" role="group" aria-label="Room mode">
+          <button className={!moderated ? 'active' : ''} onClick={() => changeMode(MODES.OPEN)}>
+            Open
+          </button>
+          <button className={moderated ? 'active' : ''} onClick={() => changeMode(MODES.MODERATED)}>
+            Moderated
+          </button>
+        </div>
+      ) : (
+        moderated && <p className="banner">🔒 Moderated — the host controls who speaks.</p>
+      )}
 
       {mediaError && <p className="err">{mediaError}</p>}
 
@@ -191,17 +209,23 @@ function CallView({ state, selfId, connected, onLeave }) {
         })}
       </div>
 
-      <div className="controls">
-        <button className={micOn ? '' : 'off'} onClick={toggleMic}>
-          {micOn ? 'Mute mic' : 'Unmute mic'}
-        </button>
-        <button className={camOn ? '' : 'off'} onClick={toggleCam}>
-          {camOn ? 'Stop camera' : 'Start camera'}
-        </button>
-        <button className="ghost" onClick={onLeave}>
-          Leave call
-        </button>
-      </div>
+      {isListener ? (
+        <div className="listener-note">
+          <p>🎧 Listening only — the host has moderated this room.</p>
+        </div>
+      ) : (
+        <div className="controls">
+          <button className={micOn ? '' : 'off'} onClick={toggleMic}>
+            {micOn ? 'Mute mic' : 'Unmute mic'}
+          </button>
+          <button className={camOn ? '' : 'off'} onClick={toggleCam}>
+            {camOn ? 'Stop camera' : 'Start camera'}
+          </button>
+          <button className="ghost" onClick={onLeave}>
+            Leave call
+          </button>
+        </div>
+      )}
 
       <div className="card">
         <div className="row header">
@@ -224,7 +248,7 @@ function CallView({ state, selfId, connected, onLeave }) {
       </details>
 
       <p className="next">
-        Next up: <strong>Phase 4</strong> — the host-only Moderated switch.
+        Next up: <strong>Phase 5</strong> — hand-raising and the speaker queue.
       </p>
     </main>
   );

@@ -1,4 +1,4 @@
-// Phase 1 + 2 + 3: signaling server.
+// Phase 1 + 2 + 3 + 4: signaling server.
 //
 // Phase 1 — the server owns all room state (see rooms.js). Every state change is
 // broadcast as a full room-state snapshot so clients never reconstruct state
@@ -17,8 +17,8 @@ import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import { Server } from 'socket.io';
-import { EVENTS } from '@listen/shared';
-import { addParticipant, getRoom, removeParticipant, snapshot } from './rooms.js';
+import { EVENTS, MODES } from '@listen/shared';
+import { addParticipant, getRoom, removeParticipant, setMode, snapshot } from './rooms.js';
 
 // Load the single .env from the repo root (two levels up from server/src).
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -32,7 +32,7 @@ app.use(cors({ origin: CLIENT_ORIGIN }));
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, phase: 3, time: new Date().toISOString() });
+  res.json({ ok: true, phase: 4, time: new Date().toISOString() });
 });
 
 const server = http.createServer(app);
@@ -76,6 +76,33 @@ io.on('connection', (socket) => {
 
     ack?.({ ok: true, selfId: socket.id, state: snapshot(id) });
     broadcastRoom(id);
+  });
+
+  // --- Phase 4: host-only moderator toggle --------------------------------
+  // The host flips the whole room between 'open' (free-for-all) and 'moderated'
+  // (every non-host becomes a listener; each listener's client then silences
+  // its own mic/camera). HARD-rejected for anyone who isn't the current host —
+  // this is the first place the server enforces "host-authoritative".
+  socket.on(EVENTS.SET_MODE, ({ mode } = {}, ack) => {
+    const room = getRoom(joinedRoomId);
+    if (!room) {
+      ack?.({ ok: false, error: 'not in a room' });
+      return;
+    }
+    if (socket.id !== room.hostId) {
+      socket.emit(EVENTS.ERROR, { message: 'only the host can change the mode' });
+      ack?.({ ok: false, error: 'only the host can change the mode' });
+      return;
+    }
+    if (mode !== MODES.OPEN && mode !== MODES.MODERATED) {
+      ack?.({ ok: false, error: `unknown mode: ${mode}` });
+      return;
+    }
+
+    setMode(room, mode); // recomputes every non-host role
+    console.log(`[room ${joinedRoomId}] mode -> ${mode} (by host ${socket.id})`);
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
   });
 
   // --- Phase 2: WebRTC signaling relay -------------------------------------

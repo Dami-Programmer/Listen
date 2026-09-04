@@ -1,13 +1,16 @@
-// Phase 1 + 3: in-memory room registry.
+// Phase 1 + 3 + 4: in-memory room registry.
 // Single source of truth for who is in a room and who may speak.
 // No persistence — everything lives in this module's `rooms` map and is gone
 // when the process restarts. The client never decides its own state; it only
 // renders the snapshots this file produces.
 //
 // Roles (Phase 3): every participant has exactly one — host | speaker | listener.
-// In open mode every non-host is a speaker; the role is tracked but nothing on
-// the server enforces it yet. `setRole` below is the single place a role
-// changes, so later phases never poke `participant.role` directly.
+//   - open mode      -> every non-host is a speaker
+//   - moderated mode -> every non-host is a listener (Phase 4)
+// Roles are DATA here; nothing on the server blocks media (it's peer-to-peer).
+// Enforcement is cooperative: a client that sees its own role become 'listener'
+// silences its outbound tracks. `setRole` below is the single place any role
+// changes.
 
 import { MODES, ROLES } from '@listen/shared';
 
@@ -51,10 +54,16 @@ export function addParticipant(roomId, socketId, name) {
     room.hostId = socketId;
   }
 
+  // First joiner is host. Everyone else matches the room's current mode:
+  // a speaker in an open room, a listener in one that's already moderated.
+  let role = ROLES.SPEAKER;
+  if (isFirst) role = ROLES.HOST;
+  else if (room.mode === MODES.MODERATED) role = ROLES.LISTENER;
+
   room.participants[socketId] = {
     id: socketId,
     name: name?.trim() || 'Guest',
-    role: isFirst ? ROLES.HOST : ROLES.SPEAKER,
+    role,
   };
 
   return room;
@@ -71,6 +80,25 @@ export function setRole(room, socketId, role) {
   if (!Object.values(ROLES).includes(role)) return;
   if (socketId === room.hostId) return; // the host is always 'host'
   participant.role = role;
+}
+
+/**
+ * Phase 4 — flip the room between 'open' and 'moderated'.
+ *
+ *   open      -> every non-host becomes a speaker (free-for-all)
+ *   moderated -> every non-host becomes a listener (host controls the mic)
+ *
+ * The host's role never changes.
+ */
+export function setMode(room, mode) {
+  if (!room) return;
+  if (mode !== MODES.OPEN && mode !== MODES.MODERATED) return;
+
+  room.mode = mode;
+  const nonHostRole = mode === MODES.MODERATED ? ROLES.LISTENER : ROLES.SPEAKER;
+  for (const id of Object.keys(room.participants)) {
+    setRole(room, id, nonHostRole); // no-ops for the host
+  }
 }
 
 /**

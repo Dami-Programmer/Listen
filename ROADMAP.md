@@ -87,6 +87,14 @@ coloured role pills in the list and on each video tile.
 
 **Deliverable:** host flips the room between free-for-all and locked-down.
 
+**Status: done.** `set-mode {mode}` in `server/src/index.js` is hard-rejected
+unless `socket.id === room.hostId`; `setMode` in `rooms.js` recomputes every
+non-host role (moderated → listener, open → speaker) and someone joining a
+moderated room now enters as a listener. Client: `useCall` watches my own role
+and silences my outbound tracks (effect D) when it becomes `listener`. UI: host
+gets an Open | Moderated switch, non-hosts get a locked banner, listeners get a
+"listening only" note instead of mic/camera buttons.
+
 ## Phase 5 — Hand-raising & speaker queue
 
 **Goal:** structured "pass the mic."
