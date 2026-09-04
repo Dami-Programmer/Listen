@@ -69,6 +69,11 @@ each pair sends the offer. STUN only — TURN is Phase 8.
 
 **Deliverable:** UI clearly shows who's host; roles visible but nothing restricted yet.
 
+**Status: done.** Roles were already in the participant shape from Phase 1; this
+phase added `setRole` in `rooms.js` as the single choke point for role changes
+(later phases all route through it), a host-first sorted participant list, and
+coloured role pills in the list and on each video tile.
+
 ## Phase 4 — Moderator mode toggle
 
 **Goal:** the host-only on/off switch.

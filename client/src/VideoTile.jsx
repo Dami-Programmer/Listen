@@ -6,7 +6,15 @@
 
 import { useEffect, useRef } from 'react';
 
-export default function VideoTile({ stream, label, muted = false, mirror = false }) {
+/**
+ * @param {object}      props
+ * @param {MediaStream} props.stream  the stream to show
+ * @param {string}      props.label   name shown in the corner
+ * @param {boolean}    [props.muted]  mute THIS <video>'s audio (your own tile)
+ * @param {boolean}    [props.mirror] flip horizontally (your own webcam)
+ * @param {string}     [props.role]   'host' | 'speaker' | 'listener' — corner pill
+ */
+export default function VideoTile({ stream, label, muted = false, mirror = false, role }) {
   const videoRef = useRef(null);
 
   useEffect(() => {
@@ -24,6 +32,9 @@ export default function VideoTile({ stream, label, muted = false, mirror = false
         className={mirror ? 'mirror' : undefined}
       />
       <span className="tile-label">{label}</span>
+      {role && (
+        <span className={`pill pill-${role} tile-role`}>{role === 'host' ? '★ host' : role}</span>
+      )}
     </div>
   );
 }

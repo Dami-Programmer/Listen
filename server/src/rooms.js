@@ -1,8 +1,13 @@
-// Phase 1: in-memory room registry.
+// Phase 1 + 3: in-memory room registry.
 // Single source of truth for who is in a room and who may speak.
 // No persistence — everything lives in this module's `rooms` map and is gone
 // when the process restarts. The client never decides its own state; it only
 // renders the snapshots this file produces.
+//
+// Roles (Phase 3): every participant has exactly one — host | speaker | listener.
+// In open mode every non-host is a speaker; the role is tracked but nothing on
+// the server enforces it yet. `setRole` below is the single place a role
+// changes, so later phases never poke `participant.role` directly.
 
 import { MODES, ROLES } from '@listen/shared';
 
@@ -53,6 +58,19 @@ export function addParticipant(roomId, socketId, name) {
   };
 
   return room;
+}
+
+/**
+ * Phase 3 — the ONE place a participant's role changes.
+ * Validates the role and never touches the host (whose role tracks room.hostId).
+ * Later phases (set-mode, grant-floor, revoke-floor, …) all go through here.
+ */
+export function setRole(room, socketId, role) {
+  const participant = room?.participants[socketId];
+  if (!participant) return;
+  if (!Object.values(ROLES).includes(role)) return;
+  if (socketId === room.hostId) return; // the host is always 'host'
+  participant.role = role;
 }
 
 /**

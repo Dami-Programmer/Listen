@@ -43,7 +43,7 @@ npm run dev
 
 ## Current status
 
-**Phase 2 complete.** A working mesh video/voice call:
+**Phase 3 complete.** Roles on top of the Phase 2 call:
 
 - Join screen → in-call view. `getUserMedia({ audio, video })`, local preview.
 - One `RTCPeerConnection` per other participant; offer/answer/ICE relayed by the
@@ -51,4 +51,7 @@ npm run dev
   sends the offer, so there's exactly one per pair.
 - Remote tiles in a responsive grid; mute mic / stop camera / leave.
 
-STUN only (localhost / same Wi-Fi); TURN is Phase 8. Next: Phase 3 (roles).
+Every participant is `host | speaker | listener`; `setRole` in `rooms.js` is the
+single place a role changes. Participant list is sorted host-first with coloured
+role pills; each video tile shows its role. Nothing is enforced yet. Next: Phase
+4 (the Moderated switch).

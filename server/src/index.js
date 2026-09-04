@@ -1,4 +1,4 @@
-// Phase 1 + 2: signaling server.
+// Phase 1 + 2 + 3: signaling server.
 //
 // Phase 1 — the server owns all room state (see rooms.js). Every state change is
 // broadcast as a full room-state snapshot so clients never reconstruct state
@@ -32,7 +32,7 @@ app.use(cors({ origin: CLIENT_ORIGIN }));
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, phase: 2, time: new Date().toISOString() });
+  res.json({ ok: true, phase: 3, time: new Date().toISOString() });
 });
 
 const server = http.createServer(app);

@@ -222,3 +222,35 @@ button.ghost {
   background: #ff7b72;
   color: #0f1115;
 }
+
+/* --- Phase 3: roles --- */
+
+/* Coloured role label, used in the participant list and on video tiles. */
+.pill {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+.pill-host {
+  background: #3a2f00;
+  color: #ffd54a;
+}
+.pill-speaker {
+  background: #10331a;
+  color: #7ee787;
+}
+.pill-listener {
+  background: #2a2e37;
+  color: #9aa0a6;
+}
+
+/* Role pill pinned to the bottom-right of a video tile (name is bottom-left). */
+.tile-role {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+}

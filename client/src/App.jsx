@@ -1,16 +1,22 @@
-// Phase 2 — the client is now split into two screens:
+// Phase 2 — the client is split into two screens (JoinScreen / CallView).
+// Phase 3 — the participant list and each video tile now show roles.
 //
-//   <JoinScreen/>  room id + name form  (unchanged from Phase 1)
-//   <CallView/>    the actual video call (camera tiles + mic/camera/leave)
-//
-// <App/> owns the Socket.IO lifecycle and the "have we joined yet?" flag, and
-// swaps between the two screens. All media logic lives in webrtc.js (the
-// useCall hook); this file is UI only.
+// <App/> owns the Socket.IO lifecycle and the "have we joined yet?" flag; all
+// media logic lives in webrtc.js (the useCall hook). This file is UI only.
 
 import { useEffect, useState } from 'react';
+import { ROLES } from '@listen/shared';
 import { socket } from './socket.js';
 import { useCall } from './webrtc.js';
 import VideoTile from './VideoTile.jsx';
+
+// Display order for the participant list: host, then speakers, then listeners.
+const ROLE_RANK = { [ROLES.HOST]: 0, [ROLES.SPEAKER]: 1, [ROLES.LISTENER]: 2 };
+
+// A small coloured role label. Purely visual — the server owns the actual role.
+function RolePill({ role }) {
+  return <span className={`pill pill-${role}`}>{role === ROLES.HOST ? '★ host' : role}</span>;
+}
 
 function readRoomFromUrl() {
   return new URLSearchParams(window.location.search).get('room') ?? '';
@@ -103,7 +109,7 @@ function JoinScreen({ roomId, name, error, onRoomId, onName, onSubmit }) {
   return (
     <main className="page">
       <h1>Listen</h1>
-      <p className="tagline">Moderated group calls. Phase 2 — the call.</p>
+      <p className="tagline">Moderated group calls. Phase 3 — roles.</p>
 
       <form className="card join" onSubmit={onSubmit}>
         <label>
@@ -145,13 +151,19 @@ function CallView({ state, selfId, connected, onLeave }) {
 
   const peerOf = (id) => participants.find((p) => p.id === id);
 
+  // Participant list sorted host-first, then speakers, then listeners, then A-Z.
+  const ordered = [...participants].sort(
+    (a, b) => (ROLE_RANK[a.role] ?? 9) - (ROLE_RANK[b.role] ?? 9) || a.name.localeCompare(b.name),
+  );
+
   return (
     <main className="page call">
       <div className="topbar">
         <div>
           <h1>{state?.roomId}</h1>
           <p className="tagline">
-            {connected ? 'connected' : 'reconnecting…'} · {participants.length} in room
+            {connected ? 'connected' : 'reconnecting…'} · {participants.length} in room · you are{' '}
+            <strong>{self?.role ?? '—'}</strong>
           </p>
         </div>
         <button className="ghost" onClick={onLeave}>
@@ -163,11 +175,20 @@ function CallView({ state, selfId, connected, onLeave }) {
 
       <div className="grid">
         {localStream && (
-          <VideoTile stream={localStream} label={`${self?.name ?? 'You'} (you)`} muted mirror />
+          <VideoTile
+            stream={localStream}
+            label={`${self?.name ?? 'You'} (you)`}
+            role={self?.role}
+            muted
+            mirror
+          />
         )}
-        {remotes.map(({ id, stream }) => (
-          <VideoTile key={id} stream={stream} label={peerOf(id)?.name ?? 'Guest'} />
-        ))}
+        {remotes.map(({ id, stream }) => {
+          const peer = peerOf(id);
+          return (
+            <VideoTile key={id} stream={stream} label={peer?.name ?? 'Guest'} role={peer?.role} />
+          );
+        })}
       </div>
 
       <div className="controls">
@@ -186,13 +207,13 @@ function CallView({ state, selfId, connected, onLeave }) {
         <div className="row header">
           <span>Participants ({participants.length})</span>
         </div>
-        {participants.map((p) => (
+        {ordered.map((p) => (
           <div className="row" key={p.id}>
             <span>
               {p.name}
               {p.id === selfId ? ' (you)' : ''}
             </span>
-            <code>{p.id === state?.hostId ? '★ host' : p.role}</code>
+            <RolePill role={p.role} />
           </div>
         ))}
       </div>
@@ -203,8 +224,7 @@ function CallView({ state, selfId, connected, onLeave }) {
       </details>
 
       <p className="next">
-        Next up: <strong>Phase 3</strong> — roles: host / speaker / listener, visible but not yet
-        enforced.
+        Next up: <strong>Phase 4</strong> — the host-only Moderated switch.
       </p>
     </main>
   );
