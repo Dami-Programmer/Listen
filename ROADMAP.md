@@ -132,6 +132,16 @@ as "add co-speaker".
 
 **Deliverable:** in moderated mode, idle speakers are automatically cycled out.
 
+**Status: done.** Each client runs a Web Audio `AnalyserNode` on its own mic
+(`webrtc.js` effect E), computes RMS loudness, and emits `speaking: true/false`
+only on the transition (rising edge immediately, falling edge after a 600 ms
+hangover). `rooms.js` keeps `room.speaking`; `snapshot` exposes
+`activeSpeakerId` = the last entry, and the client draws a green glow on that
+tile. Silence rule (`server/src/index.js`): a `speaking: false` from a non-host
+speaker in a moderated room arms a 5 s timer; firing it calls `revokeFloor` +
+`grantFloor(queue[0])`. The timer is cleared on speak / grant / revoke /
+clear-floor / mode flip / disconnect / host-promotion. The host is exempt.
+
 ## Phase 7 — Full host moderation controls
 
 **Goal:** host has complete authority.

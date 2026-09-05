@@ -43,7 +43,7 @@ npm run dev
 
 ## Current status
 
-**Phase 5 complete.** Hand-raising and the speaker queue, on top of Phases 2-4.
+**Phase 6 complete.** Active-speaker glow + the automated silence rule, on top of Phases 2-5.
 
 - Join screen → in-call view. `getUserMedia({ audio, video })`, local preview.
 - One `RTCPeerConnection` per other participant; offer/answer/ICE relayed by the

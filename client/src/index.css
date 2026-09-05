@@ -330,3 +330,13 @@ button.small {
 .card.queue .row.header {
   align-items: center;
 }
+
+/* --- Phase 6: active-speaker glow --- */
+
+/* The server-elected active speaker. One tile at a time. */
+.tile.speaking {
+  border-color: #7ee787;
+  box-shadow:
+    0 0 0 2px #7ee787,
+    0 0 18px rgba(126, 231, 135, 0.45);
+}

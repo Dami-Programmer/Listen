@@ -20,6 +20,13 @@ export const EVENTS = {
   REVOKE_FLOOR: 'revoke-floor',
   CLEAR_FLOOR: 'clear-floor',
 
+  // Phase 6 — active-speaker detection.
+  // Each client watches its OWN mic level (Web Audio) and sends this only when
+  // the boolean flips: { speaking: true } when it starts talking, then
+  // { speaking: false } a beat after it stops. The server times the silence and
+  // elects the active speaker itself.
+  SPEAKING: 'speaking',
+
   // WebRTC signaling relay (Phase 2).
   // One event carries every kind of negotiation message between two peers:
   // an SDP offer, an SDP answer, or an ICE candidate. The server doesn't look

@@ -8,13 +8,21 @@ import { useEffect, useRef } from 'react';
 
 /**
  * @param {object}      props
- * @param {MediaStream} props.stream  the stream to show
- * @param {string}      props.label   name shown in the corner
- * @param {boolean}    [props.muted]  mute THIS <video>'s audio (your own tile)
- * @param {boolean}    [props.mirror] flip horizontally (your own webcam)
- * @param {string}     [props.role]   'host' | 'speaker' | 'listener' — corner pill
+ * @param {MediaStream} props.stream   the stream to show
+ * @param {string}      props.label    name shown in the corner
+ * @param {boolean}    [props.muted]   mute THIS <video>'s audio (your own tile)
+ * @param {boolean}    [props.mirror]  flip horizontally (your own webcam)
+ * @param {string}     [props.role]    'host' | 'speaker' | 'listener' — corner pill
+ * @param {boolean}   [props.speaking] this person is the room's active speaker (glow)
  */
-export default function VideoTile({ stream, label, muted = false, mirror = false, role }) {
+export default function VideoTile({
+  stream,
+  label,
+  muted = false,
+  mirror = false,
+  role,
+  speaking = false,
+}) {
   const videoRef = useRef(null);
 
   useEffect(() => {
@@ -23,7 +31,7 @@ export default function VideoTile({ stream, label, muted = false, mirror = false
   }, [stream]);
 
   return (
-    <div className="tile">
+    <div className={`tile${speaking ? ' speaking' : ''}`}>
       <video
         ref={videoRef}
         autoPlay

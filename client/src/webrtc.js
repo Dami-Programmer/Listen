@@ -13,6 +13,8 @@
 // Phase 4 adds effect D: when the server sets my role to 'listener' (moderated
 // room), my client silences its own outbound tracks — the server can't, because
 // media is peer-to-peer.
+// Phase 6 adds effect E: watch my own mic level and emit throttled
+// speaking: true/false so the server can elect the room's active speaker.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { EVENTS, ROLES } from '@listen/shared';
@@ -241,6 +243,67 @@ export function useCall({ selfId, participants, inCall }) {
     setMicOn(allowed && stream.getAudioTracks().length > 0);
     setCamOn(allowed && stream.getVideoTracks().length > 0);
   }, [myRole, localStream]);
+
+  // --- effect E: mic-level detection -> throttled "speaking" pings --------
+  // Phase 6. We watch our OWN microphone with the Web Audio API and tell the
+  // server only when the answer to "am I talking?" flips. RMS of the raw
+  // waveform is the loudness measure; the rising edge fires immediately, the
+  // falling edge waits out a short HANGOVER so the glow doesn't strobe between
+  // words. A disabled mic track counts as silence. Only speakers and the host
+  // run this — listeners are force-muted and never the active speaker.
+  useEffect(() => {
+    if (!inCall || !localStream || isListener) return undefined;
+    const audioTrack = localStream.getAudioTracks()[0];
+    if (!audioTrack) return undefined;
+
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return undefined;
+
+    const ctx = new AudioCtx();
+    ctx.resume?.();
+    const source = ctx.createMediaStreamSource(localStream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    source.connect(analyser); // NOT connected to ctx.destination — no playback
+    const buf = new Float32Array(analyser.fftSize);
+
+    const THRESHOLD = 0.02; // RMS above this = "talking"
+    const HANGOVER_MS = 600; // stay "talking" this long after dropping below
+    const TICK_MS = 100;
+
+    let speaking = false;
+    let quietSince = 0;
+
+    const report = (next) => {
+      speaking = next;
+      if (socket.connected) socket.emit(EVENTS.SPEAKING, { speaking: next });
+    };
+
+    const timer = setInterval(() => {
+      analyser.getFloatTimeDomainData(buf);
+      let sumSquares = 0;
+      for (let i = 0; i < buf.length; i += 1) sumSquares += buf[i] * buf[i];
+      const rms = Math.sqrt(sumSquares / buf.length);
+      const loud = rms > THRESHOLD && audioTrack.enabled;
+
+      if (loud) {
+        quietSince = 0;
+        if (!speaking) report(true);
+      } else if (speaking) {
+        if (!quietSince) quietSince = performance.now();
+        else if (performance.now() - quietSince > HANGOVER_MS) report(false);
+      }
+    }, TICK_MS);
+
+    return () => {
+      clearInterval(timer);
+      if (speaking && socket.connected) {
+        socket.emit(EVENTS.SPEAKING, { speaking: false });
+      }
+      source.disconnect();
+      ctx.close();
+    };
+  }, [inCall, localStream, isListener]);
 
   // --- controls: flip the track's `enabled` flag ---------------------------
   // A listener can't use these — in a moderated room the mic isn't theirs to

@@ -1,14 +1,17 @@
-// Phase 1 + 2 + 3 + 4 + 5: signaling server.
+// Phase 1 + 2 + 3 + 4 + 5 + 6: signaling + moderation server.
 //
 // Phase 1 — the server owns all room state (see rooms.js). Every state change is
 // broadcast as a full room-state snapshot so clients never reconstruct state
 // incrementally.
 //
 // Phase 2 — the server also relays WebRTC negotiation messages between peers
-// (the RTC_SIGNAL handler below). The media itself (audio/video) flows
-// browser-to-browser and never touches this server; all we do is pass the
-// "let's connect" paperwork (SDP offers/answers and ICE candidates) from one
-// socket to another. This is what "signaling server" means.
+// (the RTC_SIGNAL handler below). The media itself flows browser-to-browser and
+// never touches this server.
+//
+// Phases 4-6 — host-authoritative moderation. Every host-only action is
+// re-checked here (requireHostRoom) regardless of what the client shows. Since
+// media is peer-to-peer, "listener" is cooperative: the server asks the
+// target's client to disable its own tracks.
 
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -17,7 +20,7 @@ import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import { Server } from 'socket.io';
-import { EVENTS, MODES } from '@listen/shared';
+import { EVENTS, MODES, ROLES } from '@listen/shared';
 import {
   addParticipant,
   clearFloor,
@@ -28,6 +31,7 @@ import {
   removeParticipant,
   revokeFloor,
   setMode,
+  setSpeaking,
   snapshot,
 } from './rooms.js';
 
@@ -43,7 +47,7 @@ app.use(cors({ origin: CLIENT_ORIGIN }));
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, phase: 5, time: new Date().toISOString() });
+  res.json({ ok: true, phase: 6, time: new Date().toISOString() });
 });
 
 const server = http.createServer(app);
@@ -57,11 +61,74 @@ function broadcastRoom(roomId) {
   if (state) io.to(roomId).emit(EVENTS.ROOM_STATE, state);
 }
 
+// --- Phase 6: the silence rule ---------------------------------------------
+// In a MODERATED room, a non-host speaker who goes quiet for SILENCE_MS loses
+// the floor and queue[0] (if anyone is waiting) is promoted in their place.
+//
+// The timer is per (room, socket). It is armed the moment we hear
+// "speaking: false" and cleared the instant they speak again — or leave, or are
+// revoked, or the room re-opens. The host is exempt: armSilence bails on any
+// non-speaker role.
+const SILENCE_MS = 5000;
+const silenceTimers = new Map(); // `${roomId}::${socketId}` -> Timeout
+
+const silenceKey = (roomId, socketId) => `${roomId}::${socketId}`;
+
+function clearSilence(roomId, socketId) {
+  const key = silenceKey(roomId, socketId);
+  const timer = silenceTimers.get(key);
+  if (timer) {
+    clearTimeout(timer);
+    silenceTimers.delete(key);
+  }
+}
+
+// Drop every silence timer in a room (clear-floor, or the room going open).
+function clearRoomSilence(roomId) {
+  for (const key of [...silenceTimers.keys()]) {
+    if (key.startsWith(`${roomId}::`)) {
+      clearTimeout(silenceTimers.get(key));
+      silenceTimers.delete(key);
+    }
+  }
+}
+
+function armSilence(roomId, socketId) {
+  clearSilence(roomId, socketId);
+  const room = getRoom(roomId);
+  if (!room || room.mode !== MODES.MODERATED) return;
+  const participant = room.participants[socketId];
+  if (!participant || participant.role !== ROLES.SPEAKER) return; // host exempt
+  silenceTimers.set(
+    silenceKey(roomId, socketId),
+    setTimeout(() => enforceSilence(roomId, socketId), SILENCE_MS),
+  );
+}
+
+// The timer fired: this speaker has been quiet too long. Take their floor and
+// hand it to whoever is first in the queue.
+function enforceSilence(roomId, socketId) {
+  silenceTimers.delete(silenceKey(roomId, socketId));
+
+  const room = getRoom(roomId);
+  if (!room || room.mode !== MODES.MODERATED) return;
+  const participant = room.participants[socketId];
+  if (!participant || participant.role !== ROLES.SPEAKER) return;
+
+  revokeFloor(room, socketId);
+  const next = room.queue[0];
+  if (next) grantFloor(room, next);
+  console.log(
+    `[room ${roomId}] silence timeout: ${socketId} lost the floor` +
+      (next ? `, ${next} promoted` : ' (queue empty)'),
+  );
+  broadcastRoom(roomId);
+}
+
 io.on('connection', (socket) => {
   console.log(`[socket] connected ${socket.id}`);
 
-  // Remember which room this socket joined so disconnect can clean up and,
-  // when the host leaves, we can tell the room who was promoted.
+  // Remember which room this socket joined so disconnect can clean up.
   let joinedRoomId = null;
 
   socket.on(EVENTS.JOIN_ROOM, ({ roomId, name } = {}, ack) => {
@@ -90,10 +157,6 @@ io.on('connection', (socket) => {
   });
 
   // --- Phase 4: host-only moderator toggle --------------------------------
-  // The host flips the whole room between 'open' (free-for-all) and 'moderated'
-  // (every non-host becomes a listener; each listener's client then silences
-  // its own mic/camera). HARD-rejected for anyone who isn't the current host —
-  // this is the first place the server enforces "host-authoritative".
   socket.on(EVENTS.SET_MODE, ({ mode } = {}, ack) => {
     const room = getRoom(joinedRoomId);
     if (!room) {
@@ -110,24 +173,14 @@ io.on('connection', (socket) => {
       return;
     }
 
-    setMode(room, mode); // recomputes every non-host role, empties the queue
+    setMode(room, mode);
+    clearRoomSilence(joinedRoomId);
     console.log(`[room ${joinedRoomId}] mode -> ${mode} (by host ${socket.id})`);
     ack?.({ ok: true });
     broadcastRoom(joinedRoomId);
   });
 
   // --- Phase 5: hand-raising & the speaker queue --------------------------
-  //
-  // Two listener-driven events (raise / lower my own hand) and three host-only
-  // events (grant, revoke, clear the floor). The host-only ones reuse the exact
-  // "must be room.hostId" rejection from set-mode above.
-  //
-  // Every handler ends the same way: mutate room state via a rooms.js helper,
-  // then broadcast a fresh snapshot. The helpers are all no-ops when the action
-  // isn't valid (wrong mode, wrong role, not queued), so the handlers stay thin.
-
-  // Shared guard for the host-only actions. Returns the room if `socket` is its
-  // host, otherwise emits the error + acks false and returns null.
   function requireHostRoom(ack) {
     const room = getRoom(joinedRoomId);
     if (!room) {
@@ -145,13 +198,11 @@ io.on('connection', (socket) => {
   socket.on(EVENTS.RAISE_HAND, (_payload, ack) => {
     const room = getRoom(joinedRoomId);
     if (!room) return ack?.({ ok: false, error: 'not in a room' });
-    raiseHand(room, socket.id); // no-op unless I'm a listener in a moderated room
+    raiseHand(room, socket.id);
     ack?.({ ok: true });
     broadcastRoom(joinedRoomId);
   });
 
-  // A listener lowers their own hand; the host may lower anyone's ("Dismiss"
-  // in the dashboard) by passing { targetId }.
   socket.on(EVENTS.LOWER_HAND, ({ targetId } = {}, ack) => {
     const room = getRoom(joinedRoomId);
     if (!room) return ack?.({ ok: false, error: 'not in a room' });
@@ -172,7 +223,8 @@ io.on('connection', (socket) => {
   socket.on(EVENTS.GRANT_FLOOR, ({ targetId } = {}, ack) => {
     const room = requireHostRoom(ack);
     if (!room) return;
-    grantFloor(room, targetId); // listener -> speaker, off the queue
+    grantFloor(room, targetId);
+    clearSilence(joinedRoomId, targetId); // fresh start; timer waits for word one
     console.log(`[room ${joinedRoomId}] grant floor -> ${targetId}`);
     ack?.({ ok: true });
     broadcastRoom(joinedRoomId);
@@ -181,7 +233,8 @@ io.on('connection', (socket) => {
   socket.on(EVENTS.REVOKE_FLOOR, ({ targetId } = {}, ack) => {
     const room = requireHostRoom(ack);
     if (!room) return;
-    revokeFloor(room, targetId); // speaker -> listener
+    revokeFloor(room, targetId);
+    clearSilence(joinedRoomId, targetId);
     console.log(`[room ${joinedRoomId}] revoke floor -> ${targetId}`);
     ack?.({ ok: true });
     broadcastRoom(joinedRoomId);
@@ -190,20 +243,35 @@ io.on('connection', (socket) => {
   socket.on(EVENTS.CLEAR_FLOOR, (_payload, ack) => {
     const room = requireHostRoom(ack);
     if (!room) return;
-    clearFloor(room); // every non-host speaker -> listener
+    clearFloor(room);
+    clearRoomSilence(joinedRoomId);
     console.log(`[room ${joinedRoomId}] floor cleared by host ${socket.id}`);
     ack?.({ ok: true });
     broadcastRoom(joinedRoomId);
   });
 
+  // --- Phase 6: active-speaker pings -------------------------------------
+  // The client sends this only when its own mic level crosses the talk
+  // threshold (rising) or has been quiet for a beat (falling). We record it,
+  // start or cancel the silence timer, and re-broadcast so every client can
+  // move the "active speaker" glow. Fire-and-forget — no ack.
+  socket.on(EVENTS.SPEAKING, ({ speaking } = {}) => {
+    const room = getRoom(joinedRoomId);
+    if (!room) return;
+
+    const on = speaking === true;
+    const changed = setSpeaking(room, socket.id, on);
+
+    if (on) {
+      clearSilence(joinedRoomId, socket.id);
+    } else if (changed) {
+      armSilence(joinedRoomId, socket.id);
+    }
+
+    if (changed) broadcastRoom(joinedRoomId);
+  });
+
   // --- Phase 2: WebRTC signaling relay -------------------------------------
-  // A peer wants to send an offer / answer / ICE candidate to ONE other peer.
-  // We don't inspect or store the payload; we just forward it to `targetId`,
-  // stamped with `from` so the receiver knows who it came from.
-  //
-  // Safety checks:
-  //  - the sender must already be in a room (can't relay before joining)
-  //  - the target must be in the SAME room (can't poke sockets in other rooms)
   socket.on(EVENTS.RTC_SIGNAL, ({ targetId, description, candidate } = {}) => {
     if (!joinedRoomId || !targetId) return;
 
@@ -212,13 +280,14 @@ io.on('connection', (socket) => {
 
     io.to(targetId).emit(EVENTS.RTC_SIGNAL, {
       from: socket.id,
-      description, // present for an SDP offer/answer, undefined for ICE
-      candidate, // present for an ICE candidate, undefined for SDP
+      description,
+      candidate,
     });
   });
 
   socket.on('disconnect', (reason) => {
     console.log(`[socket] disconnected ${socket.id} (${reason})`);
+    if (joinedRoomId) clearSilence(joinedRoomId, socket.id);
     const result = removeParticipant(socket.id);
     if (!result) return;
 
@@ -227,6 +296,9 @@ io.on('connection', (socket) => {
       console.log(`[room ${roomId}] closed (empty)`);
       return;
     }
+    // If the host just left, the promoted participant must be exempt from the
+    // silence rule — retire any timer they were carrying as a speaker.
+    clearSilence(roomId, room.hostId);
     console.log(
       `[room ${roomId}] - ${socket.id} — ${Object.keys(room.participants).length} left,` +
         ` host is ${room.hostId}`,

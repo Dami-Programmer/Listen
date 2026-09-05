@@ -1,5 +1,6 @@
-// Phases 2-4 built the call, roles, and the Moderated switch.
-// Phase 5 — hand-raising and the host's raised-hands dashboard.
+// Phases 2-5 built the call, roles, the Moderated switch, and the speaker queue.
+// Phase 6 — the room elects an active speaker and draws a glow on that tile;
+// idle speakers in a moderated room are auto-cycled by the server.
 //
 // <App/> owns the Socket.IO lifecycle; all media logic lives in webrtc.js.
 
@@ -106,7 +107,9 @@ function JoinScreen({ roomId, name, error, onRoomId, onName, onSubmit }) {
   return (
     <main className="page">
       <h1>Listen</h1>
-      <p className="tagline">Moderated group calls. Phase 5 — the speaker queue.</p>
+      <p className="tagline">
+        Moderated group calls. Phase 6 — active-speaker glow &amp; the silence rule.
+      </p>
 
       <form className="card join" onSubmit={onSubmit}>
         <label>
@@ -151,6 +154,9 @@ function CallView({ state, selfId, connected, onLeave }) {
   const handRaised = myQueuePos !== -1;
   const queued = queue.map((id) => participants.find((p) => p.id === id)).filter(Boolean);
   const grantedSpeakers = participants.filter((p) => p.role === ROLES.SPEAKER);
+
+  // Phase 6 — the server-elected active speaker (null when the room is silent).
+  const activeSpeakerId = state?.activeSpeakerId ?? null;
 
   const peerOf = (id) => participants.find((p) => p.id === id);
   const ordered = [...participants].sort(
@@ -243,6 +249,7 @@ function CallView({ state, selfId, connected, onLeave }) {
             stream={localStream}
             label={`${self?.name ?? 'You'} (you)`}
             role={self?.role}
+            speaking={activeSpeakerId === selfId}
             muted
             mirror
           />
@@ -250,7 +257,13 @@ function CallView({ state, selfId, connected, onLeave }) {
         {remotes.map(({ id, stream }) => {
           const peer = peerOf(id);
           return (
-            <VideoTile key={id} stream={stream} label={peer?.name ?? 'Guest'} role={peer?.role} />
+            <VideoTile
+              key={id}
+              stream={stream}
+              label={peer?.name ?? 'Guest'}
+              role={peer?.role}
+              speaking={activeSpeakerId === id}
+            />
           );
         })}
       </div>
@@ -309,7 +322,8 @@ function CallView({ state, selfId, connected, onLeave }) {
       </details>
 
       <p className="next">
-        Next up: <strong>Phase 6</strong> — active-speaker glow and the automated silence rule.
+        Next up: <strong>Phase 7</strong> — full host controls: force-mute, remove a participant,
+        reorder the queue.
       </p>
     </main>
   );
