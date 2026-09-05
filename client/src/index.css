@@ -302,3 +302,31 @@ button.ghost {
 .listener-note p {
   margin: 0;
 }
+
+/* --- Phase 5: hand-raising & the speaker queue --- */
+
+/* The host's raised-hands dashboard reuses .card / .row. */
+.card.queue .muted {
+  color: #9aa0a6;
+  font-size: 0.85rem;
+  padding: 12px 0;
+  margin: 0;
+}
+
+/* A cluster of buttons (± a role pill) pinned to the right of a row. */
+.actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Compact button for in-row actions (Grant / Dismiss / Revoke / Clear floor). */
+button.small {
+  padding: 5px 12px;
+  font-size: 0.8rem;
+}
+
+/* The header row holds a title on the left and Clear floor on the right. */
+.card.queue .row.header {
+  align-items: center;
+}

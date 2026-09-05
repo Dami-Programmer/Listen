@@ -1,6 +1,5 @@
-// Phase 2 — the client is split into two screens (JoinScreen / CallView).
-// Phase 3 — roles shown in the participant list and on each tile.
-// Phase 4 — the host-only Open | Moderated switch; listeners lose their mic/cam.
+// Phases 2-4 built the call, roles, and the Moderated switch.
+// Phase 5 — hand-raising and the host's raised-hands dashboard.
 //
 // <App/> owns the Socket.IO lifecycle; all media logic lives in webrtc.js.
 
@@ -107,7 +106,7 @@ function JoinScreen({ roomId, name, error, onRoomId, onName, onSubmit }) {
   return (
     <main className="page">
       <h1>Listen</h1>
-      <p className="tagline">Moderated group calls. Phase 4 — the Moderated switch.</p>
+      <p className="tagline">Moderated group calls. Phase 5 — the speaker queue.</p>
 
       <form className="card join" onSubmit={onSubmit}>
         <label>
@@ -147,19 +146,34 @@ function CallView({ state, selfId, connected, onLeave }) {
   const isHost = self?.role === ROLES.HOST;
   const moderated = state?.mode === MODES.MODERATED;
 
+  const queue = state?.queue ?? [];
+  const myQueuePos = queue.indexOf(selfId);
+  const handRaised = myQueuePos !== -1;
+  const queued = queue.map((id) => participants.find((p) => p.id === id)).filter(Boolean);
+  const grantedSpeakers = participants.filter((p) => p.role === ROLES.SPEAKER);
+
   const peerOf = (id) => participants.find((p) => p.id === id);
   const ordered = [...participants].sort(
     (a, b) => (ROLE_RANK[a.role] ?? 9) - (ROLE_RANK[b.role] ?? 9) || a.name.localeCompare(b.name),
   );
 
-  // Host-only: ask the server to flip the room mode. The server re-checks that
-  // we're the host and rejects otherwise — this button just can't be seen by
-  // anyone else.
   function changeMode(mode) {
     socket.emit('set-mode', { mode }, (ack) => {
       if (!ack?.ok) console.warn('[set-mode] rejected:', ack?.error);
     });
   }
+
+  function emit(event, payload) {
+    socket.emit(event, payload ?? {}, (ack) => {
+      if (!ack?.ok) console.warn(`[${event}] rejected:`, ack?.error);
+    });
+  }
+  const raiseHand = () => emit('raise-hand');
+  const lowerHand = () => emit('lower-hand');
+  const dismissHand = (targetId) => emit('lower-hand', { targetId });
+  const grantFloor = (targetId) => emit('grant-floor', { targetId });
+  const revokeFloor = (targetId) => emit('revoke-floor', { targetId });
+  const clearFloor = () => emit('clear-floor');
 
   return (
     <main className="page call">
@@ -189,6 +203,38 @@ function CallView({ state, selfId, connected, onLeave }) {
         moderated && <p className="banner">🔒 Moderated — the host controls who speaks.</p>
       )}
 
+      {isHost && moderated && (
+        <div className="card queue">
+          <div className="row header">
+            <span>Raised hands ({queued.length})</span>
+            {grantedSpeakers.length > 0 && (
+              <button className="ghost small" onClick={clearFloor}>
+                Clear floor
+              </button>
+            )}
+          </div>
+          {queued.length === 0 ? (
+            <p className="muted">No one&apos;s waiting. Listeners can raise a hand.</p>
+          ) : (
+            queued.map((p, i) => (
+              <div className="row" key={p.id}>
+                <span>
+                  {i + 1}. {p.name}
+                </span>
+                <span className="actions">
+                  <button className="small" onClick={() => grantFloor(p.id)}>
+                    Grant
+                  </button>
+                  <button className="ghost small" onClick={() => dismissHand(p.id)}>
+                    Dismiss
+                  </button>
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
       {mediaError && <p className="err">{mediaError}</p>}
 
       <div className="grid">
@@ -211,7 +257,15 @@ function CallView({ state, selfId, connected, onLeave }) {
 
       {isListener ? (
         <div className="listener-note">
-          <p>🎧 Listening only — the host has moderated this room.</p>
+          <p>
+            🎧 Listening only &mdash;{' '}
+            {handRaised
+              ? `you're #${myQueuePos + 1} in line for the floor.`
+              : 'raise your hand to ask for the floor.'}
+          </p>
+          <button className={handRaised ? 'off' : ''} onClick={handRaised ? lowerHand : raiseHand}>
+            {handRaised ? '✋ Lower hand' : '✋ Raise hand'}
+          </button>
         </div>
       ) : (
         <div className="controls">
@@ -237,7 +291,14 @@ function CallView({ state, selfId, connected, onLeave }) {
               {p.name}
               {p.id === selfId ? ' (you)' : ''}
             </span>
-            <RolePill role={p.role} />
+            <span className="actions">
+              {isHost && moderated && p.role === ROLES.SPEAKER && (
+                <button className="ghost small" onClick={() => revokeFloor(p.id)}>
+                  Revoke
+                </button>
+              )}
+              <RolePill role={p.role} />
+            </span>
           </div>
         ))}
       </div>
@@ -248,7 +309,7 @@ function CallView({ state, selfId, connected, onLeave }) {
       </details>
 
       <p className="next">
-        Next up: <strong>Phase 5</strong> — hand-raising and the speaker queue.
+        Next up: <strong>Phase 6</strong> — active-speaker glow and the automated silence rule.
       </p>
     </main>
   );

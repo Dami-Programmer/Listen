@@ -6,10 +6,19 @@ export const EVENTS = {
   // client -> server
   JOIN_ROOM: 'join-room',
   SET_MODE: 'set-mode',
+
+  // Phase 5 — the speaker queue.
+  //   RAISE_HAND / LOWER_HAND : a listener asks for / withdraws from the floor.
+  //     LOWER_HAND may also carry { targetId } when the HOST dismisses someone
+  //     else's raised hand from the dashboard.
+  //   GRANT_FLOOR / REVOKE_FLOOR : host promotes one listener to speaker /
+  //     sends one speaker back to listener. Payload: { targetId }.
+  //   CLEAR_FLOOR : host sends every non-host speaker back to listener at once.
   RAISE_HAND: 'raise-hand',
   LOWER_HAND: 'lower-hand',
   GRANT_FLOOR: 'grant-floor',
   REVOKE_FLOOR: 'revoke-floor',
+  CLEAR_FLOOR: 'clear-floor',
 
   // WebRTC signaling relay (Phase 2).
   // One event carries every kind of negotiation message between two peers:

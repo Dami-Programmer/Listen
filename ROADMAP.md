@@ -110,6 +110,15 @@ gets an Open | Moderated switch, non-hosts get a locked banner, listeners get a
 
 **Deliverable:** host runs a structured session — people request, host grants.
 
+**Status: done.** `raise-hand` / `lower-hand` (listener, moderated only) maintain
+`room.queue` in `rooms.js`; the host-only `grant-floor`, `revoke-floor`, and
+`clear-floor` all route through `setRole`. `lower-hand` accepts `{ targetId }`
+so the host can dismiss a hand. Any mode flip empties the queue. Client:
+listeners get a ✋ raise/lower toggle showing their place in line; the host gets
+a "Raised hands" dashboard (Grant / Dismiss / Clear floor) plus a Revoke button
+on each speaker row. `grant-floor` never touches other speakers, so it doubles
+as "add co-speaker".
+
 ## Phase 6 — Active-speaker & automated silence detection
 
 **Goal:** the room reacts on its own.

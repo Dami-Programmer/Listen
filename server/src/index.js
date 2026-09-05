@@ -1,4 +1,4 @@
-// Phase 1 + 2 + 3 + 4: signaling server.
+// Phase 1 + 2 + 3 + 4 + 5: signaling server.
 //
 // Phase 1 — the server owns all room state (see rooms.js). Every state change is
 // broadcast as a full room-state snapshot so clients never reconstruct state
@@ -18,7 +18,18 @@ import express from 'express';
 import cors from 'cors';
 import { Server } from 'socket.io';
 import { EVENTS, MODES } from '@listen/shared';
-import { addParticipant, getRoom, removeParticipant, setMode, snapshot } from './rooms.js';
+import {
+  addParticipant,
+  clearFloor,
+  getRoom,
+  grantFloor,
+  lowerHand,
+  raiseHand,
+  removeParticipant,
+  revokeFloor,
+  setMode,
+  snapshot,
+} from './rooms.js';
 
 // Load the single .env from the repo root (two levels up from server/src).
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -32,7 +43,7 @@ app.use(cors({ origin: CLIENT_ORIGIN }));
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, phase: 4, time: new Date().toISOString() });
+  res.json({ ok: true, phase: 5, time: new Date().toISOString() });
 });
 
 const server = http.createServer(app);
@@ -99,8 +110,88 @@ io.on('connection', (socket) => {
       return;
     }
 
-    setMode(room, mode); // recomputes every non-host role
+    setMode(room, mode); // recomputes every non-host role, empties the queue
     console.log(`[room ${joinedRoomId}] mode -> ${mode} (by host ${socket.id})`);
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  // --- Phase 5: hand-raising & the speaker queue --------------------------
+  //
+  // Two listener-driven events (raise / lower my own hand) and three host-only
+  // events (grant, revoke, clear the floor). The host-only ones reuse the exact
+  // "must be room.hostId" rejection from set-mode above.
+  //
+  // Every handler ends the same way: mutate room state via a rooms.js helper,
+  // then broadcast a fresh snapshot. The helpers are all no-ops when the action
+  // isn't valid (wrong mode, wrong role, not queued), so the handlers stay thin.
+
+  // Shared guard for the host-only actions. Returns the room if `socket` is its
+  // host, otherwise emits the error + acks false and returns null.
+  function requireHostRoom(ack) {
+    const room = getRoom(joinedRoomId);
+    if (!room) {
+      ack?.({ ok: false, error: 'not in a room' });
+      return null;
+    }
+    if (socket.id !== room.hostId) {
+      socket.emit(EVENTS.ERROR, { message: 'only the host can do that' });
+      ack?.({ ok: false, error: 'only the host can do that' });
+      return null;
+    }
+    return room;
+  }
+
+  socket.on(EVENTS.RAISE_HAND, (_payload, ack) => {
+    const room = getRoom(joinedRoomId);
+    if (!room) return ack?.({ ok: false, error: 'not in a room' });
+    raiseHand(room, socket.id); // no-op unless I'm a listener in a moderated room
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  // A listener lowers their own hand; the host may lower anyone's ("Dismiss"
+  // in the dashboard) by passing { targetId }.
+  socket.on(EVENTS.LOWER_HAND, ({ targetId } = {}, ack) => {
+    const room = getRoom(joinedRoomId);
+    if (!room) return ack?.({ ok: false, error: 'not in a room' });
+
+    let subject = socket.id;
+    if (targetId && targetId !== socket.id) {
+      if (socket.id !== room.hostId) {
+        return ack?.({ ok: false, error: 'only the host can lower another hand' });
+      }
+      subject = targetId;
+    }
+
+    lowerHand(room, subject);
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  socket.on(EVENTS.GRANT_FLOOR, ({ targetId } = {}, ack) => {
+    const room = requireHostRoom(ack);
+    if (!room) return;
+    grantFloor(room, targetId); // listener -> speaker, off the queue
+    console.log(`[room ${joinedRoomId}] grant floor -> ${targetId}`);
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  socket.on(EVENTS.REVOKE_FLOOR, ({ targetId } = {}, ack) => {
+    const room = requireHostRoom(ack);
+    if (!room) return;
+    revokeFloor(room, targetId); // speaker -> listener
+    console.log(`[room ${joinedRoomId}] revoke floor -> ${targetId}`);
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  socket.on(EVENTS.CLEAR_FLOOR, (_payload, ack) => {
+    const room = requireHostRoom(ack);
+    if (!room) return;
+    clearFloor(room); // every non-host speaker -> listener
+    console.log(`[room ${joinedRoomId}] floor cleared by host ${socket.id}`);
     ack?.({ ok: true });
     broadcastRoom(joinedRoomId);
   });
