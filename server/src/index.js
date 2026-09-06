@@ -22,8 +22,9 @@ import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import { Server } from 'socket.io';
-import { EVENTS, MODES, ROLES } from '@listen/shared';
+import { EVENTS, MODES, ROLES, STICKERS } from '@listen/shared';
 import {
+  addChatMessage,
   addParticipant,
   clearFloor,
   getRoom,
@@ -155,7 +156,7 @@ io.on('connection', (socket) => {
         `${room.hostId === socket.id ? ' [host]' : ''} — ${Object.keys(room.participants).length} in room`,
     );
 
-    ack?.({ ok: true, selfId: socket.id, state: snapshot(id) });
+    ack?.({ ok: true, selfId: socket.id, state: snapshot(id), chat: [...room.chat] });
     broadcastRoom(id);
   });
 
@@ -317,6 +318,45 @@ io.on('connection', (socket) => {
     reorderQueue(room, order);
     ack?.({ ok: true });
     broadcastRoom(joinedRoomId);
+  });
+
+  // --- In-call chat (added after Phase 7) --------------------------------
+  // Anyone in the room may post — chat is independent of the speaker floor, so
+  // listeners get to talk too. The server names, trims, length-caps and
+  // timestamps every message, keeps a bounded history, and fans it out on its
+  // own event (never in room-state, which would resend the whole log on every
+  // join/role change). Text is escaped by React on render.
+  socket.on(EVENTS.CHAT_SEND, ({ text, kind } = {}, ack) => {
+    const room = getRoom(joinedRoomId);
+    const participant = room?.participants[socket.id];
+    if (!room || !participant) {
+      ack?.({ ok: false, error: 'not in a room' });
+      return;
+    }
+
+    const isSticker = kind === 'sticker';
+    const body = String(text ?? '').trim();
+    if (isSticker) {
+      if (!STICKERS.includes(body)) {
+        ack?.({ ok: false, error: 'unknown sticker' });
+        return;
+      }
+    } else if (!body) {
+      ack?.({ ok: false, error: 'empty message' });
+      return;
+    }
+
+    const message = {
+      id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      from: socket.id,
+      name: participant.name,
+      text: isSticker ? body : body.slice(0, 2000),
+      kind: isSticker ? 'sticker' : 'text',
+      ts: Date.now(),
+    };
+    addChatMessage(room, message);
+    ack?.({ ok: true });
+    io.to(joinedRoomId).emit(EVENTS.CHAT_MESSAGE, message);
   });
 
   // --- Phase 6: active-speaker pings -------------------------------------

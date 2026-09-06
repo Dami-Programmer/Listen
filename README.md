@@ -43,7 +43,7 @@ npm run dev
 
 ## Current status
 
-**Phase 7 complete.** Full host moderation controls, on top of Phases 2-6.
+**Phase 7 + in-call chat complete.** Full host moderation plus a chat panel with emoji and stickers, on top of Phases 2-6.
 
 - Join screen → in-call view. `getUserMedia({ audio, video })`, local preview.
 - One `RTCPeerConnection` per other participant; offer/answer/ICE relayed by the

@@ -363,3 +363,130 @@ button.ghost.danger:hover:not(:disabled) {
 .card.queue .actions button.small {
   min-width: 1.9rem;
 }
+
+/* --- In-call chat (added after Phase 7) --- */
+
+.card.chat {
+  position: relative;
+}
+
+.chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 12px 0;
+}
+
+.chat-msg {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 80%;
+  font-size: 0.9rem;
+}
+.chat-msg.mine {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.chat-name {
+  font-size: 0.72rem;
+  color: #9aa0a6;
+  margin-bottom: 2px;
+}
+
+.chat-bubble {
+  background: #23262f;
+  border: 1px solid #2a2e37;
+  border-radius: 12px;
+  padding: 7px 11px;
+  color: #e8e8ea;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.chat-msg.mine .chat-bubble {
+  background: #1c3a24;
+  border-color: #2b5c38;
+}
+
+.chat-sticker {
+  font-size: 2.75rem;
+  line-height: 1;
+  padding: 2px 0;
+}
+
+.chat-time {
+  font-size: 0.68rem;
+  color: #6b7178;
+  margin-top: 2px;
+}
+
+.chat-compose {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #2a2e37;
+}
+.chat-compose input {
+  flex: 1;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid #2a2e37;
+  background: #0f1115;
+  color: #e8e8ea;
+  font-size: 0.95rem;
+}
+.chat-compose input:focus {
+  outline: none;
+  border-color: #7ee787;
+}
+
+.chat-tool {
+  padding: 6px 8px;
+  font-size: 1.1rem;
+  line-height: 1;
+  background: transparent;
+  border: 1px solid #2a2e37;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.chat-tool.on {
+  border-color: #7ee787;
+}
+
+/* Emoji / sticker trays float just above the composer. */
+.picker {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  margin-top: 12px;
+  border: 1px solid #2a2e37;
+  border-radius: 10px;
+  background: #12141b;
+  max-height: 190px;
+  overflow-y: auto;
+}
+.emoji-picker {
+  grid-template-columns: repeat(8, 1fr);
+}
+.sticker-picker {
+  grid-template-columns: repeat(6, 1fr);
+}
+.picker button {
+  padding: 4px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1.25rem;
+  line-height: 1.4;
+}
+.sticker-picker button {
+  font-size: 1.6rem;
+}
+.picker button:hover {
+  background: #23262f;
+}

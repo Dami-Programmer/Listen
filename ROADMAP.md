@@ -173,6 +173,24 @@ list gained per-person **Grant** (hand the floor to one specific listener),
 **Revoke** (take it back mid-speech), **Mute**, and **Remove**. `window.confirm`
 gates Remove and Clear floor.
 
+## In-call chat (added after Phase 7, out of sequence)
+
+**Goal:** people can text the room during the call, with emoji and stickers.
+
+- `chat-send {text, kind}` — anyone in the room (listeners included; chat is
+  independent of the speaker floor). Server trims, caps text at 2000 chars,
+  names + timestamps it, keeps the last 100 per room (`room.chat` in
+  `rooms.js`), and fans it out on `chat-message` — never in room-state.
+- `kind: 'sticker'` — `text` must be one of `STICKERS` in `shared/index.js`
+  (plain emoji, so no image assets to host). The picker reads the same list.
+- Recent history rides along in the `join-room` ack as `chat`.
+- Client: `<ChatPanel>` — message log (own messages right-aligned), an emoji
+  tray (curated ~48, inserts into the input) and a sticker tray (sends
+  immediately, rendered large). Chat state lives in `<App/>`; React escapes all
+  message text on render.
+
+**Status: done.**
+
 ## Phase 8 — Resilience & deploy
 
 **Goal:** works outside localhost.

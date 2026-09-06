@@ -22,9 +22,14 @@ import { MODES, ROLES } from '@listen/shared';
  *   speaking: string[]   // socketIds currently talking, in the order they
  *                        // started — so the LAST entry is the active speaker
  *                        // (Phase 6)
+ *   chat: object[]       // recent in-call chat messages, oldest first, capped
+ *                        // at CHAT_HISTORY (added after Phase 7)
  * }
  */
 const rooms = new Map();
+
+// How many recent chat messages a room keeps so a late joiner has context.
+const CHAT_HISTORY = 100;
 
 function createRoom() {
   return {
@@ -33,6 +38,7 @@ function createRoom() {
     participants: {},
     queue: [],
     speaking: [],
+    chat: [],
   };
 }
 
@@ -192,6 +198,20 @@ export function setSpeaking(room, socketId, on) {
     return true;
   }
   return false;
+}
+
+/**
+ * In-call chat (added after Phase 7). Append one message and keep only the most
+ * recent CHAT_HISTORY, so a room's chat can't grow without bound. Messages are
+ * plain data the server built; the client renders text with React's default
+ * escaping.
+ */
+export function addChatMessage(room, message) {
+  if (!room) return;
+  room.chat.push(message);
+  if (room.chat.length > CHAT_HISTORY) {
+    room.chat = room.chat.slice(-CHAT_HISTORY);
+  }
 }
 
 /**

@@ -16,6 +16,7 @@ import { MODES, ROLES } from '@listen/shared';
 import { socket } from './socket.js';
 import { useCall } from './webrtc.js';
 import VideoTile from './VideoTile.jsx';
+import ChatPanel from './ChatPanel.jsx';
 
 // Display order for the participant list: host, then speakers, then listeners.
 const ROLE_RANK = { [ROLES.HOST]: 0, [ROLES.SPEAKER]: 1, [ROLES.LISTENER]: 2 };
@@ -36,6 +37,7 @@ export default function App() {
   const [joined, setJoined] = useState(false);
   const [selfId, setSelfId] = useState(null);
   const [state, setState] = useState(null); // latest room-state snapshot
+  const [chat, setChat] = useState([]); // in-call chat, seeded from the join ack
   const [error, setError] = useState(null);
   const [connected, setConnected] = useState(false);
   // Set when the host kicks us — shown on the join screen so it doesn't just
@@ -50,9 +52,13 @@ export default function App() {
       setConnected(false);
       setJoined(false);
       setState(null);
+      setChat([]);
     }
     function onRoomState(snapshot) {
       setState(snapshot);
+    }
+    function onChatMessage(msg) {
+      setChat((c) => [...c, msg]);
     }
     function onRoomError(err) {
       setError(err?.message ?? 'unknown error');
@@ -67,6 +73,7 @@ export default function App() {
     socket.on('room-state', onRoomState);
     socket.on('room-error', onRoomError);
     socket.on('removed', onRemoved);
+    socket.on('chat-message', onChatMessage);
 
     return () => {
       socket.off('connect', onConnect);
@@ -74,6 +81,7 @@ export default function App() {
       socket.off('room-state', onRoomState);
       socket.off('room-error', onRoomError);
       socket.off('removed', onRemoved);
+      socket.off('chat-message', onChatMessage);
     };
   }, []);
 
@@ -94,6 +102,7 @@ export default function App() {
       if (ack?.ok) {
         setSelfId(ack.selfId);
         setState(ack.state);
+        setChat(ack.chat ?? []);
         setJoined(true);
       } else {
         setError(ack?.error ?? 'join failed');
@@ -108,6 +117,7 @@ export default function App() {
     setJoined(false);
     setState(null);
     setSelfId(null);
+    setChat([]);
   }
 
   if (!joined) {
@@ -124,7 +134,15 @@ export default function App() {
     );
   }
 
-  return <CallView state={state} selfId={selfId} connected={connected} onLeave={handleLeave} />;
+  return (
+    <CallView
+      state={state}
+      chat={chat}
+      selfId={selfId}
+      connected={connected}
+      onLeave={handleLeave}
+    />
+  );
 }
 
 // --- the join form (Phase 1, extracted unchanged) ---------------------------
@@ -165,7 +183,7 @@ function JoinScreen({ roomId, name, error, note, onRoomId, onName, onSubmit }) {
 }
 
 // --- the in-call screen ----------------------------------------------------
-function CallView({ state, selfId, connected, onLeave }) {
+function CallView({ state, chat, selfId, connected, onLeave }) {
   const participants = state?.participants ?? [];
   const self = participants.find((p) => p.id === selfId);
 
@@ -360,6 +378,8 @@ function CallView({ state, selfId, connected, onLeave }) {
           </button>
         </div>
       )}
+
+      <ChatPanel messages={chat} selfId={selfId} />
 
       <div className="card">
         <div className="row header">

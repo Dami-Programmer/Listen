@@ -44,6 +44,17 @@ export const EVENTS = {
   REMOVED: 'removed',
   REORDER_QUEUE: 'reorder-queue',
 
+  // In-call text chat (added after Phase 7). Independent of the speaker floor —
+  // everyone in the room can post, including listeners.
+  //   CHAT_SEND    : client -> server { text, kind }. kind is 'text' (default)
+  //     or 'sticker' (then text must be one of STICKERS). The server trims,
+  //     length-caps, names and timestamps it.
+  //   CHAT_MESSAGE : server -> everyone in the room, one stored message:
+  //     { id, from, name, text, kind: 'text'|'sticker', ts }
+  //   Recent history (last 100) rides along in the join-room ack as `chat`.
+  CHAT_SEND: 'chat-send',
+  CHAT_MESSAGE: 'chat-message',
+
   // WebRTC signaling relay (Phase 2).
   // One event carries every kind of negotiation message between two peers:
   // an SDP offer, an SDP answer, or an ICE candidate. The server doesn't look
@@ -72,3 +83,25 @@ export const ROLES = {
   SPEAKER: 'speaker',
   LISTENER: 'listener',
 };
+
+// The sticker set for in-call chat. The server checks a 'sticker' message's
+// text against this exact list, so the picker and the validation can never
+// drift apart. Plain emoji so there are no image assets to host or licence.
+export const STICKERS = [
+  '🎉',
+  '👍',
+  '😂',
+  '🔥',
+  '💯',
+  '🙌',
+  '👀',
+  '🤯',
+  '❤️',
+  '😴',
+  '🤝',
+  '🏆',
+  '👏',
+  '🚀',
+  '🥳',
+  '😎',
+];
