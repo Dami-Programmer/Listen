@@ -7,9 +7,10 @@
 // Roles (Phase 3): every participant has exactly one — host | speaker | listener.
 //   - open mode      -> every non-host is a speaker
 //   - moderated mode -> every non-host is a listener (Phase 4)
+// Roles are DATA here; nothing on the server blocks media (it's peer-to-peer).
 // Enforcement is cooperative: a client that sees its own role become 'listener'
 // silences its outbound tracks. `setRole` below is the single place any role
-// changes.
+// changes, so Phases 4-7 never poke `participant.role` directly.
 
 import { MODES, ROLES } from '@listen/shared';
 
@@ -81,6 +82,7 @@ export function addParticipant(roomId, socketId, name) {
 /**
  * Phase 3 — the ONE place a participant's role changes.
  * Validates the role and never touches the host (whose role tracks room.hostId).
+ * Phases 4-7 (set-mode, grant-floor, revoke-floor, …) all go through here.
  */
 export function setRole(room, socketId, role) {
   const participant = room?.participants[socketId];
@@ -90,7 +92,8 @@ export function setRole(room, socketId, role) {
   participant.role = role;
 
   // A demoted speaker can't be "the active speaker" any more — drop them from
-  // the talking list so the glow moves on immediately (Phase 6).
+  // the talking list so the glow moves on immediately (Phase 6). Covers
+  // revoke-floor, clear-floor and the open -> moderated flip in one place.
   if (role === ROLES.LISTENER) {
     room.speaking = room.speaking.filter((id) => id !== socketId);
   }
@@ -102,7 +105,11 @@ export function setRole(room, socketId, role) {
  *   open      -> every non-host becomes a speaker (free-for-all)
  *   moderated -> every non-host becomes a listener (host controls the mic)
  *
- * Any flip also empties the queue.
+ * The host's role never changes. A "kept speakers across the flip" set is still
+ * deferred; for now, moderated demotes everyone.
+ *
+ * Any flip also empties the queue — a raised hand from the previous mode is
+ * stale, and after open -> moderated everyone is a listener again anyway.
  */
 export function setMode(room, mode) {
   if (!room) return;
@@ -118,8 +125,17 @@ export function setMode(room, mode) {
 
 /* --------------------------------------------------------------------------
  * Phase 5 — the speaker queue.
+ *
+ * `room.queue` is an ordered list of socketIds: listeners who have asked for
+ * the floor, oldest first. Like roles, it is DATA the server owns — the client
+ * only renders it. Every role change below still goes through `setRole`.
  * ---------------------------------------------------------------------- */
 
+/**
+ * A listener asks for the floor. Only valid in a moderated room, only for a
+ * listener, and only once (no duplicate entries). Silently ignored otherwise —
+ * the caller can't do anything useful with an error here.
+ */
 export function raiseHand(room, socketId) {
   if (!room || room.mode !== MODES.MODERATED) return;
   const participant = room.participants[socketId];
@@ -128,35 +144,39 @@ export function raiseHand(room, socketId) {
   room.queue.push(socketId);
 }
 
+/**
+ * Withdraw a raised hand. Used both by a listener lowering their own hand and
+ * by the host dismissing someone from the dashboard. No-op if not queued.
+ */
 export function lowerHand(room, socketId) {
   if (!room) return;
   room.queue = room.queue.filter((id) => id !== socketId);
 }
 
+/**
+ * Host promotes one listener to speaker ("pass the mic", or "add a co-speaker"
+ * — this never touches any other speaker). Removes them from the queue. Their
+ * client re-enables its tracks when it sees the new role (webrtc.js effect D).
+ */
 export function grantFloor(room, socketId) {
   if (!room || room.mode !== MODES.MODERATED) return;
   const participant = room.participants[socketId];
   if (!participant || participant.role !== ROLES.LISTENER) return;
-  setRole(room, socketId, ROLES.SPEAKER);
+  setRole(room, socketId, ROLES.SPEAKER); // no-op for the host
   room.queue = room.queue.filter((id) => id !== socketId);
 }
 
+/**
+ * Host sends one speaker back to listener. Their client silences its own tracks
+ * on seeing the role change. The host is never a valid target (setRole guards
+ * that too).
+ */
 export function revokeFloor(room, socketId) {
   if (!room || room.mode !== MODES.MODERATED) return;
   const participant = room.participants[socketId];
   if (!participant || participant.role !== ROLES.SPEAKER) return;
   setRole(room, socketId, ROLES.LISTENER);
   room.queue = room.queue.filter((id) => id !== socketId);
-}
-
-export function clearFloor(room) {
-  if (!room || room.mode !== MODES.MODERATED) return;
-  for (const [id, participant] of Object.entries(room.participants)) {
-    if (id === room.hostId) continue;
-    if (participant.role === ROLES.SPEAKER) {
-      setRole(room, id, ROLES.LISTENER);
-    }
-  }
 }
 
 /**
@@ -177,14 +197,28 @@ export function reorderQueue(room, order) {
 }
 
 /**
+ * Host clears the floor: every non-host speaker becomes a listener at once.
+ * The queue is untouched — people waiting stay waiting.
+ */
+export function clearFloor(room) {
+  if (!room || room.mode !== MODES.MODERATED) return;
+  for (const [id, participant] of Object.entries(room.participants)) {
+    if (id === room.hostId) continue;
+    if (participant.role === ROLES.SPEAKER) {
+      setRole(room, id, ROLES.LISTENER);
+    }
+  }
+}
+
+/**
  * Phase 6 — record whether a socket is currently talking.
  *
- * The client sends this only on a transition, so we only ever add someone who
- * isn't listed or remove someone who is. New talkers go on the END of the list;
- * `snapshot()` reads the last entry as the active speaker.
+ * The client sends this only on a transition (see EVENTS.SPEAKING), so we only
+ * ever add someone who isn't listed or remove someone who is. New talkers go on
+ * the END of the list; `snapshot()` reads the last entry as the active speaker.
  *
- * Returns true if the list actually changed (so the caller can skip a pointless
- * broadcast when nothing moved).
+ * Returns true if the list actually changed (so the caller can skip a
+ * pointless broadcast when nothing moved).
  */
 export function setSpeaking(room, socketId, on) {
   if (!room || !room.participants[socketId]) return false;

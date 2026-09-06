@@ -7,13 +7,18 @@
 import { useEffect, useRef } from 'react';
 
 /**
- * @param {object}      props
- * @param {MediaStream} props.stream   the stream to show
- * @param {string}      props.label    name shown in the corner
- * @param {boolean}    [props.muted]   mute THIS <video>'s audio (your own tile)
- * @param {boolean}    [props.mirror]  flip horizontally (your own webcam)
- * @param {string}     [props.role]    'host' | 'speaker' | 'listener' — corner pill
- * @param {boolean}   [props.speaking] this person is the room's active speaker (glow)
+ * @param {object}       props
+ * @param {MediaStream}  props.stream   the stream to show
+ * @param {string}       props.label    name shown in the corner
+ * @param {boolean}     [props.muted]   mute THIS <video> element's audio.
+ *                                      Always true for your own tile, or you
+ *                                      hear yourself echo.
+ * @param {boolean}     [props.mirror]  flip horizontally (feels natural for
+ *                                      your own webcam preview)
+ * @param {string}      [props.role]    'host' | 'speaker' | 'listener' — shows a
+ *                                      small pill in the corner (Phase 3)
+ * @param {boolean}    [props.speaking] this person is the room's active speaker
+ *                                      right now — draw the glow (Phase 6)
  */
 export default function VideoTile({
   stream,

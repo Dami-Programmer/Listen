@@ -72,6 +72,155 @@ h1 {
   font-size: 0.9rem;
 }
 
+/* --- Phase 2: call view --- */
+
+/* The call needs more room than the Phase 1 forms. */
+.page.call {
+  max-width: 900px;
+}
+
+/* Responsive tile grid: as many ~260px columns as fit, then wrap. */
+.grid {
+  margin-top: 24px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.tile {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: #000;
+  border: 1px solid #2a2e37;
+  border-radius: 12px;
+  overflow: hidden;
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+/* Phase 6: the server-elected active speaker. One tile at a time. */
+.tile.speaking {
+  border-color: #7ee787;
+  box-shadow:
+    0 0 0 2px #7ee787,
+    0 0 18px rgba(126, 231, 135, 0.45);
+}
+
+.tile video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover; /* fill the square, crop the overflow */
+  display: block;
+}
+
+/* Your own webcam feels natural flipped like a mirror. */
+.tile video.mirror {
+  transform: scaleX(-1);
+}
+
+.tile-label {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #e8e8ea;
+  font-size: 0.8rem;
+}
+
+.controls {
+  margin-top: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* A control that is currently "off" (muted mic / stopped camera). */
+.controls button.off {
+  background: #ff7b72;
+  color: #0f1115;
+}
+
+/* Phase 5: the listener note carries a raise/lower-hand button alongside it. */
+.listener-note {
+  margin-top: 20px;
+  color: #9aa0a6;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.listener-note p {
+  margin: 0;
+}
+
+/* --- Phase 3 + 4: roles & moderation --- */
+
+/* Coloured role label, used in the participant list and on video tiles. */
+.pill {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+.pill-host {
+  background: #3a2f00;
+  color: #ffd54a;
+}
+.pill-speaker {
+  background: #10331a;
+  color: #7ee787;
+}
+.pill-listener {
+  background: #2a2e37;
+  color: #9aa0a6;
+}
+
+/* Role pill pinned to the bottom-right of a video tile (name is bottom-left). */
+.tile-role {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+}
+
+/* Non-host's read-only "the room is locked down" notice. */
+.banner {
+  margin-top: 16px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #3a2f00;
+  color: #ffd54a;
+  font-size: 0.9rem;
+}
+
+/* Host's segmented Open | Moderated switch. */
+.mode-toggle {
+  margin-top: 16px;
+  display: inline-flex;
+  border: 1px solid #2a2e37;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.mode-toggle button {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #9aa0a6;
+  font-weight: 600;
+  padding: 8px 18px;
+}
+.mode-toggle button.active {
+  background: #7ee787;
+  color: #0f1115;
+}
+
 .topbar {
   display: flex;
   justify-content: space-between;
@@ -160,149 +309,6 @@ button.ghost {
   overflow-x: auto;
 }
 
-/* --- Phase 2: call view --- */
-
-/* The call needs more room than the Phase 1 forms. */
-.page.call {
-  max-width: 900px;
-}
-
-/* Responsive tile grid: as many ~260px columns as fit, then wrap. */
-.grid {
-  margin-top: 24px;
-  display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-}
-
-.tile {
-  position: relative;
-  aspect-ratio: 4 / 3;
-  background: #000;
-  border: 1px solid #2a2e37;
-  border-radius: 12px;
-  overflow: hidden;
-  transition:
-    border-color 0.12s ease,
-    box-shadow 0.12s ease;
-}
-
-.tile video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover; /* fill the square, crop the overflow */
-  display: block;
-}
-
-/* Your own webcam feels natural flipped like a mirror. */
-.tile video.mirror {
-  transform: scaleX(-1);
-}
-
-.tile-label {
-  position: absolute;
-  left: 8px;
-  bottom: 8px;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.55);
-  color: #e8e8ea;
-  font-size: 0.8rem;
-}
-
-.controls {
-  margin-top: 20px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-/* A control that is currently "off" (muted mic / stopped camera). */
-.controls button.off {
-  background: #ff7b72;
-  color: #0f1115;
-}
-
-/* --- Phase 3: roles --- */
-
-/* Coloured role label, used in the participant list and on video tiles. */
-.pill {
-  display: inline-block;
-  padding: 2px 9px;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: lowercase;
-  white-space: nowrap;
-}
-.pill-host {
-  background: #3a2f00;
-  color: #ffd54a;
-}
-.pill-speaker {
-  background: #10331a;
-  color: #7ee787;
-}
-.pill-listener {
-  background: #2a2e37;
-  color: #9aa0a6;
-}
-
-/* Role pill pinned to the bottom-right of a video tile (name is bottom-left). */
-.tile-role {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-}
-
-/* --- Phase 4: moderation --- */
-
-/* Non-host's read-only "the room is locked down" notice. */
-.banner {
-  margin-top: 16px;
-  padding: 10px 14px;
-  border-radius: 10px;
-  background: #3a2f00;
-  color: #ffd54a;
-  font-size: 0.9rem;
-}
-
-/* Host's segmented Open | Moderated switch. */
-.mode-toggle {
-  margin-top: 16px;
-  display: inline-flex;
-  border: 1px solid #2a2e37;
-  border-radius: 999px;
-  overflow: hidden;
-}
-.mode-toggle button {
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  color: #9aa0a6;
-  font-weight: 600;
-  padding: 8px 18px;
-}
-.mode-toggle button.active {
-  background: #7ee787;
-  color: #0f1115;
-}
-
-/* A listener's "listening only" note. */
-.listener-note {
-  margin-top: 20px;
-  color: #9aa0a6;
-  font-size: 0.9rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-.listener-note p {
-  margin: 0;
-}
-
 /* --- Phase 5: hand-raising & the speaker queue --- */
 
 /* The host's raised-hands dashboard reuses .card / .row. */
@@ -329,16 +335,6 @@ button.small {
 /* The header row holds a title on the left and Clear floor on the right. */
 .card.queue .row.header {
   align-items: center;
-}
-
-/* --- Phase 6: active-speaker glow --- */
-
-/* The server-elected active speaker. One tile at a time. */
-.tile.speaking {
-  border-color: #7ee787;
-  box-shadow:
-    0 0 0 2px #7ee787,
-    0 0 18px rgba(126, 231, 135, 0.45);
 }
 
 /* --- Phase 7: full host moderation controls --- */
@@ -489,4 +485,55 @@ button.ghost.danger:hover:not(:disabled) {
 }
 .picker button:hover {
   background: #23262f;
+}
+
+/* "someone is typing" — the iMessage bouncing-dots row */
+.chat-typing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+.chat-typing .chat-name {
+  margin-bottom: 0;
+}
+.typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: #23262f;
+  border: 1px solid #2a2e37;
+  border-radius: 12px;
+  padding: 7px 10px;
+}
+.typing-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #9aa0a6;
+  display: block;
+  animation: typing-bounce 1.25s infinite ease-in-out;
+}
+.typing-dots i:nth-child(2) {
+  animation-delay: 0.16s;
+}
+.typing-dots i:nth-child(3) {
+  animation-delay: 0.32s;
+}
+@keyframes typing-bounce {
+  0%,
+  70%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  35% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .typing-dots i {
+    animation: none;
+  }
 }

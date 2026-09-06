@@ -11,7 +11,7 @@
 // Remove / Grant / Revoke and queue reordering — all in <CallView/>. Every
 // button here is advisory: the server re-checks that the caller is the host.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { MODES, ROLES } from '@listen/shared';
 import { socket } from './socket.js';
 import { useCall } from './webrtc.js';
@@ -38,12 +38,24 @@ export default function App() {
   const [selfId, setSelfId] = useState(null);
   const [state, setState] = useState(null); // latest room-state snapshot
   const [chat, setChat] = useState([]); // in-call chat, seeded from the join ack
+  const [typers, setTypers] = useState({}); // socketId -> name, currently typing
   const [error, setError] = useState(null);
   const [connected, setConnected] = useState(false);
+  // Safety timers so a typer disappears even if their "stopped" ping is lost.
+  const typerTimersRef = useRef({});
   // Set when the host kicks us — shown on the join screen so it doesn't just
   // look like a dropped connection. Cleared on the next join attempt.
   const [removedNote, setRemovedNote] = useState(null);
 
+  // Drop every "is typing" indicator and its safety timer.
+  const clearTypers = () => {
+    Object.values(typerTimersRef.current).forEach(clearTimeout);
+    typerTimersRef.current = {};
+    setTypers({});
+  };
+
+  // Wire socket listeners once. These are the Phase 1 room-state events; the
+  // Phase 2 RTC_SIGNAL listener is added/removed inside the useCall hook.
   useEffect(() => {
     function onConnect() {
       setConnected(true);
@@ -53,12 +65,37 @@ export default function App() {
       setJoined(false);
       setState(null);
       setChat([]);
+      clearTypers();
     }
     function onRoomState(snapshot) {
       setState(snapshot);
     }
     function onChatMessage(msg) {
       setChat((c) => [...c, msg]);
+      // A delivered message ends that person's "typing" state.
+      dropTyper(msg.from);
+    }
+    // Add or remove one person from the typing set, with a 5s auto-expiry in
+    // case their "stopped typing" ping never arrives.
+    function dropTyper(id) {
+      clearTimeout(typerTimersRef.current[id]);
+      delete typerTimersRef.current[id];
+      setTypers((m) => {
+        if (!(id in m)) return m;
+        const next = { ...m };
+        delete next[id];
+        return next;
+      });
+    }
+    function onChatTyping({ id, name, typing }) {
+      if (!id) return;
+      if (typing) {
+        clearTimeout(typerTimersRef.current[id]);
+        typerTimersRef.current[id] = setTimeout(() => dropTyper(id), 5000);
+        setTypers((m) => (m[id] === name ? m : { ...m, [id]: name || 'Someone' }));
+      } else {
+        dropTyper(id);
+      }
     }
     function onRoomError(err) {
       setError(err?.message ?? 'unknown error');
@@ -74,6 +111,7 @@ export default function App() {
     socket.on('room-error', onRoomError);
     socket.on('removed', onRemoved);
     socket.on('chat-message', onChatMessage);
+    socket.on('chat-typing', onChatTyping);
 
     return () => {
       socket.off('connect', onConnect);
@@ -82,6 +120,7 @@ export default function App() {
       socket.off('room-error', onRoomError);
       socket.off('removed', onRemoved);
       socket.off('chat-message', onChatMessage);
+      socket.off('chat-typing', onChatTyping);
     };
   }, []);
 
@@ -118,6 +157,7 @@ export default function App() {
     setState(null);
     setSelfId(null);
     setChat([]);
+    clearTypers();
   }
 
   if (!joined) {
@@ -138,6 +178,7 @@ export default function App() {
     <CallView
       state={state}
       chat={chat}
+      typers={typers}
       selfId={selfId}
       connected={connected}
       onLeave={handleLeave}
@@ -183,10 +224,12 @@ function JoinScreen({ roomId, name, error, note, onRoomId, onName, onSubmit }) {
 }
 
 // --- the in-call screen ----------------------------------------------------
-function CallView({ state, chat, selfId, connected, onLeave }) {
+function CallView({ state, chat, typers, selfId, connected, onLeave }) {
   const participants = state?.participants ?? [];
   const self = participants.find((p) => p.id === selfId);
 
+  // The whole call: local camera, remote streams, mic/camera toggles, and
+  // (Phase 4) my role + whether I'm a muted listener.
   const { localStream, remotes, micOn, camOn, toggleMic, toggleCam, mediaError, isListener } =
     useCall({ selfId, participants, inCall: true });
 
@@ -199,17 +242,26 @@ function CallView({ state, chat, selfId, connected, onLeave }) {
   const myQueuePos = queue.indexOf(selfId); // -1 when my hand isn't raised
   const handRaised = myQueuePos !== -1;
 
+  // Host dashboard inputs: the queued people as participant objects (in queue
+  // order), and the non-host speakers the host can revoke / clear.
   const queued = queue.map((id) => participants.find((p) => p.id === id)).filter(Boolean);
   const grantedSpeakers = participants.filter((p) => p.role === ROLES.SPEAKER);
 
   // Phase 6 — the server-elected active speaker (null when the room is silent).
+  // Its tile gets the glow; nothing else on the client decides this.
   const activeSpeakerId = state?.activeSpeakerId ?? null;
 
+  // peerId -> participant, for labelling remote tiles with name + role.
   const peerOf = (id) => participants.find((p) => p.id === id);
+
+  // Participant list sorted host-first, then speakers, then listeners, then A-Z.
   const ordered = [...participants].sort(
     (a, b) => (ROLE_RANK[a.role] ?? 9) - (ROLE_RANK[b.role] ?? 9) || a.name.localeCompare(b.name),
   );
 
+  // Host-only: ask the server to flip the room mode. The server re-checks that
+  // we're the host and rejects otherwise — this button just can't be seen by
+  // anyone else.
   function changeMode(mode) {
     socket.emit('set-mode', { mode }, (ack) => {
       if (!ack?.ok) console.warn('[set-mode] rejected:', ack?.error);
@@ -218,6 +270,7 @@ function CallView({ state, chat, selfId, connected, onLeave }) {
 
   // Every host action is a fire-and-forget socket event; the server re-checks
   // permissions, then broadcasts a new snapshot that flows back through <App/>.
+  // We only log a rejection.
   function emit(event, payload) {
     socket.emit(event, payload ?? {}, (ack) => {
       if (!ack?.ok) console.warn(`[${event}] rejected:`, ack?.error);
@@ -265,6 +318,7 @@ function CallView({ state, chat, selfId, connected, onLeave }) {
         </button>
       </div>
 
+      {/* Host sees the toggle; everyone else sees a banner when moderated. */}
       {isHost ? (
         <div className="mode-toggle" role="group" aria-label="Room mode">
           <button className={!moderated ? 'active' : ''} onClick={() => changeMode(MODES.OPEN)}>
@@ -278,6 +332,9 @@ function CallView({ state, chat, selfId, connected, onLeave }) {
         moderated && <p className="banner">🔒 Moderated — the host controls who speaks.</p>
       )}
 
+      {/* Host-only, moderated-only: the raised-hands dashboard. Reorder with the
+          arrows, Grant to promote, Dismiss to drop from the queue. Clear floor
+          sends every current speaker back to listening. */}
       {isHost && moderated && (
         <div className="card queue">
           <div className="row header">
@@ -353,6 +410,8 @@ function CallView({ state, chat, selfId, connected, onLeave }) {
         })}
       </div>
 
+      {/* A listener's mic/camera aren't theirs to control in a moderated room —
+          instead they get a raise-hand toggle that puts them in the queue. */}
       {isListener ? (
         <div className="listener-note">
           <p>
@@ -379,7 +438,7 @@ function CallView({ state, chat, selfId, connected, onLeave }) {
         </div>
       )}
 
-      <ChatPanel messages={chat} selfId={selfId} />
+      <ChatPanel messages={chat} typers={typers} selfId={selfId} />
 
       <div className="card">
         <div className="row header">

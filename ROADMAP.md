@@ -19,9 +19,6 @@ never decides its own permissions.
 
 **Deliverable:** `npm run dev` starts both; client shows a placeholder page.
 
-**Status: done.** Workspace wired up; the client placeholder fetches `/health`
-and shows the shared enums.
-
 ## Phase 1 — Signaling server skeleton
 
 **Goal:** server owns room state; no media yet.
@@ -55,8 +52,8 @@ wires the Socket.IO handlers. Client has a join screen + live participant list.
 one `RTCPeerConnection` per peer, offer/answer/ICE); `client/src/VideoTile.jsx`
 binds a stream to a `<video>`; `App.jsx` splits into join screen + call view
 with mic/camera/leave. Server relays peer negotiation via one `rtc-signal`
-event. Peer discovery reuses the `room-state` snapshot; the greater socket id in
-each pair sends the offer. STUN only — TURN is Phase 8.
+event (`server/src/index.js`). Peer discovery reuses the `room-state` snapshot;
+the greater socket id in each pair sends the offer. STUN only — TURN is Phase 8.
 
 ## Phase 3 — Roles foundation
 
@@ -71,7 +68,7 @@ each pair sends the offer. STUN only — TURN is Phase 8.
 
 **Status: done.** Roles were already in the participant shape from Phase 1; this
 phase added `setRole` in `rooms.js` as the single choke point for role changes
-(later phases all route through it), a host-first sorted participant list, and
+(Phases 4-7 all route through it), a host-first sorted participant list, and
 coloured role pills in the list and on each video tile.
 
 ## Phase 4 — Moderator mode toggle
@@ -91,9 +88,10 @@ coloured role pills in the list and on each video tile.
 unless `socket.id === room.hostId`; `setMode` in `rooms.js` recomputes every
 non-host role (moderated → listener, open → speaker) and someone joining a
 moderated room now enters as a listener. Client: `useCall` watches my own role
-and silences my outbound tracks (effect D) when it becomes `listener`. UI: host
-gets an Open | Moderated switch, non-hosts get a locked banner, listeners get a
-"listening only" note instead of mic/camera buttons.
+and silences my outbound tracks when it becomes `listener` (re-enables on the
+way back). UI: host gets an Open | Moderated switch, non-hosts get a locked
+banner, listeners get a "listening only" note instead of mic/camera buttons.
+The "keep specific speakers across the flip" exception is deferred to Phase 5.
 
 ## Phase 5 — Hand-raising & speaker queue
 
@@ -110,14 +108,16 @@ gets an Open | Moderated switch, non-hosts get a locked banner, listeners get a
 
 **Deliverable:** host runs a structured session — people request, host grants.
 
-**Status: done.** `raise-hand` / `lower-hand` (listener, moderated only) maintain
-`room.queue` in `rooms.js`; the host-only `grant-floor`, `revoke-floor`, and
-`clear-floor` all route through `setRole`. `lower-hand` accepts `{ targetId }`
-so the host can dismiss a hand. Any mode flip empties the queue. Client:
-listeners get a ✋ raise/lower toggle showing their place in line; the host gets
-a "Raised hands" dashboard (Grant / Dismiss / Clear floor) plus a Revoke button
-on each speaker row. `grant-floor` never touches other speakers, so it doubles
-as "add co-speaker".
+**Status: done.** `raise-hand` / `lower-hand` (listener, moderated only)
+maintain `room.queue` in `rooms.js`; the host-only `grant-floor`,
+`revoke-floor`, and `clear-floor` all route through `setRole`. `lower-hand`
+accepts `{ targetId }` so the host can dismiss a hand. Any mode flip empties the
+queue. Client: listeners get a ✋ raise/lower toggle showing their place in
+line; the host gets a "Raised hands" dashboard (Grant / Dismiss per person,
+Clear floor) plus a Revoke button on each speaker row. `webrtc.js` needed no
+change — effect D already re-enables/silences tracks off the role. `grant-floor`
+never touches other speakers, so it doubles as "add co-speaker". "Keep specific
+speakers across a mode flip" is still deferred.
 
 ## Phase 6 — Active-speaker & automated silence detection
 
@@ -135,12 +135,15 @@ as "add co-speaker".
 **Status: done.** Each client runs a Web Audio `AnalyserNode` on its own mic
 (`webrtc.js` effect E), computes RMS loudness, and emits `speaking: true/false`
 only on the transition (rising edge immediately, falling edge after a 600 ms
-hangover). `rooms.js` keeps `room.speaking`; `snapshot` exposes
-`activeSpeakerId` = the last entry, and the client draws a green glow on that
-tile. Silence rule (`server/src/index.js`): a `speaking: false` from a non-host
-speaker in a moderated room arms a 5 s timer; firing it calls `revokeFloor` +
-`grantFloor(queue[0])`. The timer is cleared on speak / grant / revoke /
-clear-floor / mode flip / disconnect / host-promotion. The host is exempt.
+hangover). `rooms.js` keeps `room.speaking` (socketIds in start order);
+`snapshot` exposes `activeSpeakerId` = the last entry, and the client draws a
+green glow on that one tile. Silence rule (`server/src/index.js`): a
+`speaking: false` from a non-host speaker in a moderated room arms a 5 s timer;
+firing it calls `revokeFloor` + `grantFloor(queue[0])`. The timer is cleared on
+`speaking: true`, grant, revoke, clear-floor, mode flip, disconnect, and
+host-promotion. The host is exempt — `armSilence` bails on any non-`speaker`
+role. Active-speaker glow works in open mode too; only the silence enforcement
+is moderated-only.
 
 ## Phase 7 — Full host moderation controls
 
@@ -160,18 +163,20 @@ room, never myself):
 
 - `force-mute {targetId}` — media is peer-to-peer so the server can't mute
   anyone; it relays `FORCE_MUTE` to the target and `webrtc.js` effect F disables
-  that client's own mic track. Cooperative — they can unmute. Works in open mode.
+  that client's own mic track (`micOn` -> false). Cooperative — they can unmute.
+  Works in open mode too.
 - `remove-participant {targetId}` — emits `REMOVED` to the target then
-  `socket.disconnect(true)`; the existing `disconnect` handler does the cleanup,
-  and a server-closed socket doesn't auto-reconnect, so the client lands on the
-  join screen with "The host removed you".
+  `socket.disconnect(true)`; the existing `disconnect` handler does the room
+  cleanup + broadcast, and a server-closed socket doesn't auto-reconnect, so the
+  client lands back on the join screen with "The host removed you".
 - `reorder-queue {order}` — `reorderQueue` in `rooms.js` accepts only a
   permutation of the current queue (dropping someone is still `lower-hand`).
 
-Client: the raised-hands dashboard gained ↑/↓ reorder arrows; the participants
-list gained per-person **Grant** (hand the floor to one specific listener),
-**Revoke** (take it back mid-speech), **Mute**, and **Remove**. `window.confirm`
-gates Remove and Clear floor.
+Client (`App.jsx`): the raised-hands dashboard gained ↑/↓ reorder arrows; the
+participants list gained per-person **Grant** (hand the floor to one specific
+listener), **Revoke** (take it back mid-speech), **Mute**, and **Remove**.
+`window.confirm` gates Remove and Clear floor. Revoke-floor already worked
+regardless of speaking state, so "revoke mid-speech" needed no server change.
 
 ## In-call chat (added after Phase 7, out of sequence)
 
@@ -180,14 +185,21 @@ gates Remove and Clear floor.
 - `chat-send {text, kind}` — anyone in the room (listeners included; chat is
   independent of the speaker floor). Server trims, caps text at 2000 chars,
   names + timestamps it, keeps the last 100 per room (`room.chat` in
-  `rooms.js`), and fans it out on `chat-message` — never in room-state.
+  `rooms.js`), and fans it out on `chat-message` — never in room-state, which
+  would resend the whole log on every join.
 - `kind: 'sticker'` — `text` must be one of `STICKERS` in `shared/index.js`
   (plain emoji, so no image assets to host). The picker reads the same list.
-- Recent history rides along in the `join-room` ack as `chat`.
+- Recent history rides along in the `join-room` ack as `chat`, so a late joiner
+  has context.
 - Client: `<ChatPanel>` — message log (own messages right-aligned), an emoji
   tray (curated ~48, inserts into the input) and a sticker tray (sends
   immediately, rendered large). Chat state lives in `<App/>`; React escapes all
   message text on render.
+- `chat-typing {typing}` — the iMessage bouncing-dots indicator. The composer
+  sends `true` on the first keystroke, re-sends at most every 3s while typing
+  continues, and `false` after 3.5s idle / on send / on blur / on unmount. The
+  server relays `{id, name, typing}` to everyone else (and a `false` when a
+  typer disconnects); receivers expire a stale typer after 5s. Never stored.
 
 **Status: done.**
 

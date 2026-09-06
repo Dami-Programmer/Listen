@@ -52,13 +52,22 @@ export const EVENTS = {
   //   CHAT_MESSAGE : server -> everyone in the room, one stored message:
   //     { id, from, name, text, kind: 'text'|'sticker', ts }
   //   Recent history (last 100) rides along in the join-room ack as `chat`.
+  //   CHAT_TYPING : the iMessage-style "someone is typing" ping. Client -> server
+  //     { typing: bool } while the composer has focus + content; server relays
+  //     { id, name, typing } to everyone else. Ephemeral — never stored, never in
+  //     room-state. Receivers expire a typer after a few seconds in case the
+  //     "false" is lost.
   CHAT_SEND: 'chat-send',
   CHAT_MESSAGE: 'chat-message',
+  CHAT_TYPING: 'chat-typing',
 
   // WebRTC signaling relay (Phase 2).
   // One event carries every kind of negotiation message between two peers:
   // an SDP offer, an SDP answer, or an ICE candidate. The server doesn't look
-  // inside the payload — it just forwards it to the target socket.
+  // inside the payload — it just forwards it to the target socket. Using a
+  // single event (instead of separate offer/answer/ice events) keeps the relay
+  // to one handler and matches the "perfect negotiation" pattern on the client,
+  // which treats offers and answers almost identically.
   //
   // Payload shape (client <-> server):
   //   { targetId, description }  -> an RTCSessionDescription (offer or answer)
