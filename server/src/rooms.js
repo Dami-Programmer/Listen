@@ -95,10 +95,13 @@ export function setRole(room, socketId, role) {
   participant.role = role;
 
   // A demoted speaker can't be "the active speaker" any more — drop them from
-  // the talking list so the glow moves on immediately (Phase 6). Covers
+  // the talking list so the glow moves on immediately (Phase 6). And in a
+  // moderated room only the host + speakers may screen share, so drop them from
+  // `sharing` too (their client stops the media cooperatively). Covers
   // revoke-floor, clear-floor and the open -> moderated flip in one place.
   if (role === ROLES.LISTENER) {
     room.speaking = room.speaking.filter((id) => id !== socketId);
+    delete room.sharing[socketId];
   }
 }
 
@@ -256,10 +259,16 @@ export function addChatMessage(room, message) {
  * sharing its screen, keyed by socketId -> its screen MediaStream id so every
  * client can pick the screen track out of that peer's inbound media. The media
  * itself is renegotiated peer-to-peer; this is just the room-wide "who".
+ *
+ * In a MODERATED room only the host + speakers may share — a listener's request
+ * to start is ignored (they can always stop). Turning off is always allowed so
+ * cleanup can't get stuck.
  */
 export function setSharing(room, socketId, on, streamId) {
-  if (!room || !room.participants[socketId]) return;
+  const participant = room?.participants[socketId];
+  if (!participant) return;
   if (on && typeof streamId === 'string' && streamId) {
+    if (room.mode === MODES.MODERATED && participant.role === ROLES.LISTENER) return;
     room.sharing[socketId] = streamId;
   } else {
     delete room.sharing[socketId];

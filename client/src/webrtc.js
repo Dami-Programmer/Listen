@@ -407,6 +407,13 @@ export function useCall({ selfId, participants, inCall, sharing = {} }) {
   // Stop sharing when the call unmounts.
   useEffect(() => () => stopShare(), [stopShare]);
 
+  // In a moderated room only the host + speakers may screen share, so if my
+  // role drops to 'listener' while I'm sharing, stop (the server has already
+  // dropped me from `room.sharing`; this stops the actual media).
+  useEffect(() => {
+    if (isListener && screenStreamRef.current) stopShare();
+  }, [isListener, stopShare]);
+
   // --- controls: flip the track's `enabled` flag ---------------------------
   const toggleMic = useCallback(() => {
     if (isListener) return;

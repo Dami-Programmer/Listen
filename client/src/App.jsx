@@ -26,8 +26,8 @@ function RolePill({ role }) {
   return <span className={`pill pill-${role}`}>{role === ROLES.HOST ? '★ host' : role}</span>;
 }
 
-// Start / stop sharing this tab's screen. Available to everyone, listeners
-// included — sharing is independent of the speaker floor.
+// Start / stop sharing this tab's screen. In a moderated room only the host +
+// speakers get this button; listeners don't (the server enforces it too).
 function ShareScreenButton({ sharing, onStart, onStop }) {
   if (!navigator.mediaDevices?.getDisplayMedia) return null;
   return (
@@ -482,8 +482,8 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
       </div>
 
       {/* A listener's mic/camera aren't theirs to control in a moderated room —
-          instead they get a raise-hand toggle that puts them in the queue. But
-          anyone, listener or not, can share their screen. */}
+          instead they get a raise-hand toggle that puts them in the queue. In a
+          moderated room only the host + speakers can screen share. */}
       {isListener ? (
         <div className="listener-note">
           <p>
@@ -492,12 +492,9 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
               ? `you're #${myQueuePos + 1} in line for the floor.`
               : 'raise your hand to ask for the floor.'}
           </p>
-          <span className="actions">
-            <ShareScreenButton sharing={sharingScreen} onStart={startShare} onStop={stopShare} />
-            <button className={handRaised ? 'off' : ''} onClick={handRaised ? lowerHand : raiseHand}>
-              {handRaised ? '✋ Lower hand' : '✋ Raise hand'}
-            </button>
-          </span>
+          <button className={handRaised ? 'off' : ''} onClick={handRaised ? lowerHand : raiseHand}>
+            {handRaised ? '✋ Lower hand' : '✋ Raise hand'}
+          </button>
         </div>
       ) : (
         <div className="controls">

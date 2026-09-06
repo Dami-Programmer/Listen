@@ -93,7 +93,9 @@ top of the Phase 2 call:
   sticker tray (large emoji stickers, no image assets). Recent history arrives
   in the join ack so late joiners catch up. A `chat-typing` relay drives the
   iMessage-style bouncing-dots "X is typing" row.
-- **Screen sharing:** anyone can share (listeners included), several at once.
+- **Screen sharing:** in an open room anyone can share; in a moderated room only
+  the host + speakers can (a listener has no Share button, the server rejects it,
+  and a demoted speaker's share is dropped). Several people can share at once.
   `webrtc.js` moved to the *perfect negotiation* pattern so screen tracks can be
   added/removed mid-call; `screen-share {on, streamId}` puts `room.sharing` in
   every snapshot so clients can pick the screen track out of a peer's media.

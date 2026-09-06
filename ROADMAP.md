@@ -220,8 +220,12 @@ regardless of speaking state, so "revoke mid-speech" needed no server change.
 - `screen-share {on, streamId}` — the server keeps `room.sharing`
   (socketId → the screen MediaStream's id) and puts it in every snapshot, so
   each client can pick the screen track out of a peer's inbound media and label
-  the tile. Cleared on stop and on disconnect. Independent of role — listeners
-  can share.
+  the tile. Cleared on stop and on disconnect.
+- **In an open room anyone can share; in a moderated room only the host +
+  speakers can.** `setSharing` ignores a listener's start request, and `setRole`
+  drops a demoted speaker from `room.sharing` (so flipping to moderated / a
+  revoke also stops their share). Client mirror: no Share button for a listener,
+  and `webrtc.js` stops the media cooperatively when my role becomes `listener`.
 - Client: **one media stage, Google-Meet style.** No one presenting → the
   cameras are a responsive grid. Someone presenting → the screen(s) fill the
   main area (16:9, let-boxed, one full-width or two side by side) and every
