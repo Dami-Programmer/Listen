@@ -15,6 +15,8 @@
 // media is peer-to-peer.
 // Phase 6 adds effect E: watch my own mic level and emit throttled
 // speaking: true/false so the server can elect the room's active speaker.
+// Phase 7 adds effect F: the host can FORCE_MUTE me — my client disables its
+// own mic track (media is peer-to-peer; the server can't).
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { EVENTS, ROLES } from '@listen/shared';
@@ -304,6 +306,22 @@ export function useCall({ selfId, participants, inCall }) {
       ctx.close();
     };
   }, [inCall, localStream, isListener]);
+
+  // --- effect F: the host can force-mute me (Phase 7) --------------------
+  // Media is peer-to-peer, so the server can't mute anyone — it relays a
+  // FORCE_MUTE to my socket and my client disables its own mic track. I can
+  // press "Unmute mic" myself afterwards; this isn't a lock.
+  useEffect(() => {
+    function onForceMute() {
+      const track = localStreamRef.current?.getAudioTracks()[0];
+      if (track && track.enabled) {
+        track.enabled = false;
+        setMicOn(false);
+      }
+    }
+    socket.on(EVENTS.FORCE_MUTE, onForceMute);
+    return () => socket.off(EVENTS.FORCE_MUTE, onForceMute);
+  }, []);
 
   // --- controls: flip the track's `enabled` flag ---------------------------
   // A listener can't use these — in a moderated room the mic isn't theirs to

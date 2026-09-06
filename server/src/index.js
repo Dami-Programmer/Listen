@@ -1,17 +1,19 @@
-// Phase 1 + 2 + 3 + 4 + 5 + 6: signaling + moderation server.
+// Signaling + moderation server.
 //
 // Phase 1 — the server owns all room state (see rooms.js). Every state change is
 // broadcast as a full room-state snapshot so clients never reconstruct state
 // incrementally.
 //
 // Phase 2 — the server also relays WebRTC negotiation messages between peers
-// (the RTC_SIGNAL handler below). The media itself flows browser-to-browser and
-// never touches this server.
+// (the RTC_SIGNAL handler below). The media itself (audio/video) flows
+// browser-to-browser and never touches this server; all we do is pass the
+// "let's connect" paperwork (SDP offers/answers and ICE candidates) from one
+// socket to another. This is what "signaling server" means.
 //
-// Phases 4-6 — host-authoritative moderation. Every host-only action is
+// Phases 4-7 — host-authoritative moderation. Every host-only action is
 // re-checked here (requireHostRoom) regardless of what the client shows. Since
-// media is peer-to-peer, "listener" is cooperative: the server asks the
-// target's client to disable its own tracks.
+// media is peer-to-peer, "mute" and "listener" are cooperative: the server asks
+// the target's client to disable its own tracks.
 
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -29,6 +31,7 @@ import {
   lowerHand,
   raiseHand,
   removeParticipant,
+  reorderQueue,
   revokeFloor,
   setMode,
   setSpeaking,
@@ -47,7 +50,7 @@ app.use(cors({ origin: CLIENT_ORIGIN }));
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, phase: 6, time: new Date().toISOString() });
+  res.json({ ok: true, phase: 7, time: new Date().toISOString() });
 });
 
 const server = http.createServer(app);
@@ -67,8 +70,8 @@ function broadcastRoom(roomId) {
 //
 // The timer is per (room, socket). It is armed the moment we hear
 // "speaking: false" and cleared the instant they speak again — or leave, or are
-// revoked, or the room re-opens. The host is exempt: armSilence bails on any
-// non-speaker role.
+// revoked, or the room re-opens. A freshly granted speaker has NO timer until
+// their first word. The host is exempt: armSilence bails on any non-speaker role.
 const SILENCE_MS = 5000;
 const silenceTimers = new Map(); // `${roomId}::${socketId}` -> Timeout
 
@@ -117,7 +120,7 @@ function enforceSilence(roomId, socketId) {
 
   revokeFloor(room, socketId);
   const next = room.queue[0];
-  if (next) grantFloor(room, next);
+  if (next) grantFloor(room, next); // promoted; their timer waits for word one
   console.log(
     `[room ${roomId}] silence timeout: ${socketId} lost the floor` +
       (next ? `, ${next} promoted` : ' (queue empty)'),
@@ -173,7 +176,7 @@ io.on('connection', (socket) => {
       return;
     }
 
-    setMode(room, mode);
+    setMode(room, mode); // recomputes every non-host role
     clearRoomSilence(joinedRoomId);
     console.log(`[room ${joinedRoomId}] mode -> ${mode} (by host ${socket.id})`);
     ack?.({ ok: true });
@@ -181,6 +184,11 @@ io.on('connection', (socket) => {
   });
 
   // --- Phase 5: hand-raising & the speaker queue --------------------------
+  //
+  // Two listener-driven events (raise / lower my own hand) and the host-only
+  // grant / revoke / clear. The host-only ones reuse the "must be room.hostId"
+  // rejection from set-mode above.
+
   function requireHostRoom(ack) {
     const room = getRoom(joinedRoomId);
     if (!room) {
@@ -198,11 +206,13 @@ io.on('connection', (socket) => {
   socket.on(EVENTS.RAISE_HAND, (_payload, ack) => {
     const room = getRoom(joinedRoomId);
     if (!room) return ack?.({ ok: false, error: 'not in a room' });
-    raiseHand(room, socket.id);
+    raiseHand(room, socket.id); // no-op unless I'm a listener in a moderated room
     ack?.({ ok: true });
     broadcastRoom(joinedRoomId);
   });
 
+  // A listener lowers their own hand; the host may lower anyone's ("Dismiss"
+  // in the dashboard) by passing { targetId }.
   socket.on(EVENTS.LOWER_HAND, ({ targetId } = {}, ack) => {
     const room = getRoom(joinedRoomId);
     if (!room) return ack?.({ ok: false, error: 'not in a room' });
@@ -223,7 +233,7 @@ io.on('connection', (socket) => {
   socket.on(EVENTS.GRANT_FLOOR, ({ targetId } = {}, ack) => {
     const room = requireHostRoom(ack);
     if (!room) return;
-    grantFloor(room, targetId);
+    grantFloor(room, targetId); // listener -> speaker, off the queue
     clearSilence(joinedRoomId, targetId); // fresh start; timer waits for word one
     console.log(`[room ${joinedRoomId}] grant floor -> ${targetId}`);
     ack?.({ ok: true });
@@ -233,7 +243,7 @@ io.on('connection', (socket) => {
   socket.on(EVENTS.REVOKE_FLOOR, ({ targetId } = {}, ack) => {
     const room = requireHostRoom(ack);
     if (!room) return;
-    revokeFloor(room, targetId);
+    revokeFloor(room, targetId); // speaker -> listener
     clearSilence(joinedRoomId, targetId);
     console.log(`[room ${joinedRoomId}] revoke floor -> ${targetId}`);
     ack?.({ ok: true });
@@ -243,18 +253,73 @@ io.on('connection', (socket) => {
   socket.on(EVENTS.CLEAR_FLOOR, (_payload, ack) => {
     const room = requireHostRoom(ack);
     if (!room) return;
-    clearFloor(room);
+    clearFloor(room); // every non-host speaker -> listener
     clearRoomSilence(joinedRoomId);
     console.log(`[room ${joinedRoomId}] floor cleared by host ${socket.id}`);
     ack?.({ ok: true });
     broadcastRoom(joinedRoomId);
   });
 
+  // --- Phase 7: full host moderation controls ---------------------------
+  //
+  // Host-only actions on a specific participant. All reuse requireHostRoom and,
+  // like the Phase 5 handlers, target a socketId that must be a real member of
+  // the host's own room (and never the host themselves).
+
+  function requireTarget(room, targetId, ack) {
+    if (!targetId || !room.participants[targetId]) {
+      ack?.({ ok: false, error: 'unknown participant' });
+      return null;
+    }
+    if (targetId === socket.id) {
+      ack?.({ ok: false, error: 'that action cannot target yourself' });
+      return null;
+    }
+    return targetId;
+  }
+
+  // Force-mute: the server can't touch peer-to-peer media, so it just asks the
+  // target's client to disable its own mic track. Cooperative — they can unmute
+  // themselves again. No room state changes, so no broadcast.
+  socket.on(EVENTS.FORCE_MUTE, ({ targetId } = {}, ack) => {
+    const room = requireHostRoom(ack);
+    if (!room) return;
+    const target = requireTarget(room, targetId, ack);
+    if (!target) return;
+    io.to(target).emit(EVENTS.FORCE_MUTE);
+    console.log(`[room ${joinedRoomId}] host ${socket.id} muted ${target}`);
+    ack?.({ ok: true });
+  });
+
+  // Remove from call: tell the target why, then drop their socket. The normal
+  // 'disconnect' handler below does the room cleanup + broadcast. A client that
+  // is disconnected by the server does not auto-reconnect, so they land back on
+  // the join screen and can rejoin if they want.
+  socket.on(EVENTS.REMOVE_PARTICIPANT, ({ targetId } = {}, ack) => {
+    const room = requireHostRoom(ack);
+    if (!room) return;
+    const target = requireTarget(room, targetId, ack);
+    if (!target) return;
+    const targetSocket = io.sockets.sockets.get(target);
+    console.log(`[room ${joinedRoomId}] host ${socket.id} removed ${target}`);
+    ack?.({ ok: true });
+    if (targetSocket) {
+      targetSocket.emit(EVENTS.REMOVED);
+      targetSocket.disconnect(true);
+    }
+  });
+
+  // Reorder the queue. `order` must be a permutation of the current queue —
+  // reorderQueue rejects anything else, so a stale list is a safe no-op.
+  socket.on(EVENTS.REORDER_QUEUE, ({ order } = {}, ack) => {
+    const room = requireHostRoom(ack);
+    if (!room) return;
+    reorderQueue(room, order);
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
   // --- Phase 6: active-speaker pings -------------------------------------
-  // The client sends this only when its own mic level crosses the talk
-  // threshold (rising) or has been quiet for a beat (falling). We record it,
-  // start or cancel the silence timer, and re-broadcast so every client can
-  // move the "active speaker" glow. Fire-and-forget — no ack.
   socket.on(EVENTS.SPEAKING, ({ speaking } = {}) => {
     const room = getRoom(joinedRoomId);
     if (!room) return;
@@ -263,9 +328,9 @@ io.on('connection', (socket) => {
     const changed = setSpeaking(room, socket.id, on);
 
     if (on) {
-      clearSilence(joinedRoomId, socket.id);
+      clearSilence(joinedRoomId, socket.id); // talking -> stop any quiet clock
     } else if (changed) {
-      armSilence(joinedRoomId, socket.id);
+      armSilence(joinedRoomId, socket.id); // just went quiet -> start it
     }
 
     if (changed) broadcastRoom(joinedRoomId);
@@ -280,8 +345,8 @@ io.on('connection', (socket) => {
 
     io.to(targetId).emit(EVENTS.RTC_SIGNAL, {
       from: socket.id,
-      description,
-      candidate,
+      description, // present for an SDP offer/answer, undefined for ICE
+      candidate, // present for an ICE candidate, undefined for SDP
     });
   });
 

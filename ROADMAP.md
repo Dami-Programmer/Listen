@@ -154,6 +154,25 @@ clear-floor / mode flip / disconnect / host-promotion. The host is exempt.
 
 **Deliverable:** polished host dashboard; host can fully run the room.
 
+**Status: done.** Three new host-only events in `server/src/index.js`, each
+re-checked with `requireHostRoom` + a `requireTarget` guard (real member of my
+room, never myself):
+
+- `force-mute {targetId}` — media is peer-to-peer so the server can't mute
+  anyone; it relays `FORCE_MUTE` to the target and `webrtc.js` effect F disables
+  that client's own mic track. Cooperative — they can unmute. Works in open mode.
+- `remove-participant {targetId}` — emits `REMOVED` to the target then
+  `socket.disconnect(true)`; the existing `disconnect` handler does the cleanup,
+  and a server-closed socket doesn't auto-reconnect, so the client lands on the
+  join screen with "The host removed you".
+- `reorder-queue {order}` — `reorderQueue` in `rooms.js` accepts only a
+  permutation of the current queue (dropping someone is still `lower-hand`).
+
+Client: the raised-hands dashboard gained ↑/↓ reorder arrows; the participants
+list gained per-person **Grant** (hand the floor to one specific listener),
+**Revoke** (take it back mid-speech), **Mute**, and **Remove**. `window.confirm`
+gates Remove and Clear floor.
+
 ## Phase 8 — Resilience & deploy
 
 **Goal:** works outside localhost.

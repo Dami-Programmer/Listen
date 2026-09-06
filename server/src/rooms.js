@@ -154,6 +154,23 @@ export function clearFloor(room) {
 }
 
 /**
+ * Phase 7 — host re-orders the queue.
+ *
+ * `order` must be a permutation of the CURRENT queue: same ids, same count, no
+ * duplicates. Anything else (a stale list, someone who just lowered their hand)
+ * is rejected wholesale — the client will get a fresh snapshot and can retry.
+ * Removing someone from the queue is `lowerHand`, not a short `order`.
+ */
+export function reorderQueue(room, order) {
+  if (!room || !Array.isArray(order)) return;
+  if (order.length !== room.queue.length) return;
+  if (new Set(order).size !== order.length) return;
+  const current = new Set(room.queue);
+  if (!order.every((id) => current.has(id))) return;
+  room.queue = [...order];
+}
+
+/**
  * Phase 6 — record whether a socket is currently talking.
  *
  * The client sends this only on a transition, so we only ever add someone who

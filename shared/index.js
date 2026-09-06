@@ -23,9 +23,26 @@ export const EVENTS = {
   // Phase 6 — active-speaker detection.
   // Each client watches its OWN mic level (Web Audio) and sends this only when
   // the boolean flips: { speaking: true } when it starts talking, then
-  // { speaking: false } a beat after it stops. The server times the silence and
-  // elects the active speaker itself.
+  // { speaking: false } a beat after it stops. No payload beyond that flag —
+  // the server times the silence and elects the active speaker itself.
   SPEAKING: 'speaking',
+
+  // Phase 7 — full host moderation controls.
+  //   FORCE_MUTE : host -> server -> ONE target. The server can't mute anyone
+  //     (media is peer-to-peer), so it just asks that client to disable its own
+  //     mic track. Payload host->server: { targetId }. Server->target: no payload.
+  //     The target may unmute themselves again afterwards.
+  //   REMOVE_PARTICIPANT : host -> server. Kick { targetId } from the call — the
+  //     server tells them (REMOVED) then drops their socket.
+  //   REMOVED : server -> the kicked client, just before its socket is closed,
+  //     so the UI can say why instead of showing a reconnect spinner.
+  //   REORDER_QUEUE : host -> server: { order: [socketId, ...] } — a reordering
+  //     of exactly the people already queued (used for move-up / move-down and,
+  //     later, drag-and-drop). Dropping an id is done via LOWER_HAND instead.
+  FORCE_MUTE: 'force-mute',
+  REMOVE_PARTICIPANT: 'remove-participant',
+  REMOVED: 'removed',
+  REORDER_QUEUE: 'reorder-queue',
 
   // WebRTC signaling relay (Phase 2).
   // One event carries every kind of negotiation message between two peers:

@@ -43,7 +43,7 @@ npm run dev
 
 ## Current status
 
-**Phase 6 complete.** Active-speaker glow + the automated silence rule, on top of Phases 2-5.
+**Phase 7 complete.** Full host moderation controls, on top of Phases 2-6.
 
 - Join screen → in-call view. `getUserMedia({ audio, video })`, local preview.
 - One `RTCPeerConnection` per other participant; offer/answer/ICE relayed by the

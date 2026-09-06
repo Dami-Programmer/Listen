@@ -340,3 +340,26 @@ button.small {
     0 0 0 2px #7ee787,
     0 0 18px rgba(126, 231, 135, 0.45);
 }
+
+/* --- Phase 7: full host moderation controls --- */
+
+/* The per-participant action cluster can get wide (Grant / Mute / Remove +
+   pill); let it wrap instead of shoving the name off-screen. */
+.actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* Destructive action (Remove a participant) — reads red even as a ghost button. */
+button.ghost.danger {
+  border-color: #5c2a28;
+  color: #ff7b72;
+}
+button.ghost.danger:hover:not(:disabled) {
+  background: #2a1614;
+}
+
+/* Up / down arrows in the queue sit tight together. */
+.card.queue .actions button.small {
+  min-width: 1.9rem;
+}
