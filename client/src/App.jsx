@@ -281,6 +281,40 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
   // peerId -> participant, for labelling remote tiles with name + role.
   const peerOf = (id) => participants.find((p) => p.id === id);
 
+  // --- one media stage, Google-Meet style -------------------------------
+  // Camera tiles for everyone (me first). If anyone is screen sharing, the
+  // screen(s) fill the main area and these cameras drop into a filmstrip;
+  // otherwise the cameras ARE the main grid.
+  const cameraTiles = [
+    localStream && {
+      key: 'me',
+      stream: localStream,
+      label: `${self?.name ?? 'You'} (you)`,
+      role: self?.role,
+      speaking: activeSpeakerId === selfId,
+      muted: true,
+      mirror: true,
+    },
+    ...remotes.map(({ id, stream }) => ({
+      key: id,
+      stream,
+      label: peerOf(id)?.name ?? 'Guest',
+      role: peerOf(id)?.role,
+      speaking: activeSpeakerId === id,
+    })),
+  ].filter(Boolean);
+
+  const screenTiles = [
+    screenStream && { key: 'me', stream: screenStream, label: 'Your screen', muted: true },
+    ...remoteScreens.map(({ id, stream }) => ({
+      key: id,
+      stream,
+      label: `${peerOf(id)?.name ?? 'Guest'}'s screen`,
+    })),
+  ].filter(Boolean);
+
+  const presenting = screenTiles.length > 0;
+
   // Participant list sorted host-first, then speakers, then listeners, then A-Z.
   const ordered = [...participants].sort(
     (a, b) => (ROLE_RANK[a.role] ?? 9) - (ROLE_RANK[b.role] ?? 9) || a.name.localeCompare(b.name),
@@ -412,47 +446,39 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
 
       {mediaError && <p className="err">{mediaError}</p>}
 
-      {/* Screen shares — anyone can share, several at once. Shown big, above the
-          camera grid, with the picture let-boxed (object-fit: contain). */}
-      {(screenStream || remoteScreens.length > 0) && (
-        <div className="screens">
-          {screenStream && (
-            <VideoTile stream={screenStream} label="Your screen" screen muted />
-          )}
-          {remoteScreens.map(({ id, stream }) => (
+      {/* One stage. Presenting → screen(s) fill the main area, cameras become a
+          filmstrip. Not presenting → the cameras are the main grid. */}
+      <div className={`stage${presenting ? ' presenting' : ''}`}>
+        <div className="stage-main">
+          {(presenting ? screenTiles : cameraTiles).map((t) => (
             <VideoTile
-              key={`screen-${id}`}
-              stream={stream}
-              label={`${peerOf(id)?.name ?? 'Guest'}'s screen`}
-              screen
+              key={presenting ? `screen-${t.key}` : t.key}
+              stream={t.stream}
+              label={t.label}
+              role={t.role}
+              speaking={t.speaking}
+              muted={t.muted}
+              mirror={t.mirror}
+              screen={presenting}
             />
           ))}
         </div>
-      )}
 
-      <div className="grid">
-        {localStream && (
-          <VideoTile
-            stream={localStream}
-            label={`${self?.name ?? 'You'} (you)`}
-            role={self?.role}
-            speaking={activeSpeakerId === selfId}
-            muted
-            mirror
-          />
+        {presenting && cameraTiles.length > 0 && (
+          <div className="stage-strip">
+            {cameraTiles.map((t) => (
+              <VideoTile
+                key={t.key}
+                stream={t.stream}
+                label={t.label}
+                role={t.role}
+                speaking={t.speaking}
+                muted={t.muted}
+                mirror={t.mirror}
+              />
+            ))}
+          </div>
         )}
-        {remotes.map(({ id, stream }) => {
-          const peer = peerOf(id);
-          return (
-            <VideoTile
-              key={id}
-              stream={stream}
-              label={peer?.name ?? 'Guest'}
-              role={peer?.role}
-              speaking={activeSpeakerId === id}
-            />
-          );
-        })}
       </div>
 
       {/* A listener's mic/camera aren't theirs to control in a moderated room —

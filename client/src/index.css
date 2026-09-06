@@ -79,14 +79,6 @@ h1 {
   max-width: 900px;
 }
 
-/* Responsive tile grid: as many ~260px columns as fit, then wrap. */
-.grid {
-  margin-top: 24px;
-  display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-}
-
 .tile {
   position: relative;
   aspect-ratio: 4 / 3;
@@ -538,22 +530,65 @@ button.ghost.danger:hover:not(:disabled) {
   }
 }
 
-/* --- Screen sharing (added after in-call chat) --- */
+/* --- one media stage (Google-Meet style) --- */
 
-/* Screen shares sit above the camera grid, bigger and wider. */
-.screens {
+.stage {
   margin-top: 24px;
-  display: grid;
+  display: flex;
   gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  align-items: flex-start;
 }
 
+/* Not presenting: the main area IS the camera grid — as many ~220px columns as
+   fit, then wrap. */
+.stage-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+/* Presenting: the screen(s) fill the main area (one full-width, two side by
+   side if there's room), and every camera drops into the filmstrip. */
+.stage.presenting .stage-main {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr));
+}
+.stage.presenting .stage-main .tile-screen {
+  max-height: 70vh;
+}
+
+.stage-strip {
+  width: 176px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+/* Screen share: 16:9 and shown whole (not cropped like a camera). */
 .tile.tile-screen {
   aspect-ratio: 16 / 9;
   background: #000;
 }
-
-/* A screen should be shown whole, not cropped like a camera. */
 .tile.tile-screen video {
   object-fit: contain;
+}
+
+@media (max-width: 720px) {
+  .stage {
+    flex-direction: column;
+  }
+  .stage-strip {
+    width: auto;
+    flex-direction: row;
+    max-height: none;
+    overflow-x: auto;
+  }
+  .stage-strip .tile {
+    width: 140px;
+    flex-shrink: 0;
+  }
 }

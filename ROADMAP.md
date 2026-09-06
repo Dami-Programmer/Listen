@@ -222,10 +222,12 @@ regardless of speaking state, so "revoke mid-speech" needed no server change.
   each client can pick the screen track out of a peer's inbound media and label
   the tile. Cleared on stop and on disconnect. Independent of role — listeners
   can share.
-- Client: screen shares render above the camera grid, 16:9 and let-boxed
-  (`object-fit: contain`); a **Share screen / Stop sharing** button in the
-  controls (and next to a listener's raise-hand). Needs HTTPS off localhost
-  (Phase 8).
+- Client: **one media stage, Google-Meet style.** No one presenting → the
+  cameras are a responsive grid. Someone presenting → the screen(s) fill the
+  main area (16:9, let-boxed, one full-width or two side by side) and every
+  camera drops into a right-hand filmstrip (a horizontal scroller on narrow
+  screens). A **Share screen / Stop sharing** button in the controls (and next
+  to a listener's raise-hand). Needs HTTPS off localhost (Phase 8).
 
 **Status: done.**
 

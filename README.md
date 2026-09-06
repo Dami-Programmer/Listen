@@ -97,8 +97,9 @@ top of the Phase 2 call:
   `webrtc.js` moved to the *perfect negotiation* pattern so screen tracks can be
   added/removed mid-call; `screen-share {on, streamId}` puts `room.sharing` in
   every snapshot so clients can pick the screen track out of a peer's media.
-  Screens render big and let-boxed above the camera grid. Needs HTTPS off
-  localhost.
+  **One media stage, Google-Meet style:** no one presenting → cameras are a
+  grid; someone presenting → the screen fills the main area and the cameras
+  become a filmstrip. Needs HTTPS off localhost.
 
 Test: open 3–4 tabs at http://localhost:5173/?room=demo, allow camera in each.
 Talking in one tab glows that tile everywhere. As the host, flip to Moderated,
