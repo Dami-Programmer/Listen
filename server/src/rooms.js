@@ -25,6 +25,8 @@ import { MODES, ROLES } from '@listen/shared';
  *                        // (Phase 6)
  *   chat: object[]       // recent in-call chat messages, oldest first, capped
  *                        // at CHAT_HISTORY (added after Phase 7)
+ *   sharing: object      // socketId -> the id of that peer's screen MediaStream,
+ *                        // for everyone currently screen sharing
  * }
  */
 const rooms = new Map();
@@ -40,6 +42,7 @@ function createRoom() {
     queue: [],
     speaking: [],
     chat: [],
+    sharing: {},
   };
 }
 
@@ -249,6 +252,21 @@ export function addChatMessage(room, message) {
 }
 
 /**
+ * Screen sharing (added after in-call chat). Record that a socket is / isn't
+ * sharing its screen, keyed by socketId -> its screen MediaStream id so every
+ * client can pick the screen track out of that peer's inbound media. The media
+ * itself is renegotiated peer-to-peer; this is just the room-wide "who".
+ */
+export function setSharing(room, socketId, on, streamId) {
+  if (!room || !room.participants[socketId]) return;
+  if (on && typeof streamId === 'string' && streamId) {
+    room.sharing[socketId] = streamId;
+  } else {
+    delete room.sharing[socketId];
+  }
+}
+
+/**
  * Remove a participant from whatever room they're in.
  * If the host left, promote the next participant (insertion order).
  * If the room is now empty, delete it.
@@ -263,6 +281,7 @@ export function removeParticipant(socketId) {
     delete room.participants[socketId];
     room.queue = room.queue.filter((id) => id !== socketId);
     room.speaking = room.speaking.filter((id) => id !== socketId);
+    delete room.sharing[socketId];
 
     const remaining = Object.keys(room.participants);
     if (remaining.length === 0) {
@@ -299,6 +318,8 @@ export function snapshot(roomId) {
     // The elected active speaker: whoever started talking most recently and
     // hasn't stopped. null when the room is silent. (Phase 6)
     activeSpeakerId: room.speaking[room.speaking.length - 1] ?? null,
+    // socketId -> screen MediaStream id, for everyone currently screen sharing.
+    sharing: { ...room.sharing },
   };
 }
 

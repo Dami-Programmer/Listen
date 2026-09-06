@@ -35,6 +35,7 @@ import {
   reorderQueue,
   revokeFloor,
   setMode,
+  setSharing,
   setSpeaking,
   snapshot,
 } from './rooms.js';
@@ -388,6 +389,19 @@ io.on('connection', (socket) => {
       name: participant.name,
       typing: typing === true,
     });
+  });
+
+  // --- Screen sharing (added after in-call chat) -----------------------
+  // Anyone in the room may share, several at once. This only records WHO is
+  // sharing and the id of their screen stream (so clients can pick the screen
+  // track out of that peer's inbound media) — the media itself is renegotiated
+  // peer-to-peer. Fire-and-forget.
+  socket.on(EVENTS.SCREEN_SHARE, ({ on, streamId } = {}) => {
+    const room = getRoom(joinedRoomId);
+    if (!room || !room.participants[socket.id]) return;
+    setSharing(room, socket.id, on === true, streamId);
+    console.log(`[room ${joinedRoomId}] ${socket.id} screen-share ${on ? 'on' : 'off'}`);
+    broadcastRoom(joinedRoomId);
   });
 
   // --- Phase 6: active-speaker pings -------------------------------------

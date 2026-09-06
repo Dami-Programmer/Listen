@@ -49,7 +49,8 @@ The placeholder page fetches the health check, so if both are running you'll see
 
 ## Current status
 
-**Phase 7 complete.** Host-authoritative moderation on top of the Phase 2 call:
+**Phase 7 + chat + screen sharing complete.** Host-authoritative moderation on
+top of the Phase 2 call:
 
 - **Phase 1–2:** server owns room state (`join-room` / `room-state` / host
   promotion); WebRTC negotiation relayed via one `rtc-signal` event; mesh
@@ -92,13 +93,19 @@ The placeholder page fetches the health check, so if both are running you'll see
   sticker tray (large emoji stickers, no image assets). Recent history arrives
   in the join ack so late joiners catch up. A `chat-typing` relay drives the
   iMessage-style bouncing-dots "X is typing" row.
+- **Screen sharing:** anyone can share (listeners included), several at once.
+  `webrtc.js` moved to the *perfect negotiation* pattern so screen tracks can be
+  added/removed mid-call; `screen-share {on, streamId}` puts `room.sharing` in
+  every snapshot so clients can pick the screen track out of a peer's media.
+  Screens render big and let-boxed above the camera grid. Needs HTTPS off
+  localhost.
 
 Test: open 3–4 tabs at http://localhost:5173/?room=demo, allow camera in each.
 Talking in one tab glows that tile everywhere. As the host, flip to Moderated,
 **Grant** a raised hand, then have that speaker stay silent — after ~5 s the
 floor auto-passes to the next raised hand. **Mute** or **Remove** anyone from
 the participants list. Type in the chat, drop an emoji or a sticker, and open a
-fresh tab to confirm the last 100 messages replay on join. STUN only (localhost
-/ same Wi-Fi); TURN is Phase 8.
+fresh tab to confirm the last 100 messages replay on join. Hit **Share screen**
+in two tabs at once. STUN only (localhost / same Wi-Fi); TURN is Phase 8.
 
 Next: Phase 8 (TURN server, reconnect handling, deploy).

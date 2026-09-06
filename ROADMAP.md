@@ -203,6 +203,32 @@ regardless of speaking state, so "revoke mid-speech" needed no server change.
 
 **Status: done.**
 
+## Screen sharing (added after in-call chat, out of sequence)
+
+**Goal:** anyone in the room can share their screen; several at once.
+
+- **The signaling layer became renegotiation-capable.** `webrtc.js` no longer
+  has a single deterministic "caller" per pair — it uses the MDN *perfect
+  negotiation* pattern: both peers add their tracks, both may fire
+  `onnegotiationneeded`, and glare is resolved by a deterministic polite /
+  impolite role (lower socket id is polite). This is what makes adding a screen
+  track mid-call work.
+- `getDisplayMedia()` → the screen tracks are `addTrack`ed to every peer
+  connection (and to any connection opened later, while still sharing). Stopping
+  removes them and renegotiates. The browser's own "Stop sharing" bar is wired
+  up too.
+- `screen-share {on, streamId}` — the server keeps `room.sharing`
+  (socketId → the screen MediaStream's id) and puts it in every snapshot, so
+  each client can pick the screen track out of a peer's inbound media and label
+  the tile. Cleared on stop and on disconnect. Independent of role — listeners
+  can share.
+- Client: screen shares render above the camera grid, 16:9 and let-boxed
+  (`object-fit: contain`); a **Share screen / Stop sharing** button in the
+  controls (and next to a listener's raise-hand). Needs HTTPS off localhost
+  (Phase 8).
+
+**Status: done.**
+
 ## Phase 8 — Resilience & deploy
 
 **Goal:** works outside localhost.

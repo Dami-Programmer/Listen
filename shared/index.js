@@ -61,6 +61,16 @@ export const EVENTS = {
   CHAT_MESSAGE: 'chat-message',
   CHAT_TYPING: 'chat-typing',
 
+  // Screen sharing (added after in-call chat). Anyone in the room may share,
+  // and several people can share at once (mesh). The media itself is
+  // renegotiated peer-to-peer (perfect negotiation in webrtc.js); this event
+  // only tells the room WHO is sharing and WHICH inbound stream is the screen.
+  //   SCREEN_SHARE : client -> server { on, streamId }. `on:true` carries the
+  //     MediaStream id so every client can pick the screen track out of that
+  //     peer's inbound media; `on:false` stops. The server keeps
+  //     `room.sharing` (socketId -> streamId) and puts it in every snapshot.
+  SCREEN_SHARE: 'screen-share',
+
   // WebRTC signaling relay (Phase 2).
   // One event carries every kind of negotiation message between two peers:
   // an SDP offer, an SDP answer, or an ICE candidate. The server doesn't look

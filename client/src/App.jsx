@@ -26,6 +26,17 @@ function RolePill({ role }) {
   return <span className={`pill pill-${role}`}>{role === ROLES.HOST ? '★ host' : role}</span>;
 }
 
+// Start / stop sharing this tab's screen. Available to everyone, listeners
+// included — sharing is independent of the speaker floor.
+function ShareScreenButton({ sharing, onStart, onStop }) {
+  if (!navigator.mediaDevices?.getDisplayMedia) return null;
+  return (
+    <button className={sharing ? 'off' : ''} onClick={sharing ? onStop : onStart}>
+      {sharing ? '🖥 Stop sharing' : '🖥 Share screen'}
+    </button>
+  );
+}
+
 // Room id lives in the URL (?room=…). No accounts, no persistence.
 function readRoomFromUrl() {
   return new URLSearchParams(window.location.search).get('room') ?? '';
@@ -228,10 +239,26 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
   const participants = state?.participants ?? [];
   const self = participants.find((p) => p.id === selfId);
 
-  // The whole call: local camera, remote streams, mic/camera toggles, and
+  // socketId -> the id of that peer's screen MediaStream (room-state).
+  const sharing = state?.sharing ?? {};
+
+  // The whole call: local camera + screen, remote streams, toggles, and
   // (Phase 4) my role + whether I'm a muted listener.
-  const { localStream, remotes, micOn, camOn, toggleMic, toggleCam, mediaError, isListener } =
-    useCall({ selfId, participants, inCall: true });
+  const {
+    localStream,
+    screenStream,
+    remotes,
+    remoteScreens,
+    micOn,
+    camOn,
+    sharingScreen,
+    toggleMic,
+    toggleCam,
+    startShare,
+    stopShare,
+    mediaError,
+    isListener,
+  } = useCall({ selfId, participants, inCall: true, sharing });
 
   const isHost = self?.role === ROLES.HOST;
   const moderated = state?.mode === MODES.MODERATED;
@@ -385,6 +412,24 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
 
       {mediaError && <p className="err">{mediaError}</p>}
 
+      {/* Screen shares — anyone can share, several at once. Shown big, above the
+          camera grid, with the picture let-boxed (object-fit: contain). */}
+      {(screenStream || remoteScreens.length > 0) && (
+        <div className="screens">
+          {screenStream && (
+            <VideoTile stream={screenStream} label="Your screen" screen muted />
+          )}
+          {remoteScreens.map(({ id, stream }) => (
+            <VideoTile
+              key={`screen-${id}`}
+              stream={stream}
+              label={`${peerOf(id)?.name ?? 'Guest'}'s screen`}
+              screen
+            />
+          ))}
+        </div>
+      )}
+
       <div className="grid">
         {localStream && (
           <VideoTile
@@ -411,7 +456,8 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
       </div>
 
       {/* A listener's mic/camera aren't theirs to control in a moderated room —
-          instead they get a raise-hand toggle that puts them in the queue. */}
+          instead they get a raise-hand toggle that puts them in the queue. But
+          anyone, listener or not, can share their screen. */}
       {isListener ? (
         <div className="listener-note">
           <p>
@@ -420,9 +466,12 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
               ? `you're #${myQueuePos + 1} in line for the floor.`
               : 'raise your hand to ask for the floor.'}
           </p>
-          <button className={handRaised ? 'off' : ''} onClick={handRaised ? lowerHand : raiseHand}>
-            {handRaised ? '✋ Lower hand' : '✋ Raise hand'}
-          </button>
+          <span className="actions">
+            <ShareScreenButton sharing={sharingScreen} onStart={startShare} onStop={stopShare} />
+            <button className={handRaised ? 'off' : ''} onClick={handRaised ? lowerHand : raiseHand}>
+              {handRaised ? '✋ Lower hand' : '✋ Raise hand'}
+            </button>
+          </span>
         </div>
       ) : (
         <div className="controls">
@@ -432,6 +481,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
           <button className={camOn ? '' : 'off'} onClick={toggleCam}>
             {camOn ? 'Stop camera' : 'Start camera'}
           </button>
+          <ShareScreenButton sharing={sharingScreen} onStart={startShare} onStop={stopShare} />
           <button className="ghost" onClick={onLeave}>
             Leave call
           </button>

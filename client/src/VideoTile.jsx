@@ -1,4 +1,5 @@
-// One video square in the call grid.
+// One video surface — a camera tile in the grid, or (screen=true) a bigger
+// let-boxed screen-share panel.
 //
 // React can't hand a MediaStream to a <video> through JSX — `srcObject` is a
 // DOM-only property, not an HTML attribute — so we grab the element with a ref
@@ -19,6 +20,8 @@ import { useEffect, useRef } from 'react';
  *                                      small pill in the corner (Phase 3)
  * @param {boolean}    [props.speaking] this person is the room's active speaker
  *                                      right now — draw the glow (Phase 6)
+ * @param {boolean}    [props.screen]   this is a screen share — bigger, 16:9,
+ *                                      picture let-boxed, no mirror / role pill
  */
 export default function VideoTile({
   stream,
@@ -27,6 +30,7 @@ export default function VideoTile({
   mirror = false,
   role,
   speaking = false,
+  screen = false,
 }) {
   const videoRef = useRef(null);
 
@@ -36,16 +40,16 @@ export default function VideoTile({
   }, [stream]);
 
   return (
-    <div className={`tile${speaking ? ' speaking' : ''}`}>
+    <div className={`tile${speaking ? ' speaking' : ''}${screen ? ' tile-screen' : ''}`}>
       <video
         ref={videoRef}
         autoPlay
         playsInline
         muted={muted}
-        className={mirror ? 'mirror' : undefined}
+        className={mirror && !screen ? 'mirror' : undefined}
       />
       <span className="tile-label">{label}</span>
-      {role && (
+      {role && !screen && (
         <span className={`pill pill-${role} tile-role`}>{role === 'host' ? '★ host' : role}</span>
       )}
     </div>
