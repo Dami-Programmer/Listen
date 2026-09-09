@@ -260,6 +260,28 @@ power, and can drop them back to a listener at any time.
 
 **Status: done.**
 
+## Waiting room (added after co-host, out of sequence)
+
+**Goal:** anyone joining needs a moderator to let them in.
+
+- **Rooms start locked.** The first joiner (who creates the room) always
+  bypasses. Everyone after that lands in `room.waiting` — NOT in
+  `room.participants`, NOT in the Socket.IO room — so they get nothing (no
+  room-state, no chat, no media signaling) until admitted.
+- Server: `join-room` into a locked non-empty room acks `{ ok: true, waiting:
+  true }`; `admit` / `deny` (moderator-only, `{ socketId }`) move a waiter in
+  (server emits `admitted` with the full state) or turn them away (`denied`);
+  `set-lock { locked }` toggles the lock — unlocking admits everyone currently
+  waiting. Disconnecting from the lobby clears the entry. If a room empties
+  while someone waits, the oldest waiter is admitted as the new host so the
+  room survives.
+- `snapshot` carries `locked` + `waiting` (`[{ id, name }]`).
+- Client: a `<WaitingScreen>` ("waiting for the host to let you in…"); a
+  moderator gets a **Door locked / Door open** toggle and a **Waiting to join**
+  card with Admit / Deny per person.
+
+**Status: done.**
+
 ## Phase 8 — Resilience & deploy
 
 **Goal:** works outside localhost.

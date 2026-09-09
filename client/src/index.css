@@ -197,6 +197,18 @@ h1 {
 }
 
 /* Host's segmented Open | Moderated switch. */
+/* Moderator strip: mode toggle + door lock, side by side. */
+.mod-bar {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.mod-bar .mode-toggle {
+  margin-top: 0;
+}
+
 .mode-toggle {
   margin-top: 16px;
   display: inline-flex;

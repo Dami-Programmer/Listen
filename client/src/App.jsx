@@ -64,10 +64,13 @@ export default function App() {
   const [typers, setTypers] = useState({}); // socketId -> name, currently typing
   const [error, setError] = useState(null);
   const [connected, setConnected] = useState(false);
+  // true while we're in the locked room's waiting area, before a moderator lets
+  // us in.
+  const [waiting, setWaiting] = useState(false);
   // Safety timers so a typer disappears even if their "stopped" ping is lost.
   const typerTimersRef = useRef({});
-  // Set when the host kicks us — shown on the join screen so it doesn't just
-  // look like a dropped connection. Cleared on the next join attempt.
+  // Set when the host kicks us OR turns us away at the door — shown on the join
+  // screen so it doesn't just look like a dropped connection.
   const [removedNote, setRemovedNote] = useState(null);
 
   // Drop every "is typing" indicator and its safety timer.
@@ -86,9 +89,21 @@ export default function App() {
     function onDisconnect() {
       setConnected(false);
       setJoined(false);
+      setWaiting(false);
       setState(null);
       setChat([]);
       clearTypers();
+    }
+    function onAdmitted({ selfId: id, state: snap, chat: history }) {
+      setSelfId(id);
+      setState(snap);
+      setChat(history ?? []);
+      setWaiting(false);
+      setJoined(true);
+    }
+    function onDenied() {
+      setWaiting(false);
+      setRemovedNote('The host didn’t let you into the room.');
     }
     function onRoomState(snapshot) {
       setState(snapshot);
@@ -133,6 +148,8 @@ export default function App() {
     socket.on('room-state', onRoomState);
     socket.on('room-error', onRoomError);
     socket.on('removed', onRemoved);
+    socket.on('admitted', onAdmitted);
+    socket.on('denied', onDenied);
     socket.on('chat-message', onChatMessage);
     socket.on('chat-typing', onChatTyping);
 
@@ -142,6 +159,8 @@ export default function App() {
       socket.off('room-state', onRoomState);
       socket.off('room-error', onRoomError);
       socket.off('removed', onRemoved);
+      socket.off('admitted', onAdmitted);
+      socket.off('denied', onDenied);
       socket.off('chat-message', onChatMessage);
       socket.off('chat-typing', onChatTyping);
     };
@@ -161,7 +180,11 @@ export default function App() {
 
     if (!socket.connected) socket.connect();
     socket.emit('join-room', { roomId: id, name: name.trim() }, (ack) => {
-      if (ack?.ok) {
+      if (ack?.ok && ack.waiting) {
+        // Locked room — sit in the lobby until a moderator admits us.
+        setSelfId(ack.selfId);
+        setWaiting(true);
+      } else if (ack?.ok) {
         setSelfId(ack.selfId);
         setState(ack.state);
         setChat(ack.chat ?? []);
@@ -177,10 +200,15 @@ export default function App() {
     // stops the camera and closes every peer connection.
     socket.disconnect();
     setJoined(false);
+    setWaiting(false);
     setState(null);
     setSelfId(null);
     setChat([]);
     clearTypers();
+  }
+
+  if (waiting) {
+    return <WaitingScreen roomId={roomId} onCancel={handleLeave} />;
   }
 
   if (!joined) {
@@ -246,6 +274,28 @@ function JoinScreen({ roomId, name, error, note, onRoomId, onName, onSubmit }) {
   );
 }
 
+// --- the locked-room lobby -----------------------------------------------
+function WaitingScreen({ roomId, onCancel }) {
+  return (
+    <main className="page">
+      <h1>Listen</h1>
+      <p className="tagline">Moderated group calls.</p>
+
+      <div className="card join" aria-live="polite">
+        <p>
+          <strong>Knock knock 👋</strong>
+        </p>
+        <p className="tagline">
+          Waiting for the host to let you into <code>{roomId}</code>…
+        </p>
+        <button className="ghost" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </main>
+  );
+}
+
 // --- the in-call screen ----------------------------------------------------
 function CallView({ state, chat, typers, selfId, connected, onLeave }) {
   const participants = state?.participants ?? [];
@@ -277,6 +327,10 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
   const isModerator = isHost || self?.role === ROLES.COHOST;
   const cohostId = state?.cohostId ?? null;
   const moderated = state?.mode === MODES.MODERATED;
+
+  // Waiting room — people knocking to get in (moderator-only UI).
+  const locked = state?.locked ?? false;
+  const waiting = state?.waiting ?? [];
 
   // Phase 5 — the speaker queue, straight from the snapshot (socketIds, oldest
   // first). The server owns it; we only render it.
@@ -375,6 +429,11 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
       emit('demote-cohost', { targetId: p.id });
     }
   }
+
+  // Waiting room — moderator-only.
+  const admit = (id) => emit('admit', { socketId: id });
+  const deny = (id) => emit('deny', { socketId: id });
+  const toggleLock = () => emit('set-lock', { locked: !locked });
   // Move one queued person up (dir -1) or down (dir +1). The server only accepts
   // a full reordering of the current queue, so we send the whole new order.
   function moveInQueue(id, dir) {
@@ -401,21 +460,55 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
         </button>
       </div>
 
-      {/* A moderator (host or co-host) sees the toggle; everyone else sees a
-          banner when moderated. */}
+      {/* A moderator (host or co-host) sees the mode toggle + door lock;
+          everyone else sees a banner when moderated. */}
       {isModerator ? (
-        <div className="mode-toggle" role="group" aria-label="Room mode">
-          <button className={!moderated ? 'active' : ''} onClick={() => changeMode(MODES.OPEN)}>
-            Open
-          </button>
-          <button className={moderated ? 'active' : ''} onClick={() => changeMode(MODES.MODERATED)}>
-            Moderated
+        <div className="mod-bar">
+          <div className="mode-toggle" role="group" aria-label="Room mode">
+            <button className={!moderated ? 'active' : ''} onClick={() => changeMode(MODES.OPEN)}>
+              Open
+            </button>
+            <button
+              className={moderated ? 'active' : ''}
+              onClick={() => changeMode(MODES.MODERATED)}
+            >
+              Moderated
+            </button>
+          </div>
+          <button
+            className={`ghost small${locked ? ' danger' : ''}`}
+            onClick={toggleLock}
+            title={locked ? 'New people must be admitted' : 'Anyone with the link can join'}
+          >
+            {locked ? '🔒 Door locked' : '🔓 Door open'}
           </button>
         </div>
       ) : (
         moderated && (
           <p className="banner">🔒 Moderated — the host &amp; co-host control who speaks.</p>
         )
+      )}
+
+      {/* Moderator-only: people knocking to get into the locked room. */}
+      {isModerator && waiting.length > 0 && (
+        <div className="card queue">
+          <div className="row header">
+            <span>Waiting to join ({waiting.length})</span>
+          </div>
+          {waiting.map((w) => (
+            <div className="row" key={w.id}>
+              <span>{w.name}</span>
+              <span className="actions">
+                <button className="small" onClick={() => admit(w.id)}>
+                  Admit
+                </button>
+                <button className="ghost small danger" onClick={() => deny(w.id)}>
+                  Deny
+                </button>
+              </span>
+            </div>
+          ))}
+        </div>
       )}
 
       {/* Moderator-only, moderated-only: the raised-hands dashboard. Reorder with

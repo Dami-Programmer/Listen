@@ -18,6 +18,8 @@ import { MODES, ROLES } from '@listen/shared';
  * roomId -> {
  *   hostId: string | null,
  *   cohostId: string | null,   // one appointed co-host, or null
+ *   locked: boolean,           // true => newcomers must be admitted by a moderator
+ *   waiting: { [socketId]: { id, name, since } },  // people knocking to get in
  *   mode: 'open' | 'moderated',
  *   participants: { [socketId]: { id, name, role } },
  *   queue: string[]      // socketIds of listeners with a raised hand (Phase 5)
@@ -39,6 +41,8 @@ function createRoom() {
   return {
     hostId: null,
     cohostId: null,
+    locked: true, // a moderator admits newcomers (the first joiner bypasses)
+    waiting: {},
     mode: MODES.OPEN,
     participants: {},
     queue: [],
@@ -52,9 +56,24 @@ export function getRoom(roomId) {
   return rooms.get(roomId) ?? null;
 }
 
+// Put a participant into a room. First joiner is host; everyone else matches
+// the room's current mode (speaker when open, listener when moderated).
+function attach(room, socketId, name) {
+  const isFirst = Object.keys(room.participants).length === 0;
+  if (isFirst) room.hostId = socketId;
+
+  let role = ROLES.SPEAKER;
+  if (isFirst) role = ROLES.HOST;
+  else if (room.mode === MODES.MODERATED) role = ROLES.LISTENER;
+
+  room.participants[socketId] = { id: socketId, name: name?.trim() || 'Guest', role };
+  return room.participants[socketId];
+}
+
 /**
- * Add a participant to a room, creating the room if needed.
- * The first person to join becomes the host.
+ * Add a participant to a room, creating the room if needed. Used for the first
+ * joiner and for joins into an unlocked room; a locked room routes newcomers
+ * through `addWaiting` / `admitWaiting` instead.
  * Returns the room.
  */
 export function addParticipant(roomId, socketId, name) {
@@ -63,25 +82,55 @@ export function addParticipant(roomId, socketId, name) {
     room = createRoom();
     rooms.set(roomId, room);
   }
+  attach(room, socketId, name);
+  return room;
+}
 
-  const isFirst = Object.keys(room.participants).length === 0;
-  if (isFirst) {
-    room.hostId = socketId;
-  }
+/* --------------------------------------------------------------------------
+ * Waiting room (added after co-host).
+ *
+ * A locked room holds newcomers in `room.waiting` until a moderator admits or
+ * denies them. Waiters are NOT in `room.participants` and NOT in the Socket.IO
+ * room, so they see nothing — no room-state, no chat, no media. New rooms start
+ * locked; the first joiner (who creates the room) always bypasses.
+ * ---------------------------------------------------------------------- */
 
-  // First joiner is host. Everyone else matches the room's current mode:
-  // a speaker in an open room, a listener in one that's already moderated.
-  let role = ROLES.SPEAKER;
-  if (isFirst) role = ROLES.HOST;
-  else if (room.mode === MODES.MODERATED) role = ROLES.LISTENER;
-
-  room.participants[socketId] = {
+export function addWaiting(room, socketId, name) {
+  if (!room || room.participants[socketId]) return;
+  room.waiting[socketId] = {
     id: socketId,
     name: name?.trim() || 'Guest',
-    role,
+    since: Date.now(),
   };
+}
 
-  return room;
+// Move a waiter into the room. Returns the new participant, or null if they
+// weren't actually waiting.
+export function admitWaiting(room, socketId) {
+  const w = room?.waiting?.[socketId];
+  if (!w) return null;
+  delete room.waiting[socketId];
+  return attach(room, socketId, w.name);
+}
+
+export function denyWaiting(room, socketId) {
+  if (room?.waiting) delete room.waiting[socketId];
+}
+
+export function setLock(room, locked) {
+  if (room) room.locked = Boolean(locked);
+}
+
+// Drop a socket from whatever room's waiting list it's in. Returns that roomId
+// (so the caller can re-broadcast) or null.
+export function removeWaiting(socketId) {
+  for (const [roomId, room] of rooms) {
+    if (room.waiting[socketId]) {
+      delete room.waiting[socketId];
+      return roomId;
+    }
+  }
+  return null;
 }
 
 /**
@@ -318,11 +367,13 @@ export function setSharing(room, socketId, on, streamId) {
 
 /**
  * Remove a participant from whatever room they're in.
- * If the host left, promote the next participant (insertion order).
- * If the room is now empty, delete it.
+ * If the host left, promote the next participant (co-host first).
+ * If the room is now empty but someone is waiting, admit the oldest waiter as
+ * the new host so the room survives; otherwise delete it.
  *
- * Returns { roomId, room } for the affected room, or null if the socket
- * wasn't in any room.
+ * Returns { roomId, room, admitted } — `room` is null when the room was
+ * deleted, `admitted` is the socketId promoted from the waiting room (or null).
+ * Returns null if the socket wasn't a participant anywhere.
  */
 export function removeParticipant(socketId) {
   for (const [roomId, room] of rooms) {
@@ -336,8 +387,15 @@ export function removeParticipant(socketId) {
 
     const remaining = Object.keys(room.participants);
     if (remaining.length === 0) {
-      rooms.delete(roomId);
-      return { roomId, room: null };
+      const waiters = Object.keys(room.waiting);
+      if (waiters.length === 0) {
+        rooms.delete(roomId);
+        return { roomId, room: null, admitted: null };
+      }
+      // Keep the room alive: the oldest waiter comes in as the new host.
+      const heir = waiters.sort((x, y) => room.waiting[x].since - room.waiting[y].since)[0];
+      admitWaiting(room, heir); // participants is empty -> attach() makes them host
+      return { roomId, room, admitted: heir };
     }
 
     if (room.hostId === socketId) {
@@ -349,7 +407,7 @@ export function removeParticipant(socketId) {
       room.participants[heir].role = ROLES.HOST;
     }
 
-    return { roomId, room };
+    return { roomId, room, admitted: null };
   }
 
   return null;
@@ -366,6 +424,9 @@ export function snapshot(roomId) {
     roomId,
     hostId: room.hostId,
     cohostId: room.cohostId,
+    locked: room.locked,
+    // People knocking to get in — only moderators render the admit/deny UI.
+    waiting: Object.values(room.waiting).map(({ id, name }) => ({ id, name })),
     mode: room.mode,
     participants: Object.values(room.participants),
     queue: [...room.queue],

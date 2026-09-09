@@ -109,6 +109,12 @@ top of the Phase 2 call:
   room). Nobody — not even a co-host — can mute or remove the host, and only the
   host appoints/drops co-hosts. If the host leaves, the co-host inherits the
   room.
+- **Waiting room:** rooms start **locked** — everyone after the first joiner
+  lands in a lobby (`<WaitingScreen>`) and sees nothing until a moderator
+  **Admit**s them from the "Waiting to join" card. **Deny** turns them away.
+  A **Door locked / Door open** toggle switches it off (unlocking admits
+  everyone currently waiting). If a room empties while someone waits, the oldest
+  waiter comes in as the new host.
 
 Test: open 3–4 tabs at http://localhost:5173/?room=demo, allow camera in each.
 Talking in one tab glows that tile everywhere. As the host, flip to Moderated,

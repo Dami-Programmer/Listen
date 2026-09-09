@@ -56,6 +56,21 @@ export const EVENTS = {
   PROMOTE_COHOST: 'promote-cohost',
   DEMOTE_COHOST: 'demote-cohost',
 
+  // Waiting room (added after co-host). A locked room holds newcomers until a
+  // moderator lets them in. New rooms start locked; the first joiner bypasses.
+  //   ADMIT / DENY { socketId } : moderator-only — let one waiter in / turn
+  //     them away.
+  //   SET_LOCK { locked } : moderator-only — unlocking also admits everyone
+  //     currently waiting.
+  //   ADMITTED : server -> a waiter, with the same payload as a join ack
+  //     ({ selfId, state, chat }).
+  //   DENIED : server -> a waiter who was turned away.
+  ADMIT: 'admit',
+  DENY: 'deny',
+  SET_LOCK: 'set-lock',
+  ADMITTED: 'admitted',
+  DENIED: 'denied',
+
   // In-call text chat (added after Phase 7). Independent of the speaker floor —
   // everyone in the room can post, including listeners.
   //   CHAT_SEND    : client -> server { text, kind }. kind is 'text' (default)

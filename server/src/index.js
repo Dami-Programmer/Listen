@@ -26,16 +26,21 @@ import { EVENTS, MODES, ROLES, STICKERS } from '@listen/shared';
 import {
   addChatMessage,
   addParticipant,
+  addWaiting,
+  admitWaiting,
   clearFloor,
   demoteCohost,
+  denyWaiting,
   getRoom,
   grantFloor,
   lowerHand,
   promoteCohost,
   raiseHand,
   removeParticipant,
+  removeWaiting,
   reorderQueue,
   revokeFloor,
+  setLock,
   setMode,
   setSharing,
   setSpeaking,
@@ -152,6 +157,19 @@ io.on('connection', (socket) => {
     if (joinedRoomId) {
       socket.emit(EVENTS.ERROR, { message: 'already in a room' });
       ack?.({ ok: false, error: 'already in a room' });
+      return;
+    }
+
+    // Knock: the room exists, is locked, and isn't empty -> wait for a
+    // moderator. Waiters aren't in the Socket.IO room, so they get nothing
+    // until they're admitted.
+    const existing = getRoom(id);
+    if (existing && existing.locked && Object.keys(existing.participants).length > 0) {
+      joinedRoomId = id;
+      addWaiting(existing, socket.id, name);
+      console.log(`[room ${id}] ~ ${socket.id} knocking (${existing.waiting[socket.id].name})`);
+      ack?.({ ok: true, waiting: true, selfId: socket.id });
+      broadcastRoom(id); // moderators' waiting list updates
       return;
     }
 
@@ -385,6 +403,60 @@ io.on('connection', (socket) => {
     broadcastRoom(joinedRoomId);
   });
 
+  // --- Waiting room (added after co-host) -----------------------------
+  // Moderator-only: let a knocker in, turn them away, or toggle the lock.
+
+  // Move one waiter into the room proper and hand them the full state.
+  function letIn(room, targetId) {
+    const sock = io.sockets.sockets.get(targetId);
+    if (!sock) {
+      denyWaiting(room, targetId); // socket vanished — drop the stale entry
+      return false;
+    }
+    admitWaiting(room, targetId);
+    sock.join(joinedRoomId);
+    sock.emit(EVENTS.ADMITTED, {
+      selfId: targetId,
+      state: snapshot(joinedRoomId),
+      chat: [...room.chat],
+    });
+    return true;
+  }
+
+  socket.on(EVENTS.ADMIT, ({ socketId } = {}, ack) => {
+    const room = requireModeratorRoom(ack);
+    if (!room) return;
+    if (!room.waiting[socketId]) return ack?.({ ok: false, error: 'not waiting' });
+    letIn(room, socketId);
+    console.log(`[room ${joinedRoomId}] ${socket.id} admitted ${socketId}`);
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  socket.on(EVENTS.DENY, ({ socketId } = {}, ack) => {
+    const room = requireModeratorRoom(ack);
+    if (!room) return;
+    if (!room.waiting[socketId]) return ack?.({ ok: false, error: 'not waiting' });
+    denyWaiting(room, socketId);
+    io.to(socketId).emit(EVENTS.DENIED);
+    console.log(`[room ${joinedRoomId}] ${socket.id} denied ${socketId}`);
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  socket.on(EVENTS.SET_LOCK, ({ locked } = {}, ack) => {
+    const room = requireModeratorRoom(ack);
+    if (!room) return;
+    setLock(room, locked);
+    if (!room.locked) {
+      // Unlocking lets in everyone currently waiting.
+      for (const sid of Object.keys(room.waiting)) letIn(room, sid);
+    }
+    console.log(`[room ${joinedRoomId}] ${room.locked ? 'locked' : 'unlocked'} by ${socket.id}`);
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
   // --- In-call chat (added after Phase 7) --------------------------------
   // Anyone in the room may post — chat is independent of the speaker floor, so
   // listeners get to talk too. The server names, trims, length-caps and
@@ -483,7 +555,8 @@ io.on('connection', (socket) => {
     if (!joinedRoomId || !targetId) return;
 
     const room = getRoom(joinedRoomId);
-    if (!room || !room.participants[targetId]) return; // target not a roommate
+    // Both ends must be full participants (a waiter can't relay media).
+    if (!room || !room.participants[socket.id] || !room.participants[targetId]) return;
 
     io.to(targetId).emit(EVENTS.RTC_SIGNAL, {
       from: socket.id,
@@ -499,14 +572,38 @@ io.on('connection', (socket) => {
       // Clear any lingering "typing" indicator for this socket right away.
       socket.to(joinedRoomId).emit(EVENTS.CHAT_TYPING, { id: socket.id, typing: false });
     }
+
+    // Was this socket only knocking? Drop it from the waiting list and refresh
+    // the moderators' view.
+    const waitingRoom = removeWaiting(socket.id);
+    if (waitingRoom) {
+      broadcastRoom(waitingRoom);
+      return;
+    }
+
     const result = removeParticipant(socket.id);
     if (!result) return;
 
-    const { roomId, room } = result;
+    const { roomId, room, admitted } = result;
     if (room === null) {
       console.log(`[room ${roomId}] closed (empty)`);
       return;
     }
+
+    // The room emptied but someone was waiting — they were just made host.
+    if (admitted) {
+      const sock = io.sockets.sockets.get(admitted);
+      if (sock) {
+        sock.join(roomId);
+        sock.emit(EVENTS.ADMITTED, {
+          selfId: admitted,
+          state: snapshot(roomId),
+          chat: [...room.chat],
+        });
+      }
+      console.log(`[room ${roomId}] host left; ${admitted} let in from the waiting room as host`);
+    }
+
     // If the host just left, the promoted participant must be exempt from the
     // silence rule — retire any timer they were carrying as a speaker.
     clearSilence(roomId, room.hostId);
