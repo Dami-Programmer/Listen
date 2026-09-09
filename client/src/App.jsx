@@ -17,6 +17,21 @@ import { socket } from './socket.js';
 import { useCall } from './webrtc.js';
 import VideoTile from './VideoTile.jsx';
 import ChatPanel from './ChatPanel.jsx';
+import Avatar from './Avatar.jsx';
+import {
+  Mic,
+  MicOff,
+  Cam,
+  CamOff,
+  Phone,
+  Screen,
+  Hand,
+  Chevron,
+  Check,
+  X,
+  Lock,
+  Unlock,
+} from './icons.jsx';
 
 // Display order for the participant list: host, co-host, speakers, listeners.
 const ROLE_RANK = {
@@ -43,8 +58,8 @@ function RolePill({ role }) {
 function ShareScreenButton({ sharing, onStart, onStop }) {
   if (!navigator.mediaDevices?.getDisplayMedia) return null;
   return (
-    <button className={sharing ? 'off' : ''} onClick={sharing ? onStop : onStart}>
-      {sharing ? '🖥 Stop sharing' : '🖥 Share screen'}
+    <button className={sharing ? 'on' : ''} onClick={sharing ? onStop : onStart}>
+      <Screen /> {sharing ? 'Sharing' : 'Share'}
     </button>
   );
 }
@@ -298,6 +313,9 @@ function WaitingScreen({ roomId, onCancel }) {
 
 // --- the in-call screen ----------------------------------------------------
 function CallView({ state, chat, typers, selfId, connected, onLeave }) {
+  const [tab, setTab] = useState('chat'); // right panel: 'chat' | 'people'
+  const stripRef = useRef(null);
+
   const participants = state?.participants ?? [];
   const self = participants.find((p) => p.id === selfId);
 
@@ -350,29 +368,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
   // peerId -> participant, for labelling remote tiles with name + role.
   const peerOf = (id) => participants.find((p) => p.id === id);
 
-  // --- one media stage, Google-Meet style -------------------------------
-  // Camera tiles for everyone (me first). If anyone is screen sharing, the
-  // screen(s) fill the main area and these cameras drop into a filmstrip;
-  // otherwise the cameras ARE the main grid.
-  const cameraTiles = [
-    localStream && {
-      key: 'me',
-      stream: localStream,
-      label: `${self?.name ?? 'You'} (you)`,
-      role: self?.role,
-      speaking: activeSpeakerId === selfId,
-      muted: true,
-      mirror: true,
-    },
-    ...remotes.map(({ id, stream }) => ({
-      key: id,
-      stream,
-      label: peerOf(id)?.name ?? 'Guest',
-      role: peerOf(id)?.role,
-      speaking: activeSpeakerId === id,
-    })),
-  ].filter(Boolean);
-
+  // --- media: a big "you" tile + a thumbnail strip; screens take over big ---
   const screenTiles = [
     screenStream && { key: 'me', stream: screenStream, label: 'Your screen', muted: true },
     ...remoteScreens.map(({ id, stream }) => ({
@@ -450,260 +446,346 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
     emit('reorder-queue', { order });
   }
 
+  // --- layout data for the open-call design ---------------------------
+  const micOf = (id) => state?.mics?.[id] ?? true;
+  const hostName = participants.find((p) => p.id === state?.hostId)?.name;
+  const canShare = !isListener && navigator.mediaDevices?.getDisplayMedia;
+
+  // Main tile = a screen if anyone's presenting, otherwise your own camera.
+  const mainStream = presenting ? screenTiles[0].stream : localStream;
+  const mainName = presenting ? screenTiles[0].label : (self?.name ?? 'You');
+  const mainLabel = presenting ? screenTiles[0].label : 'You';
+
+  // Thumbnail strip: the other people (+ me and any extra screens while
+  // someone is presenting).
+  const stripTiles = [];
+  if (presenting) {
+    screenTiles.slice(1).forEach((s) =>
+      stripTiles.push({ key: `sc-${s.key}`, stream: s.stream, name: s.label, muted: true }),
+    );
+    if (localStream) {
+      stripTiles.push({
+        key: 'me',
+        stream: localStream,
+        name: `${self?.name ?? 'You'} (you)`,
+        muted: true,
+        mirror: true,
+        speaking: activeSpeakerId === selfId,
+        micOn,
+        showMic: true,
+      });
+    }
+  }
+  remotes.forEach(({ id, stream }) => {
+    stripTiles.push({
+      key: id,
+      stream,
+      name: peerOf(id)?.name ?? 'Guest',
+      speaking: activeSpeakerId === id,
+      micOn: micOf(id),
+      showMic: true,
+    });
+  });
+
   return (
-    <main className="page call">
-      <div className="topbar">
-        <div>
-          <h1>{state?.roomId}</h1>
-          <p className="tagline">
-            {connected ? 'connected' : 'reconnecting…'} · {participants.length} in room · you are{' '}
-            <strong>{ROLE_LABEL[self?.role]?.replace('★ ', '') ?? '—'}</strong>
-          </p>
-        </div>
-        <button className="ghost" onClick={onLeave}>
-          Leave
-        </button>
-      </div>
-
-      {/* A moderator (host or co-host) sees the mode toggle + door lock;
-          everyone else sees a banner when moderated. */}
-      {isModerator ? (
-        <div className="mod-bar">
-          <div className="mode-toggle" role="group" aria-label="Room mode">
-            <button className={!moderated ? 'active' : ''} onClick={() => changeMode(MODES.OPEN)}>
-              Open
-            </button>
-            <button
-              className={moderated ? 'active' : ''}
-              onClick={() => changeMode(MODES.MODERATED)}
-            >
-              Moderated
-            </button>
+    <div className="bg">
+      <div className="shell">
+        <div className="topbar">
+          <div className="meeting-pill">
+            <h1>{state?.roomId ?? 'Meeting'}</h1>
+            <p>
+              {hostName ? `hosted by ${hostName}` : 'group call'} · {participants.length} in the room
+              {!connected && ' · reconnecting…'}
+            </p>
           </div>
-          <button
-            className={`ghost small${locked ? ' danger' : ''}`}
-            onClick={toggleLock}
-            title={locked ? 'New people must be admitted' : 'Anyone with the link can join'}
-          >
-            {locked ? '🔒 Door locked' : '🔓 Door open'}
-          </button>
-        </div>
-      ) : (
-        moderated && (
-          <p className="banner">🔒 Moderated — the host &amp; co-host control who speaks.</p>
-        )
-      )}
-
-      {/* Moderator-only: people knocking to get into the locked room. */}
-      {isModerator && waiting.length > 0 && (
-        <div className="card queue">
-          <div className="row header">
-            <span>Waiting to join ({waiting.length})</span>
-          </div>
-          {waiting.map((w) => (
-            <div className="row" key={w.id}>
-              <span>{w.name}</span>
-              <span className="actions">
-                <button className="small" onClick={() => admit(w.id)}>
-                  Admit
-                </button>
-                <button className="ghost small danger" onClick={() => deny(w.id)}>
-                  Deny
-                </button>
+          {isModerator && waiting.length > 0 && (
+            <div className="join-req">
+              <span>
+                <strong>{waiting[0].name}</strong> wants to join
+                {waiting.length > 1 ? ` (+${waiting.length - 1})` : ''}
               </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Moderator-only, moderated-only: the raised-hands dashboard. Reorder with
-          the arrows, Grant to promote, Dismiss to drop from the queue. Clear
-          floor sends every current speaker back to listening. */}
-      {isModerator && moderated && (
-        <div className="card queue">
-          <div className="row header">
-            <span>Raised hands ({queued.length})</span>
-            {grantedSpeakers.length > 0 && (
-              <button className="ghost small" onClick={clearFloor}>
-                Clear floor
+              <button
+                className="jr-btn jr-deny"
+                onClick={() => deny(waiting[0].id)}
+                aria-label={`Deny ${waiting[0].name}`}
+              >
+                <X />
               </button>
-            )}
-          </div>
-          {queued.length === 0 ? (
-            <p className="muted">No one&apos;s waiting. Listeners can raise a hand.</p>
-          ) : (
-            queued.map((p, i) => (
-              <div className="row" key={p.id}>
-                <span>
-                  {i + 1}. {p.name}
-                </span>
-                <span className="actions">
-                  <button
-                    className="ghost small"
-                    aria-label={`Move ${p.name} up`}
-                    disabled={i === 0}
-                    onClick={() => moveInQueue(p.id, -1)}
-                  >
-                    ↑
-                  </button>
-                  <button
-                    className="ghost small"
-                    aria-label={`Move ${p.name} down`}
-                    disabled={i === queued.length - 1}
-                    onClick={() => moveInQueue(p.id, +1)}
-                  >
-                    ↓
-                  </button>
-                  <button className="small" onClick={() => grantFloor(p.id)}>
-                    Grant
-                  </button>
-                  <button className="ghost small" onClick={() => dismissHand(p.id)}>
-                    Dismiss
-                  </button>
-                </span>
-              </div>
-            ))
+              <button
+                className="jr-btn jr-admit"
+                onClick={() => admit(waiting[0].id)}
+                aria-label={`Admit ${waiting[0].name}`}
+              >
+                <Check />
+              </button>
+            </div>
           )}
         </div>
-      )}
 
-      {mediaError && <p className="err">{mediaError}</p>}
-
-      {/* One stage. Presenting → screen(s) fill the main area, cameras become a
-          filmstrip. Not presenting → the cameras are the main grid. */}
-      <div className={`stage${presenting ? ' presenting' : ''}`}>
-        <div className="stage-main">
-          {(presenting ? screenTiles : cameraTiles).map((t) => (
-            <VideoTile
-              key={presenting ? `screen-${t.key}` : t.key}
-              stream={t.stream}
-              label={t.label}
-              role={t.role}
-              speaking={t.speaking}
-              muted={t.muted}
-              mirror={t.mirror}
-              screen={presenting}
-            />
-          ))}
-        </div>
-
-        {presenting && cameraTiles.length > 0 && (
-          <div className="stage-strip">
-            {cameraTiles.map((t) => (
-              <VideoTile
-                key={t.key}
-                stream={t.stream}
-                label={t.label}
-                role={t.role}
-                speaking={t.speaking}
-                muted={t.muted}
-                mirror={t.mirror}
-              />
-            ))}
+        {isModerator && (
+          <div className="mod-strip">
+            <div className="seg" role="group" aria-label="Room mode">
+              <button className={!moderated ? 'on' : ''} onClick={() => changeMode(MODES.OPEN)}>
+                Open
+              </button>
+              <button className={moderated ? 'on' : ''} onClick={() => changeMode(MODES.MODERATED)}>
+                Moderated
+              </button>
+            </div>
+            <button
+              className={`lock-btn${locked ? ' is-locked' : ''}`}
+              onClick={toggleLock}
+              title={locked ? 'New people must be admitted' : 'Anyone with the link can join'}
+            >
+              {locked ? <Lock /> : <Unlock />}
+              {locked ? 'Locked' : 'Anyone can join'}
+            </button>
           </div>
         )}
-      </div>
 
-      {/* A listener's mic/camera aren't theirs to control in a moderated room —
-          instead they get a raise-hand toggle that puts them in the queue. In a
-          moderated room only the host + speakers can screen share. */}
-      {isListener ? (
-        <div className="listener-note">
-          <p>
-            🎧 Listening only &mdash;{' '}
-            {handRaised
-              ? `you're #${myQueuePos + 1} in line for the floor.`
-              : 'raise your hand to ask for the floor.'}
-          </p>
-          <button className={handRaised ? 'off' : ''} onClick={handRaised ? lowerHand : raiseHand}>
-            {handRaised ? '✋ Lower hand' : '✋ Raise hand'}
-          </button>
-        </div>
-      ) : (
-        <div className="controls">
-          <button className={micOn ? '' : 'off'} onClick={toggleMic}>
-            {micOn ? 'Mute mic' : 'Unmute mic'}
-          </button>
-          <button className={camOn ? '' : 'off'} onClick={toggleCam}>
-            {camOn ? 'Stop camera' : 'Start camera'}
-          </button>
-          <ShareScreenButton sharing={sharingScreen} onStart={startShare} onStop={stopShare} />
-          {canPassMic && (
-            <button className="ghost" onClick={passMic}>
-              🎤 Pass the mic
-            </button>
-          )}
-          <button className="ghost" onClick={onLeave}>
-            Leave call
-          </button>
-        </div>
-      )}
+        {!isModerator && moderated && (
+          <p className="banner">🔒 Moderated — the host &amp; co-host control who speaks.</p>
+        )}
+        {mediaError && <p className="err">{mediaError}</p>}
 
-      <ChatPanel messages={chat} typers={typers} selfId={selfId} />
-
-      <div className="card">
-        <div className="row header">
-          <span>Participants ({participants.length})</span>
-        </div>
-        {ordered.map((p) => {
-          // A moderator can act on anyone but themselves and the host.
-          const canMod = isModerator && p.id !== selfId && p.role !== ROLES.HOST;
-          // Appointing / dropping a co-host is the host's alone.
-          const hostControls = isHost && p.id !== selfId && p.role !== ROLES.HOST;
-          return (
-            <div className="row" key={p.id}>
-              <span>
-                {p.name}
-                {p.id === selfId ? ' (you)' : ''}
-              </span>
-              <span className="actions">
-                {/* Give the floor to this exact person (Phase 7 hand-off). */}
-                {canMod && moderated && p.role === ROLES.LISTENER && (
-                  <button className="small" onClick={() => grantFloor(p.id)}>
-                    Grant
-                  </button>
-                )}
-                {/* Take the floor back, even mid-speech. */}
-                {canMod && moderated && p.role === ROLES.SPEAKER && (
-                  <button className="ghost small" onClick={() => revokeFloor(p.id)}>
-                    Revoke
-                  </button>
-                )}
-                {hostControls &&
-                  (p.id === cohostId ? (
-                    <button className="ghost small" onClick={() => dropCohost(p)}>
-                      Remove co-host
-                    </button>
-                  ) : (
-                    <button className="ghost small" onClick={() => makeCohost(p)}>
-                      Make co-host
-                    </button>
-                  ))}
-                {canMod && (
-                  <button className="ghost small" onClick={() => forceMute(p.id)}>
-                    Mute
-                  </button>
-                )}
-                {canMod && (
-                  <button className="ghost small danger" onClick={() => removeParticipant(p)}>
-                    Remove
-                  </button>
-                )}
-                <RolePill role={p.role} />
-              </span>
+        {isModerator && moderated && (
+          <div className="mod-card">
+            <div className="row header">
+              <span>Raised hands ({queued.length})</span>
+              {grantedSpeakers.length > 0 && (
+                <button className="ghost small" onClick={clearFloor}>
+                  Clear floor
+                </button>
+              )}
             </div>
-          );
-        })}
+            {queued.length === 0 ? (
+              <p className="muted">No one&apos;s waiting.</p>
+            ) : (
+              queued.map((p, i) => (
+                <div className="row" key={p.id}>
+                  <span>
+                    {i + 1}. {p.name}
+                  </span>
+                  <span className="actions">
+                    <button
+                      className="ghost small"
+                      disabled={i === 0}
+                      onClick={() => moveInQueue(p.id, -1)}
+                      aria-label={`Move ${p.name} up`}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      className="ghost small"
+                      disabled={i === queued.length - 1}
+                      onClick={() => moveInQueue(p.id, +1)}
+                      aria-label={`Move ${p.name} down`}
+                    >
+                      ↓
+                    </button>
+                    <button className="small" onClick={() => grantFloor(p.id)}>
+                      Grant
+                    </button>
+                    <button className="ghost small" onClick={() => dismissHand(p.id)}>
+                      Dismiss
+                    </button>
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        <div className="stage-row">
+          <div className="video-col">
+            <div className={`main-tile${presenting ? ' wide' : ''}`}>
+              <VideoTile
+                stream={mainStream}
+                name={mainName}
+                muted={presenting || true}
+                mirror={!presenting}
+                speaking={!presenting && activeSpeakerId === selfId}
+                avatarSize={110}
+              />
+
+              <span className="you-pill">
+                <Avatar name={mainName} size={26} />
+                {mainLabel}
+              </span>
+
+              {(canShare || canPassMic) && (
+                <div className="tile-overlay-btns">
+                  {canShare && (
+                    <ShareScreenButton
+                      sharing={sharingScreen}
+                      onStart={startShare}
+                      onStop={stopShare}
+                    />
+                  )}
+                  {canPassMic && (
+                    <button onClick={passMic}>
+                      <Hand /> Pass the mic
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <div className="call-controls">
+                {isListener ? (
+                  <button
+                    className={handRaised ? 'off' : ''}
+                    onClick={handRaised ? lowerHand : raiseHand}
+                    aria-label={handRaised ? 'Lower hand' : 'Raise hand'}
+                    title={
+                      handRaised
+                        ? `You're #${myQueuePos + 1} in line`
+                        : 'Raise your hand to ask for the floor'
+                    }
+                  >
+                    <Hand />
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      className={micOn ? '' : 'off'}
+                      onClick={toggleMic}
+                      aria-label={micOn ? 'Mute mic' : 'Unmute mic'}
+                    >
+                      {micOn ? <Mic /> : <MicOff />}
+                    </button>
+                    <button
+                      className={camOn ? '' : 'off'}
+                      onClick={toggleCam}
+                      aria-label={camOn ? 'Turn camera off' : 'Turn camera on'}
+                    >
+                      {camOn ? <Cam /> : <CamOff />}
+                    </button>
+                  </>
+                )}
+                <button className="hangup" onClick={onLeave} aria-label="Leave call">
+                  <Phone />
+                </button>
+              </div>
+            </div>
+
+            {stripTiles.length > 0 && (
+              <div className="thumb-strip" ref={stripRef}>
+                {stripTiles.map((t) => (
+                  <div className="thumb" key={t.key}>
+                    <VideoTile
+                      stream={t.stream}
+                      name={t.name}
+                      muted={t.muted ?? false}
+                      mirror={t.mirror ?? false}
+                      speaking={t.speaking ?? false}
+                      avatarSize={46}
+                    />
+                    {t.showMic && (
+                      <span className={`mic-badge${t.micOn ? '' : ' muted'}`} aria-hidden="true">
+                        {t.micOn ? <Mic /> : <MicOff />}
+                      </span>
+                    )}
+                    <span className="thumb-name">{t.name}</span>
+                  </div>
+                ))}
+                {stripTiles.length > 4 && (
+                  <button
+                    className="thumb-more"
+                    aria-label="Scroll thumbnails"
+                    onClick={() =>
+                      stripRef.current?.scrollBy({ left: 240, behavior: 'smooth' })
+                    }
+                  >
+                    <Chevron />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="side-panel">
+            <div className="side-tabs" role="tablist">
+              <button
+                role="tab"
+                aria-selected={tab === 'chat'}
+                className={tab === 'chat' ? 'on' : ''}
+                onClick={() => setTab('chat')}
+              >
+                Room Chat
+              </button>
+              <button
+                role="tab"
+                aria-selected={tab === 'people'}
+                className={tab === 'people' ? 'on' : ''}
+                onClick={() => setTab('people')}
+              >
+                Participant
+              </button>
+            </div>
+
+            {tab === 'chat' ? (
+              <ChatPanel messages={chat} typers={typers} selfId={selfId} />
+            ) : (
+              <div className="people-list">
+                {ordered.map((p) => {
+                  const canMod = isModerator && p.id !== selfId && p.role !== ROLES.HOST;
+                  const hostControls = isHost && p.id !== selfId && p.role !== ROLES.HOST;
+                  return (
+                    <div className="person" key={p.id}>
+                      <Avatar name={p.name} size={34} />
+                      <div className="person-meta">
+                        <div className="person-name">
+                          {p.name}
+                          {p.id === selfId ? ' (you)' : ''}
+                        </div>
+                        <div className="person-role">
+                          <RolePill role={p.role} />
+                          {!micOf(p.id) && ' · muted'}
+                        </div>
+                      </div>
+                      <div className="person-actions">
+                        {canMod && moderated && p.role === ROLES.LISTENER && (
+                          <button className="small" onClick={() => grantFloor(p.id)}>
+                            Grant
+                          </button>
+                        )}
+                        {canMod && moderated && p.role === ROLES.SPEAKER && (
+                          <button className="ghost small" onClick={() => revokeFloor(p.id)}>
+                            Revoke
+                          </button>
+                        )}
+                        {hostControls &&
+                          (p.id === cohostId ? (
+                            <button className="ghost small" onClick={() => dropCohost(p)}>
+                              Un-co-host
+                            </button>
+                          ) : (
+                            <button className="ghost small" onClick={() => makeCohost(p)}>
+                              Co-host
+                            </button>
+                          ))}
+                        {canMod && (
+                          <button className="ghost small" onClick={() => forceMute(p.id)}>
+                            Mute
+                          </button>
+                        )}
+                        {canMod && (
+                          <button
+                            className="ghost small danger"
+                            onClick={() => removeParticipant(p)}
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
-
-      <details className="card raw">
-        <summary>Raw room-state snapshot</summary>
-        <pre>{JSON.stringify(state, null, 2)}</pre>
-      </details>
-
-      <p className="next">
-        Next up: <strong>Phase 8</strong> — a TURN server, reconnect handling, and deploy.
-      </p>
-    </main>
+    </div>
   );
 }

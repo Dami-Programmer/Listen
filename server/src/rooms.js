@@ -30,6 +30,7 @@ import { CHAT_ATTACHMENT_BUDGET_BYTES, MODES, ROLES } from '@listen/shared';
  *                        // at CHAT_HISTORY (added after Phase 7)
  *   sharing: object      // socketId -> the id of that peer's screen MediaStream,
  *                        // for everyone currently screen sharing
+ *   mics: object         // socketId -> bool, whether that person's mic is live
  * }
  */
 const rooms = new Map();
@@ -49,6 +50,7 @@ function createRoom() {
     speaking: [],
     chat: [],
     sharing: {},
+    mics: {},
   };
 }
 
@@ -67,7 +69,13 @@ function attach(room, socketId, name) {
   else if (room.mode === MODES.MODERATED) role = ROLES.LISTENER;
 
   room.participants[socketId] = { id: socketId, name: name?.trim() || 'Guest', role };
+  room.mics[socketId] = true; // assume the mic is live until told otherwise
   return room.participants[socketId];
+}
+
+/** A client reports whether its own mic is currently live. */
+export function setMic(room, socketId, on) {
+  if (room?.participants[socketId]) room.mics[socketId] = on === true;
 }
 
 /**
@@ -412,6 +420,7 @@ export function removeParticipant(socketId) {
     room.queue = room.queue.filter((id) => id !== socketId);
     room.speaking = room.speaking.filter((id) => id !== socketId);
     delete room.sharing[socketId];
+    delete room.mics[socketId];
     if (room.cohostId === socketId) room.cohostId = null;
 
     const remaining = Object.keys(room.participants);
@@ -465,6 +474,8 @@ export function snapshot(roomId) {
     activeSpeakerId: room.speaking[room.speaking.length - 1] ?? null,
     // socketId -> screen MediaStream id, for everyone currently screen sharing.
     sharing: { ...room.sharing },
+    // socketId -> bool, whether that person's mic is live.
+    mics: { ...room.mics },
   };
 }
 

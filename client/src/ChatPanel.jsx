@@ -1,20 +1,15 @@
-// In-call text chat (added after Phase 7).
+// The Room Chat body — message log + composer. It renders WITHOUT its own card
+// or header; the side panel around it provides the Room Chat / Participant tabs.
 //
-// A self-contained panel: message log + composer with an emoji picker, a
-// sticker tray, and attachments (images + files). Chat state (messages, and who
-// is typing) lives up in <App/> — it seeds from the join-room ack and grows on
-// each CHAT_MESSAGE / CHAT_TYPING — so this component is pure UI plus the
-// "send" / "attach" / "I'm typing" emits.
-//
-// Attachments travel as data: URLs over Socket.IO (no file storage, matching
-// the app's in-memory model). Images are downscaled to <=1600px JPEG before
-// sending, so the CHAT_FILE_MAX_BYTES cap mostly bites non-image files.
+// Composer, per the design: [emoji] [input] [send]. Stickers and file
+// attachments live behind the emoji tray (its own little tab row), so the
+// composer stays clean while every feature is still reachable.
 
 import { useEffect, useRef, useState } from 'react';
 import { CHAT_FILE_MAX_BYTES, EVENTS, STICKERS } from '@listen/shared';
 import { socket } from './socket.js';
+import { Smile, Send, Paperclip } from './icons.jsx';
 
-// A small curated palette — no dependency, no full Unicode picker.
 const EMOJIS = [
   '😀', '😃', '😄', '😁', '😅', '😂', '🙂', '🙃',
   '😉', '😊', '😍', '😘', '😜', '🤪', '🤔', '🤗',
@@ -23,12 +18,10 @@ const EMOJIS = [
   '🔥', '✨', '🎉', '💯', '❤️', '🧡', '💛', '💚',
   '💙', '💜', '👀', '🚀', '⭐', '✅', '❌', '⚡',
 ];
-
 const MAX_IMAGE_DIM = 1600;
 
-function timeOf(ts) {
-  return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
+const timeOf = (ts) =>
+  new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 function formatBytes(n) {
   if (!n) return '';
@@ -37,17 +30,14 @@ function formatBytes(n) {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-// "Ada is typing" / "Ada and Boris are typing" / "Several people are typing".
 function typingLabel(names) {
   if (names.length === 1) return `${names[0]} is typing`;
   if (names.length === 2) return `${names[0]} and ${names[1]} are typing`;
   return 'Several people are typing';
 }
 
-// Read a File into { name, type, size, url } — downscaling raster images to a
-// reasonable JPEG so a phone photo doesn't blow the size cap.
 function prepareFile(file) {
-  const readAsDataUrl = () =>
+  const read = () =>
     new Promise((resolve, reject) => {
       const r = new FileReader();
       r.onload = () => resolve(r.result);
@@ -55,17 +45,15 @@ function prepareFile(file) {
       r.readAsDataURL(file);
     });
 
-  const canDownscale = ['image/jpeg', 'image/png', 'image/webp'].includes(file.type);
-  if (!canDownscale) {
-    return readAsDataUrl().then((url) => ({
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    return read().then((url) => ({
       name: file.name,
       type: file.type || 'application/octet-stream',
       size: file.size,
       url,
     }));
   }
-
-  return readAsDataUrl().then(
+  return read().then(
     (src) =>
       new Promise((resolve) => {
         const img = new Image();
@@ -75,11 +63,11 @@ function prepareFile(file) {
             resolve({ name: file.name, type: file.type, size: file.size, url: src });
             return;
           }
-          const canvas = document.createElement('canvas');
-          canvas.width = Math.round(img.width * scale);
-          canvas.height = Math.round(img.height * scale);
-          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-          const url = canvas.toDataURL('image/jpeg', 0.82);
+          const c = document.createElement('canvas');
+          c.width = Math.round(img.width * scale);
+          c.height = Math.round(img.height * scale);
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          const url = c.toDataURL('image/jpeg', 0.82);
           resolve({
             name: file.name.replace(/\.(png|webp)$/i, '.jpg'),
             type: 'image/jpeg',
@@ -87,8 +75,7 @@ function prepareFile(file) {
             url,
           });
         };
-        img.onerror = () =>
-          resolve({ name: file.name, type: file.type, size: file.size, url: src });
+        img.onerror = () => resolve({ name: file.name, type: file.type, size: file.size, url: src });
         img.src = src;
       }),
   );
@@ -96,13 +83,11 @@ function prepareFile(file) {
 
 export default function ChatPanel({ messages, typers, selfId }) {
   const [text, setText] = useState('');
-  const [picker, setPicker] = useState(null); // 'emoji' | 'sticker' | null
+  const [tray, setTray] = useState(null); // null | 'emoji' | 'sticker'
   const [attachError, setAttachError] = useState(null);
   const logRef = useRef(null);
   const inputRef = useRef(null);
-  const rootRef = useRef(null);
-  const fileInputRef = useRef(null);
-  // Outbound typing state.
+  const fileRef = useRef(null);
   const typingRef = useRef({ active: false, lastSent: 0, idle: null });
 
   const typingNames = Object.entries(typers || {})
@@ -114,24 +99,6 @@ export default function ChatPanel({ messages, typers, selfId }) {
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, typingNames.length]);
 
-  // Click / Escape anywhere outside closes an open picker.
-  useEffect(() => {
-    if (!picker) return undefined;
-    function onDown(e) {
-      if (rootRef.current && !rootRef.current.contains(e.target)) setPicker(null);
-    }
-    function onKey(e) {
-      if (e.key === 'Escape') setPicker(null);
-    }
-    document.addEventListener('pointerdown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('pointerdown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [picker]);
-
-  // --- outbound "is typing" ping ------------------------------------------
   const stopTyping = () => {
     const t = typingRef.current;
     clearTimeout(t.idle);
@@ -141,7 +108,6 @@ export default function ChatPanel({ messages, typers, selfId }) {
       socket.emit(EVENTS.CHAT_TYPING, { typing: false });
     }
   };
-
   const pingTyping = () => {
     const t = typingRef.current;
     const now = Date.now();
@@ -153,13 +119,12 @@ export default function ChatPanel({ messages, typers, selfId }) {
     clearTimeout(t.idle);
     t.idle = setTimeout(stopTyping, 3500);
   };
-
   useEffect(() => stopTyping, []);
 
-  function onInputChange(e) {
-    const value = e.target.value;
-    setText(value);
-    if (value.trim()) pingTyping();
+  function onInput(e) {
+    const v = e.target.value;
+    setText(v);
+    if (v.trim()) pingTyping();
     else stopTyping();
   }
 
@@ -171,24 +136,20 @@ export default function ChatPanel({ messages, typers, selfId }) {
       if (!ack?.ok) console.warn('[chat-send] rejected:', ack?.error);
     });
     setText('');
-    setPicker(null);
+    setTray(null);
     stopTyping();
   }
-
-  function sendSticker(sticker) {
-    socket.emit(EVENTS.CHAT_SEND, { text: sticker, kind: 'sticker' }, (ack) => {
+  function sendSticker(s) {
+    socket.emit(EVENTS.CHAT_SEND, { text: s, kind: 'sticker' }, (ack) => {
       if (!ack?.ok) console.warn('[chat-send] rejected:', ack?.error);
     });
-    setPicker(null);
+    setTray(null);
   }
-
-  function addEmoji(emoji) {
-    setText((t) => t + emoji);
+  function addEmoji(e) {
+    setText((t) => t + e);
     inputRef.current?.focus();
     pingTyping();
   }
-
-  // --- attachments -------------------------------------------------------
   function sendFile(file) {
     if (!file) return;
     setAttachError(null);
@@ -205,16 +166,10 @@ export default function ChatPanel({ messages, typers, selfId }) {
         socket.emit(EVENTS.CHAT_SEND, { kind: 'file', file: prepared }, (ack) => {
           if (!ack?.ok) setAttachError(ack?.error ?? 'Could not send the file.');
         });
+        setTray(null);
       })
       .catch(() => setAttachError('Could not read the file.'));
   }
-
-  function onFilePick(e) {
-    const [file] = e.target.files ?? [];
-    sendFile(file);
-    e.target.value = ''; // let the same file be picked again
-  }
-
   function onPaste(e) {
     const item = [...(e.clipboardData?.items ?? [])].find((i) => i.kind === 'file');
     if (item) {
@@ -224,18 +179,17 @@ export default function ChatPanel({ messages, typers, selfId }) {
   }
 
   return (
-    <div className="card chat" ref={rootRef}>
-      <div className="row header">
-        <span>Chat ({messages.length})</span>
-      </div>
-
+    <>
       <div className="chat-log" ref={logRef}>
         {messages.length === 0 && <p className="muted">No messages yet. Say hi 👋</p>}
         {messages.map((m) => {
           const mine = m.from === selfId;
           return (
-            <div key={m.id} className={`chat-msg${mine ? ' mine' : ''}`}>
-              {!mine && <span className="chat-name">{m.name}</span>}
+            <div key={m.id} className={`msg${mine ? ' mine' : ''}`}>
+              <div className="msg-head">
+                <span className="msg-name">{mine ? 'You' : m.name}</span>
+                <span className="msg-time">{timeOf(m.ts)}</span>
+              </div>
               {m.kind === 'sticker' && (
                 <span className="chat-sticker" role="img" aria-label="sticker">
                   {m.text}
@@ -256,14 +210,12 @@ export default function ChatPanel({ messages, typers, selfId }) {
                 </a>
               )}
               {(!m.kind || m.kind === 'text') && <span className="chat-bubble">{m.text}</span>}
-              <span className="chat-time">{timeOf(m.ts)}</span>
             </div>
           );
         })}
-
         {typingNames.length > 0 && (
           <div className="chat-typing" aria-live="polite">
-            <span className="chat-name">{typingLabel(typingNames)}</span>
+            <span>{typingLabel(typingNames)}</span>
             <span className="typing-dots" aria-hidden="true">
               <i />
               <i />
@@ -273,67 +225,72 @@ export default function ChatPanel({ messages, typers, selfId }) {
         )}
       </div>
 
-      {attachError && <p className="err chat-attach-err">{attachError}</p>}
+      {attachError && <p className="err attach-err">{attachError}</p>}
 
-      {picker === 'emoji' && (
-        <div className="picker emoji-picker" role="listbox" aria-label="Emojis">
-          {EMOJIS.map((e) => (
-            <button key={e} type="button" onClick={() => addEmoji(e)}>
-              {e}
+      {tray && (
+        <>
+          <div className="picker-tabs">
+            <button className={tray === 'emoji' ? 'on' : ''} onClick={() => setTray('emoji')}>
+              Emoji
             </button>
-          ))}
-        </div>
-      )}
-      {picker === 'sticker' && (
-        <div className="picker sticker-picker" role="listbox" aria-label="Stickers">
-          {STICKERS.map((s) => (
-            <button key={s} type="button" onClick={() => sendSticker(s)}>
-              {s}
+            <button className={tray === 'sticker' ? 'on' : ''} onClick={() => setTray('sticker')}>
+              Stickers
             </button>
-          ))}
-        </div>
+            <button onClick={() => fileRef.current?.click()}>File / photo</button>
+          </div>
+          {tray === 'emoji' && (
+            <div className="picker emoji-picker">
+              {EMOJIS.map((e) => (
+                <button key={e} type="button" onClick={() => addEmoji(e)}>
+                  {e}
+                </button>
+              ))}
+            </div>
+          )}
+          {tray === 'sticker' && (
+            <div className="picker sticker-picker">
+              {STICKERS.map((st) => (
+                <button key={st} type="button" onClick={() => sendSticker(st)}>
+                  {st}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
-      <form className="chat-compose" onSubmit={sendText}>
+      <form className="composer" onSubmit={sendText}>
         <button
           type="button"
-          className={`chat-tool${picker === 'emoji' ? ' on' : ''}`}
-          aria-label="Emoji"
-          onClick={() => setPicker((p) => (p === 'emoji' ? null : 'emoji'))}
+          className={`icon-btn${tray ? ' on' : ''}`}
+          aria-label="Emoji, stickers, attachments"
+          onClick={() => setTray((t) => (t ? null : 'emoji'))}
         >
-          😊
+          <Smile />
         </button>
         <button
           type="button"
-          className={`chat-tool${picker === 'sticker' ? ' on' : ''}`}
-          aria-label="Stickers"
-          onClick={() => setPicker((p) => (p === 'sticker' ? null : 'sticker'))}
+          className="icon-btn"
+          aria-label="Attach a file"
+          onClick={() => fileRef.current?.click()}
         >
-          🏷️
+          <Paperclip />
         </button>
-        <button
-          type="button"
-          className="chat-tool"
-          aria-label="Attach a photo or file"
-          onClick={() => fileInputRef.current?.click()}
-        >
-          📎
-        </button>
-        <input ref={fileInputRef} type="file" hidden onChange={onFilePick} />
+        <input ref={fileRef} type="file" hidden onChange={(e) => { sendFile(e.target.files?.[0]); e.target.value = ''; }} />
         <input
           ref={inputRef}
           value={text}
-          onChange={onInputChange}
+          onChange={onInput}
           onBlur={stopTyping}
           onPaste={onPaste}
-          placeholder="Message the room…"
+          placeholder="Type message here..."
           maxLength={2000}
           autoComplete="off"
         />
-        <button type="submit" disabled={!text.trim()}>
-          Send
+        <button type="submit" className="send" aria-label="Send" disabled={!text.trim()}>
+          <Send />
         </button>
       </form>
-    </div>
+    </>
   );
 }

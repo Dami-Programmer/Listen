@@ -326,6 +326,26 @@ moderator or the silence timer.
   Phase 6 silence rule now calls it too (so both paths behave identically).
 - Client: a **🎤 Pass the mic** button in a speaker's controls row.
 
+### Open-call UI redesign
+
+The in-call screen was rebuilt to a supplied design — **light theme** (Plus
+Jakarta Sans), a floating white shell:
+
+- Top bar: a "meeting name / hosted by" pill; when someone's knocking, a
+  join-request notification pill on the right with round ✕ (deny) / ✓ (admit).
+- Left: one big tile (your camera, or a screen when anyone presents) with a
+  frosted mic / camera / leave bar overlaid and a **You** pill; below it a
+  horizontal thumbnail strip of everyone else with a mic badge + name on each,
+  and a `›` scroll button.
+- Right: a **Room Chat / Participant** tabbed panel. `<ChatPanel>` lost its card
+  wrapper (the panel provides the header); stickers + file attach moved behind
+  the emoji tray so the composer is just `emoji · paperclip · input · send`.
+- New `mic-state {on}` event + `room.mics` in the snapshot, so tiles can show a
+  real per-person mute badge (it wasn't broadcast before).
+- Moderator controls kept: the mode/lock strip sits under the top bar, the
+  raised-hands dashboard above the stage, per-person actions in the Participant
+  tab.
+
 ### Deferred / not built
 
 - **Per-speaker "pin"** — exempt a chosen speaker from the silence timer without

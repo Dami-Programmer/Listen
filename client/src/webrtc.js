@@ -380,6 +380,13 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode }) {
     setMicOn(iAmHost);
   }, [mode, myRole]);
 
+  // --- effect H: report my mic on/off so tiles can show a mute badge ----
+  useEffect(() => {
+    if (inCall && localStream && socket.connected) {
+      socket.emit(EVENTS.MIC_STATE, { on: micOn });
+    }
+  }, [micOn, inCall, localStream]);
+
   // --- screen sharing ----------------------------------------------------
   const stopShare = useCallback(() => {
     const stream = screenStreamRef.current;

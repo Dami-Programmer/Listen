@@ -42,6 +42,7 @@ import {
   reorderQueue,
   revokeFloor,
   setLock,
+  setMic,
   setMode,
   setSharing,
   setSpeaking,
@@ -563,6 +564,15 @@ io.on('connection', (socket) => {
     if (!room || !room.participants[socket.id]) return;
     setSharing(room, socket.id, on === true, streamId);
     console.log(`[room ${joinedRoomId}] ${socket.id} screen-share ${on ? 'on' : 'off'}`);
+    broadcastRoom(joinedRoomId);
+  });
+
+  // Each client reports its own mic on/off so tiles can show a mute badge.
+  socket.on(EVENTS.MIC_STATE, ({ on } = {}) => {
+    const room = getRoom(joinedRoomId);
+    if (!room || !room.participants[socket.id]) return;
+    if ((room.mics[socket.id] ?? true) === (on === true)) return; // no change
+    setMic(room, socket.id, on);
     broadcastRoom(joinedRoomId);
   });
 

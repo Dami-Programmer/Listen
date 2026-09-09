@@ -26,6 +26,11 @@ export const EVENTS = {
   //   demand. No payload.
   PASS_MIC: 'pass-mic',
 
+  // MIC_STATE { on } : each client reports whether its own mic is live so other
+  //   clients can show a mute badge on that person's tile. Server keeps
+  //   `room.mics` (socketId -> bool) and includes it in every snapshot.
+  MIC_STATE: 'mic-state',
+
   // Phase 6 — active-speaker detection.
   // Each client watches its OWN mic level (Web Audio) and sends this only when
   // the boolean flips: { speaking: true } when it starts talking, then
