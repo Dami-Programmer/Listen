@@ -432,13 +432,14 @@ button.small {
 .thumb-strip {
   display: flex;
   gap: 12px;
-  align-items: stretch;
+  align-items: flex-start;
+  min-height: 120px;
 }
 .thumb {
   position: relative;
-  flex: 1;
+  flex: 1 1 0;
   min-width: 0;
-  aspect-ratio: 5 / 4;
+  height: clamp(120px, 19vh, 200px);
   border-radius: 14px;
   overflow: hidden;
   background: #0c0c0e;
