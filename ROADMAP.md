@@ -310,6 +310,19 @@ power, and can drop them back to a listener at any time.
   moderator gets a **Door locked / Door open** toggle and a **Waiting to join**
   card with Admit / Deny per person.
 
+### Pass the mic
+
+**Goal:** a speaker can hand the floor on themselves, not just wait for a
+moderator or the silence timer.
+
+- `pass-mic` (no payload) — for a plain **speaker** in a **moderated** room
+  (host / co-host hold the room, not "the mic", so they don't get it, and it's a
+  no-op in open mode). Drops the caller to listener and promotes `room.queue[0]`
+  if a hand is up; otherwise they just step down.
+- `passFloor(room, socketId)` in `rooms.js` is the shared implementation — the
+  Phase 6 silence rule now calls it too (so both paths behave identically).
+- Client: a **🎤 Pass the mic** button in a speaker's controls row.
+
 ### Deferred / not built
 
 - **Per-speaker "pin"** — exempt a chosen speaker from the silence timer without

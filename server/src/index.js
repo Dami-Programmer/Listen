@@ -34,6 +34,7 @@ import {
   getRoom,
   grantFloor,
   lowerHand,
+  passFloor,
   promoteCohost,
   raiseHand,
   removeParticipant,
@@ -122,20 +123,17 @@ function armSilence(roomId, socketId) {
   );
 }
 
-// The timer fired: this speaker has been quiet too long. Take their floor and
-// hand it to whoever is first in the queue.
+// The timer fired: this speaker has been quiet too long. Hand the floor on —
+// same as the "pass the mic" button, just automatic.
 function enforceSilence(roomId, socketId) {
   silenceTimers.delete(silenceKey(roomId, socketId));
 
   const room = getRoom(roomId);
-  if (!room || room.mode !== MODES.MODERATED) return;
-  const participant = room.participants[socketId];
-  if (!participant || participant.role !== ROLES.SPEAKER) return;
+  if (!room) return;
+  const { passed, next } = passFloor(room, socketId);
+  if (!passed) return;
 
-  revokeFloor(room, socketId);
-  const next = room.queue[0];
-  if (next) grantFloor(room, next); // promoted; their own timer waits for their
-  //                                   first word, exactly like a manual grant
+  if (next) clearSilence(roomId, next); // fresh — timer waits for their first word
   console.log(
     `[room ${roomId}] silence timeout: ${socketId} lost the floor` +
       (next ? `, ${next} promoted` : ' (queue empty)'),
@@ -295,6 +293,23 @@ io.on('connection', (socket) => {
     clearFloor(room); // every non-moderator speaker -> listener
     clearRoomSilence(joinedRoomId);
     console.log(`[room ${joinedRoomId}] floor cleared by ${socket.id}`);
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  // A speaker gives up the floor themselves — the first raised hand takes it,
+  // or the speaker just drops to listener if no hand is up.
+  socket.on(EVENTS.PASS_MIC, (_payload, ack) => {
+    const room = getRoom(joinedRoomId);
+    if (!room) return ack?.({ ok: false, error: 'not in a room' });
+    const { passed, next } = passFloor(room, socket.id);
+    if (!passed) return ack?.({ ok: false, error: 'you are not a speaker' });
+    clearSilence(joinedRoomId, socket.id);
+    if (next) clearSilence(joinedRoomId, next);
+    console.log(
+      `[room ${joinedRoomId}] ${socket.id} passed the mic` +
+        (next ? ` -> ${next}` : ' (queue empty)'),
+    );
     ack?.({ ok: true });
     broadcastRoom(joinedRoomId);
   });

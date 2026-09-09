@@ -293,6 +293,25 @@ export function reorderQueue(room, order) {
 }
 
 /**
+ * Hand the floor on: `socketId` (a speaker in a moderated room) drops to
+ * listener, and the first raised hand — if any — is promoted in their place.
+ * Shared by the "pass the mic" button and the silence rule.
+ *
+ * Returns { passed, next } — `passed` is false when the caller wasn't a
+ * speaker; `next` is the promoted socketId, or null when no hand was up.
+ */
+export function passFloor(room, socketId) {
+  const participant = room?.participants?.[socketId];
+  if (!room || room.mode !== MODES.MODERATED || participant?.role !== ROLES.SPEAKER) {
+    return { passed: false, next: null };
+  }
+  revokeFloor(room, socketId);
+  const next = room.queue[0] ?? null;
+  if (next) grantFloor(room, next);
+  return { passed: true, next };
+}
+
+/**
  * Host clears the floor: every non-host speaker becomes a listener at once.
  * The queue is untouched — people waiting stay waiting.
  */

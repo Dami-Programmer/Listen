@@ -410,6 +410,11 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
   const dismissHand = (targetId) => emit('lower-hand', { targetId }); // moderator
   const grantFloor = (targetId) => emit('grant-floor', { targetId });
   const revokeFloor = (targetId) => emit('revoke-floor', { targetId });
+  const passMic = () => emit('pass-mic'); // a speaker hands the floor on
+
+  // A plain speaker in a moderated room can pass the mic (host / co-host hold
+  // the room, not "the mic").
+  const canPassMic = moderated && self?.role === ROLES.SPEAKER;
 
   // Phase 7 — moderation. Destructive actions confirm first.
   const forceMute = (targetId) => emit('force-mute', { targetId });
@@ -623,6 +628,11 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
             {camOn ? 'Stop camera' : 'Start camera'}
           </button>
           <ShareScreenButton sharing={sharingScreen} onStart={startShare} onStop={stopShare} />
+          {canPassMic && (
+            <button className="ghost" onClick={passMic}>
+              🎤 Pass the mic
+            </button>
+          )}
           <button className="ghost" onClick={onLeave}>
             Leave call
           </button>

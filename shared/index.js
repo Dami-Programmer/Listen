@@ -20,6 +20,12 @@ export const EVENTS = {
   REVOKE_FLOOR: 'revoke-floor',
   CLEAR_FLOOR: 'clear-floor',
 
+  // PASS_MIC : a speaker (moderated mode) voluntarily gives up the floor — the
+  //   first raised hand becomes the next speaker, or, if no hand is up, the
+  //   passer simply drops to listener. Same effect as the silence rule, on
+  //   demand. No payload.
+  PASS_MIC: 'pass-mic',
+
   // Phase 6 — active-speaker detection.
   // Each client watches its OWN mic level (Web Audio) and sends this only when
   // the boolean flips: { speaking: true } when it starts talking, then

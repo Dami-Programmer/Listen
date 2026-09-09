@@ -77,7 +77,8 @@ top of the Phase 2 call:
   flips. The server elects `activeSpeakerId` (most recent talker) and the room
   draws a green glow on that tile. In a moderated room, a non-host speaker who
   goes quiet for 10 s is auto-revoked and `queue[0]` takes the floor. The host is
-  never on that timer.
+  never on that timer. A speaker can also **🎤 Pass the mic** on demand — the
+  first raised hand takes over, or they just drop to listener if no hand is up.
 
 - **Phase 7 (full host controls):** the participants list gives the host, for
   every other person, **Grant** (hand the floor to one specific listener),
