@@ -235,6 +235,31 @@ regardless of speaking state, so "revoke mid-speech" needed no server change.
 
 **Status: done.**
 
+## Co-host (added after screen sharing, out of sequence)
+
+**Goal:** the host appoints one other participant who gets every moderator
+power, and can drop them back to a listener at any time.
+
+- New role `cohost` in `shared/index.js`, plus `promote-cohost` / `demote-cohost`
+  events (**host-only** — a co-host can't appoint or drop a co-host).
+- `rooms.js`: `promoteCohost` / `demoteCohost` (the only paths that touch a
+  co-host's role — `setRole` deliberately no-ops for `room.hostId` *and*
+  `room.cohostId`, so mode flips / grant / revoke / clear-floor can't disturb
+  them). One co-host at a time; appointing a new one drops the old to
+  normal-for-mode. A co-host is dropped to `listener` when moderated, `speaker`
+  when open.
+- `server/src/index.js`: a `requireModeratorRoom` guard (host **or** co-host)
+  replaces `requireHostRoom` on every Phase 4/5/7 control — set-mode, grant /
+  revoke / clear-floor, dismiss-hand, force-mute, remove, reorder-queue.
+  `requireTarget` now also refuses `room.hostId`, so **nobody, not even a
+  co-host, can mute or remove the host.**
+- Host succession: when the host leaves, the co-host inherits the room
+  (otherwise the next by insertion order), and `cohostId` clears.
+- Client: co-host sees the full moderator surface; the host's participant list
+  gets **Make co-host** / **Remove co-host**; a distinct role pill.
+
+**Status: done.**
+
 ## Phase 8 — Resilience & deploy
 
 **Goal:** works outside localhost.

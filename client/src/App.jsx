@@ -18,12 +18,24 @@ import { useCall } from './webrtc.js';
 import VideoTile from './VideoTile.jsx';
 import ChatPanel from './ChatPanel.jsx';
 
-// Display order for the participant list: host, then speakers, then listeners.
-const ROLE_RANK = { [ROLES.HOST]: 0, [ROLES.SPEAKER]: 1, [ROLES.LISTENER]: 2 };
+// Display order for the participant list: host, co-host, speakers, listeners.
+const ROLE_RANK = {
+  [ROLES.HOST]: 0,
+  [ROLES.COHOST]: 1,
+  [ROLES.SPEAKER]: 2,
+  [ROLES.LISTENER]: 3,
+};
+
+const ROLE_LABEL = {
+  [ROLES.HOST]: '★ host',
+  [ROLES.COHOST]: '★ co-host',
+  [ROLES.SPEAKER]: 'speaker',
+  [ROLES.LISTENER]: 'listener',
+};
 
 // A small coloured role label. Purely visual — the server owns the actual role.
 function RolePill({ role }) {
-  return <span className={`pill pill-${role}`}>{role === ROLES.HOST ? '★ host' : role}</span>;
+  return <span className={`pill pill-${role}`}>{ROLE_LABEL[role] ?? role}</span>;
 }
 
 // Start / stop sharing this tab's screen. In a moderated room only the host +
@@ -261,6 +273,9 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
   } = useCall({ selfId, participants, inCall: true, sharing });
 
   const isHost = self?.role === ROLES.HOST;
+  // A moderator is the host OR the appointed co-host — same control surface.
+  const isModerator = isHost || self?.role === ROLES.COHOST;
+  const cohostId = state?.cohostId ?? null;
   const moderated = state?.mode === MODES.MODERATED;
 
   // Phase 5 — the speaker queue, straight from the snapshot (socketIds, oldest
@@ -315,22 +330,21 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
 
   const presenting = screenTiles.length > 0;
 
-  // Participant list sorted host-first, then speakers, then listeners, then A-Z.
+  // Participant list sorted host-first, then co-host, speakers, listeners, A-Z.
   const ordered = [...participants].sort(
     (a, b) => (ROLE_RANK[a.role] ?? 9) - (ROLE_RANK[b.role] ?? 9) || a.name.localeCompare(b.name),
   );
 
-  // Host-only: ask the server to flip the room mode. The server re-checks that
-  // we're the host and rejects otherwise — this button just can't be seen by
-  // anyone else.
+  // Moderator-only: flip the room mode. The server re-checks that the caller is
+  // a moderator — this button just isn't rendered for anyone else.
   function changeMode(mode) {
     socket.emit('set-mode', { mode }, (ack) => {
       if (!ack?.ok) console.warn('[set-mode] rejected:', ack?.error);
     });
   }
 
-  // Every host action is a fire-and-forget socket event; the server re-checks
-  // permissions, then broadcasts a new snapshot that flows back through <App/>.
+  // Every moderator action is a fire-and-forget socket event; the server
+  // re-checks permissions, then broadcasts a new snapshot back through <App/>.
   // We only log a rejection.
   function emit(event, payload) {
     socket.emit(event, payload ?? {}, (ack) => {
@@ -339,11 +353,11 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
   }
   const raiseHand = () => emit('raise-hand');
   const lowerHand = () => emit('lower-hand'); // lower my own hand
-  const dismissHand = (targetId) => emit('lower-hand', { targetId }); // host
+  const dismissHand = (targetId) => emit('lower-hand', { targetId }); // moderator
   const grantFloor = (targetId) => emit('grant-floor', { targetId });
   const revokeFloor = (targetId) => emit('revoke-floor', { targetId });
 
-  // Phase 7 — host moderation. Destructive actions confirm first.
+  // Phase 7 — moderation. Destructive actions confirm first.
   const forceMute = (targetId) => emit('force-mute', { targetId });
   function removeParticipant(p) {
     if (window.confirm(`Remove ${p.name} from the call?`)) {
@@ -352,6 +366,14 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
   }
   function clearFloor() {
     if (window.confirm('Send every speaker back to listening?')) emit('clear-floor');
+  }
+
+  // Co-host — host-only.
+  const makeCohost = (p) => emit('promote-cohost', { targetId: p.id });
+  function dropCohost(p) {
+    if (window.confirm(`Remove ${p.name} as co-host? They stay in the call.`)) {
+      emit('demote-cohost', { targetId: p.id });
+    }
   }
   // Move one queued person up (dir -1) or down (dir +1). The server only accepts
   // a full reordering of the current queue, so we send the whole new order.
@@ -371,7 +393,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
           <h1>{state?.roomId}</h1>
           <p className="tagline">
             {connected ? 'connected' : 'reconnecting…'} · {participants.length} in room · you are{' '}
-            <strong>{self?.role ?? '—'}</strong>
+            <strong>{ROLE_LABEL[self?.role]?.replace('★ ', '') ?? '—'}</strong>
           </p>
         </div>
         <button className="ghost" onClick={onLeave}>
@@ -379,8 +401,9 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
         </button>
       </div>
 
-      {/* Host sees the toggle; everyone else sees a banner when moderated. */}
-      {isHost ? (
+      {/* A moderator (host or co-host) sees the toggle; everyone else sees a
+          banner when moderated. */}
+      {isModerator ? (
         <div className="mode-toggle" role="group" aria-label="Room mode">
           <button className={!moderated ? 'active' : ''} onClick={() => changeMode(MODES.OPEN)}>
             Open
@@ -390,13 +413,15 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
           </button>
         </div>
       ) : (
-        moderated && <p className="banner">🔒 Moderated — the host controls who speaks.</p>
+        moderated && (
+          <p className="banner">🔒 Moderated — the host &amp; co-host control who speaks.</p>
+        )
       )}
 
-      {/* Host-only, moderated-only: the raised-hands dashboard. Reorder with the
-          arrows, Grant to promote, Dismiss to drop from the queue. Clear floor
-          sends every current speaker back to listening. */}
-      {isHost && moderated && (
+      {/* Moderator-only, moderated-only: the raised-hands dashboard. Reorder with
+          the arrows, Grant to promote, Dismiss to drop from the queue. Clear
+          floor sends every current speaker back to listening. */}
+      {isModerator && moderated && (
         <div className="card queue">
           <div className="row header">
             <span>Raised hands ({queued.length})</span>
@@ -518,7 +543,10 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
           <span>Participants ({participants.length})</span>
         </div>
         {ordered.map((p) => {
-          const target = isHost && p.id !== selfId;
+          // A moderator can act on anyone but themselves and the host.
+          const canMod = isModerator && p.id !== selfId && p.role !== ROLES.HOST;
+          // Appointing / dropping a co-host is the host's alone.
+          const hostControls = isHost && p.id !== selfId && p.role !== ROLES.HOST;
           return (
             <div className="row" key={p.id}>
               <span>
@@ -527,23 +555,33 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
               </span>
               <span className="actions">
                 {/* Give the floor to this exact person (Phase 7 hand-off). */}
-                {target && moderated && p.role === ROLES.LISTENER && (
+                {canMod && moderated && p.role === ROLES.LISTENER && (
                   <button className="small" onClick={() => grantFloor(p.id)}>
                     Grant
                   </button>
                 )}
                 {/* Take the floor back, even mid-speech. */}
-                {target && moderated && p.role === ROLES.SPEAKER && (
+                {canMod && moderated && p.role === ROLES.SPEAKER && (
                   <button className="ghost small" onClick={() => revokeFloor(p.id)}>
                     Revoke
                   </button>
                 )}
-                {target && (
+                {hostControls &&
+                  (p.id === cohostId ? (
+                    <button className="ghost small" onClick={() => dropCohost(p)}>
+                      Remove co-host
+                    </button>
+                  ) : (
+                    <button className="ghost small" onClick={() => makeCohost(p)}>
+                      Make co-host
+                    </button>
+                  ))}
+                {canMod && (
                   <button className="ghost small" onClick={() => forceMute(p.id)}>
                     Mute
                   </button>
                 )}
-                {target && (
+                {canMod && (
                   <button className="ghost small danger" onClick={() => removeParticipant(p)}>
                     Remove
                   </button>

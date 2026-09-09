@@ -27,9 +27,11 @@ import {
   addChatMessage,
   addParticipant,
   clearFloor,
+  demoteCohost,
   getRoom,
   grantFloor,
   lowerHand,
+  promoteCohost,
   raiseHand,
   removeParticipant,
   reorderQueue,
@@ -165,48 +167,184 @@ io.on('connection', (socket) => {
     broadcastRoom(id);
   });
 
-  // --- Phase 4: host-only moderator toggle --------------------------------
-  // The host flips the whole room between 'open' (free-for-all) and 'moderated'
-  // (every non-host becomes a listener; each listener's client then silences
-  // its own mic/camera). HARD-rejected for anyone who isn't the current host —
-  // this is the first place the server enforces "host-authoritative".
-  socket.on(EVENTS.SET_MODE, ({ mode } = {}, ack) => {
+  // A moderator is the host OR the appointed co-host. Every Phase 4/5/7 control
+  // is open to both; only appointing/dropping a co-host stays host-only.
+  function isModerator() {
+    const room = getRoom(joinedRoomId);
+    return Boolean(room && (socket.id === room.hostId || socket.id === room.cohostId));
+  }
+
+  // Guard for moderator-only actions. Returns the room, or acks an error + null.
+  function requireModeratorRoom(ack) {
     const room = getRoom(joinedRoomId);
     if (!room) {
       ack?.({ ok: false, error: 'not in a room' });
-      return;
+      return null;
     }
-    if (socket.id !== room.hostId) {
-      socket.emit(EVENTS.ERROR, { message: 'only the host can change the mode' });
-      ack?.({ ok: false, error: 'only the host can change the mode' });
-      return;
+    if (!isModerator()) {
+      socket.emit(EVENTS.ERROR, { message: 'only a moderator can do that' });
+      ack?.({ ok: false, error: 'only a moderator can do that' });
+      return null;
     }
+    return room;
+  }
+
+  // --- Phase 4: the moderator mode toggle --------------------------------
+  // A moderator flips the whole room between 'open' (free-for-all) and
+  // 'moderated' (every non-moderator becomes a listener; each listener's client
+  // then silences its own mic/camera). Rejected for anyone who isn't a
+  // moderator — the first place the server enforces "host-authoritative".
+  socket.on(EVENTS.SET_MODE, ({ mode } = {}, ack) => {
+    const room = requireModeratorRoom(ack);
+    if (!room) return;
     if (mode !== MODES.OPEN && mode !== MODES.MODERATED) {
       ack?.({ ok: false, error: `unknown mode: ${mode}` });
       return;
     }
 
-    setMode(room, mode); // recomputes every non-host role
+    setMode(room, mode); // recomputes every non-moderator role
     // Any flip retires every silence timer: open has no rule, and moderated
     // just made everyone a listener so there's nothing to time yet.
     clearRoomSilence(joinedRoomId);
-    console.log(`[room ${joinedRoomId}] mode -> ${mode} (by host ${socket.id})`);
+    console.log(`[room ${joinedRoomId}] mode -> ${mode} (by ${socket.id})`);
     ack?.({ ok: true });
     broadcastRoom(joinedRoomId);
   });
 
   // --- Phase 5: hand-raising & the speaker queue --------------------------
   //
-  // Two listener-driven events (raise / lower my own hand) and three host-only
-  // events (grant, revoke, clear the floor). The host-only ones reuse the exact
-  // "must be room.hostId" rejection from set-mode above.
+  // Two listener-driven events (raise / lower my own hand) and three
+  // moderator-only events (grant, revoke, clear the floor), all gated with
+  // requireModeratorRoom.
   //
   // Every handler ends the same way: mutate room state via a rooms.js helper,
   // then broadcast a fresh snapshot. The helpers are all no-ops when the action
   // isn't valid (wrong mode, wrong role, not queued), so the handlers stay thin.
 
-  // Shared guard for the host-only actions. Returns the room if `socket` is its
-  // host, otherwise emits the error + acks false and returns null.
+  socket.on(EVENTS.RAISE_HAND, (_payload, ack) => {
+    const room = getRoom(joinedRoomId);
+    if (!room) return ack?.({ ok: false, error: 'not in a room' });
+    raiseHand(room, socket.id); // no-op unless I'm a listener in a moderated room
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  // A listener lowers their own hand; a moderator may lower anyone's ("Dismiss"
+  // in the dashboard) by passing { targetId }.
+  socket.on(EVENTS.LOWER_HAND, ({ targetId } = {}, ack) => {
+    const room = getRoom(joinedRoomId);
+    if (!room) return ack?.({ ok: false, error: 'not in a room' });
+
+    let subject = socket.id;
+    if (targetId && targetId !== socket.id) {
+      if (!isModerator()) {
+        return ack?.({ ok: false, error: 'only a moderator can lower another hand' });
+      }
+      subject = targetId;
+    }
+
+    lowerHand(room, subject);
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  socket.on(EVENTS.GRANT_FLOOR, ({ targetId } = {}, ack) => {
+    const room = requireModeratorRoom(ack);
+    if (!room) return;
+    grantFloor(room, targetId); // listener -> speaker, off the queue
+    clearSilence(joinedRoomId, targetId); // fresh start; timer waits for word one
+    console.log(`[room ${joinedRoomId}] grant floor -> ${targetId}`);
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  socket.on(EVENTS.REVOKE_FLOOR, ({ targetId } = {}, ack) => {
+    const room = requireModeratorRoom(ack);
+    if (!room) return;
+    revokeFloor(room, targetId); // speaker -> listener
+    clearSilence(joinedRoomId, targetId);
+    console.log(`[room ${joinedRoomId}] revoke floor -> ${targetId}`);
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  socket.on(EVENTS.CLEAR_FLOOR, (_payload, ack) => {
+    const room = requireModeratorRoom(ack);
+    if (!room) return;
+    clearFloor(room); // every non-moderator speaker -> listener
+    clearRoomSilence(joinedRoomId);
+    console.log(`[room ${joinedRoomId}] floor cleared by ${socket.id}`);
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  // --- Phase 7: full moderation controls ------------------------------
+  //
+  // Moderator-only actions on a specific participant. The target must be a real
+  // member of the room, never the caller, and never the host — nobody (not even
+  // a co-host) mutes or removes the host. (Dropping a co-host is demote-cohost,
+  // below, which is host-only.)
+  function requireTarget(room, targetId, ack) {
+    if (!targetId || !room.participants[targetId]) {
+      ack?.({ ok: false, error: 'unknown participant' });
+      return null;
+    }
+    if (targetId === socket.id) {
+      ack?.({ ok: false, error: 'that action cannot target yourself' });
+      return null;
+    }
+    if (targetId === room.hostId) {
+      ack?.({ ok: false, error: 'the host cannot be targeted' });
+      return null;
+    }
+    return targetId;
+  }
+
+  // Force-mute: the server can't touch peer-to-peer media, so it just asks the
+  // target's client to disable its own mic track. Cooperative — they can unmute
+  // themselves again. No room state changes, so no broadcast.
+  socket.on(EVENTS.FORCE_MUTE, ({ targetId } = {}, ack) => {
+    const room = requireModeratorRoom(ack);
+    if (!room) return;
+    const target = requireTarget(room, targetId, ack);
+    if (!target) return;
+    io.to(target).emit(EVENTS.FORCE_MUTE);
+    console.log(`[room ${joinedRoomId}] ${socket.id} muted ${target}`);
+    ack?.({ ok: true });
+  });
+
+  // Remove from call: tell the target why, then drop their socket. The normal
+  // 'disconnect' handler below does the room cleanup + broadcast. A client that
+  // is disconnected by the server does not auto-reconnect, so they land back on
+  // the join screen and can rejoin if they want.
+  socket.on(EVENTS.REMOVE_PARTICIPANT, ({ targetId } = {}, ack) => {
+    const room = requireModeratorRoom(ack);
+    if (!room) return;
+    const target = requireTarget(room, targetId, ack);
+    if (!target) return;
+    const targetSocket = io.sockets.sockets.get(target);
+    console.log(`[room ${joinedRoomId}] ${socket.id} removed ${target}`);
+    ack?.({ ok: true });
+    if (targetSocket) {
+      targetSocket.emit(EVENTS.REMOVED);
+      targetSocket.disconnect(true);
+    }
+  });
+
+  // Reorder the queue. `order` must be a permutation of the current queue —
+  // reorderQueue rejects anything else, so a stale list is a safe no-op.
+  socket.on(EVENTS.REORDER_QUEUE, ({ order } = {}, ack) => {
+    const room = requireModeratorRoom(ack);
+    if (!room) return;
+    reorderQueue(room, order);
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  // --- Co-host (host-only) --------------------------------------------
+  // The host hands full moderator power to one other participant, and can drop
+  // them back to a normal participant at any time. A co-host cannot appoint or
+  // drop a co-host, so these two stay strictly host-gated.
   function requireHostRoom(ack) {
     const room = getRoom(joinedRoomId);
     if (!room) {
@@ -221,120 +359,28 @@ io.on('connection', (socket) => {
     return room;
   }
 
-  socket.on(EVENTS.RAISE_HAND, (_payload, ack) => {
-    const room = getRoom(joinedRoomId);
-    if (!room) return ack?.({ ok: false, error: 'not in a room' });
-    raiseHand(room, socket.id); // no-op unless I'm a listener in a moderated room
-    ack?.({ ok: true });
-    broadcastRoom(joinedRoomId);
-  });
-
-  // A listener lowers their own hand; the host may lower anyone's ("Dismiss"
-  // in the dashboard) by passing { targetId }.
-  socket.on(EVENTS.LOWER_HAND, ({ targetId } = {}, ack) => {
-    const room = getRoom(joinedRoomId);
-    if (!room) return ack?.({ ok: false, error: 'not in a room' });
-
-    let subject = socket.id;
-    if (targetId && targetId !== socket.id) {
-      if (socket.id !== room.hostId) {
-        return ack?.({ ok: false, error: 'only the host can lower another hand' });
-      }
-      subject = targetId;
+  socket.on(EVENTS.PROMOTE_COHOST, ({ targetId } = {}, ack) => {
+    const room = requireHostRoom(ack);
+    if (!room) return;
+    if (!targetId || !room.participants[targetId] || targetId === room.hostId) {
+      return ack?.({ ok: false, error: 'unknown participant' });
     }
-
-    lowerHand(room, subject);
+    promoteCohost(room, targetId);
+    console.log(`[room ${joinedRoomId}] host ${socket.id} made ${targetId} co-host`);
     ack?.({ ok: true });
     broadcastRoom(joinedRoomId);
   });
 
-  socket.on(EVENTS.GRANT_FLOOR, ({ targetId } = {}, ack) => {
+  socket.on(EVENTS.DEMOTE_COHOST, ({ targetId } = {}, ack) => {
     const room = requireHostRoom(ack);
     if (!room) return;
-    grantFloor(room, targetId); // listener -> speaker, off the queue
-    clearSilence(joinedRoomId, targetId); // fresh start; timer waits for word one
-    console.log(`[room ${joinedRoomId}] grant floor -> ${targetId}`);
-    ack?.({ ok: true });
-    broadcastRoom(joinedRoomId);
-  });
-
-  socket.on(EVENTS.REVOKE_FLOOR, ({ targetId } = {}, ack) => {
-    const room = requireHostRoom(ack);
-    if (!room) return;
-    revokeFloor(room, targetId); // speaker -> listener
-    clearSilence(joinedRoomId, targetId);
-    console.log(`[room ${joinedRoomId}] revoke floor -> ${targetId}`);
-    ack?.({ ok: true });
-    broadcastRoom(joinedRoomId);
-  });
-
-  socket.on(EVENTS.CLEAR_FLOOR, (_payload, ack) => {
-    const room = requireHostRoom(ack);
-    if (!room) return;
-    clearFloor(room); // every non-host speaker -> listener
-    clearRoomSilence(joinedRoomId);
-    console.log(`[room ${joinedRoomId}] floor cleared by host ${socket.id}`);
-    ack?.({ ok: true });
-    broadcastRoom(joinedRoomId);
-  });
-
-  // --- Phase 7: full host moderation controls ---------------------------
-  //
-  // Three host-only actions on a specific participant. All reuse requireHostRoom
-  // and, like the Phase 5 handlers, target a socketId that must be a real member
-  // of the host's own room (and never the host themselves).
-
-  // Returns the target's socketId if it's a valid non-self member of `room`,
-  // otherwise acks an error and returns null.
-  function requireTarget(room, targetId, ack) {
-    if (!targetId || !room.participants[targetId]) {
-      ack?.({ ok: false, error: 'unknown participant' });
-      return null;
+    const subject = targetId || room.cohostId;
+    if (!subject || subject !== room.cohostId) {
+      return ack?.({ ok: false, error: 'not the co-host' });
     }
-    if (targetId === socket.id) {
-      ack?.({ ok: false, error: 'that action cannot target yourself' });
-      return null;
-    }
-    return targetId;
-  }
-
-  // Force-mute: the server can't touch peer-to-peer media, so it just asks the
-  // target's client to disable its own mic track. Cooperative — they can unmute
-  // themselves again. No room state changes, so no broadcast.
-  socket.on(EVENTS.FORCE_MUTE, ({ targetId } = {}, ack) => {
-    const room = requireHostRoom(ack);
-    if (!room) return;
-    const target = requireTarget(room, targetId, ack);
-    if (!target) return;
-    io.to(target).emit(EVENTS.FORCE_MUTE);
-    console.log(`[room ${joinedRoomId}] host ${socket.id} muted ${target}`);
-    ack?.({ ok: true });
-  });
-
-  // Remove from call: tell the target why, then drop their socket. The normal
-  // 'disconnect' handler below does the room cleanup + broadcast. A client that
-  // is disconnected by the server does not auto-reconnect, so they land back on
-  // the join screen and can rejoin if they want.
-  socket.on(EVENTS.REMOVE_PARTICIPANT, ({ targetId } = {}, ack) => {
-    const room = requireHostRoom(ack);
-    if (!room) return;
-    const target = requireTarget(room, targetId, ack);
-    if (!target) return;
-    const targetSocket = io.sockets.sockets.get(target);
-    console.log(`[room ${joinedRoomId}] host ${socket.id} removed ${target}`);
-    ack?.({ ok: true });
-    if (targetSocket) {
-      targetSocket.emit(EVENTS.REMOVED);
-      targetSocket.disconnect(true);
-    }
-  });
-
-  // Reorder the queue. `order` must be a permutation of the current queue —
-  // reorderQueue rejects anything else, so a stale list is a safe no-op.
-  socket.on(EVENTS.REORDER_QUEUE, ({ order } = {}, ack) => {
-    const room = requireHostRoom(ack);
-    if (!room) return;
-    reorderQueue(room, order);
+    demoteCohost(room, subject);
+    clearSilence(joinedRoomId, subject); // no silence timer for a fresh listener
+    console.log(`[room ${joinedRoomId}] host ${socket.id} dropped co-host ${subject}`);
     ack?.({ ok: true });
     broadcastRoom(joinedRoomId);
   });

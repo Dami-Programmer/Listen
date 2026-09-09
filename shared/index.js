@@ -44,6 +44,18 @@ export const EVENTS = {
   REMOVED: 'removed',
   REORDER_QUEUE: 'reorder-queue',
 
+  // Co-host (added after screen sharing). HOST-ONLY events.
+  //   PROMOTE_COHOST { targetId } : make one participant a co-host — they get
+  //     every moderator power the host has (mode toggle, grant/revoke/clear,
+  //     force-mute, remove, reorder), but can't touch the host and can't
+  //     appoint/drop a co-host. At most one co-host per room; promoting a new
+  //     one replaces the old.
+  //   DEMOTE_COHOST { targetId } : drop the co-host back to a normal
+  //     participant for the current mode (listener when moderated, speaker when
+  //     open). The host can do this at any time.
+  PROMOTE_COHOST: 'promote-cohost',
+  DEMOTE_COHOST: 'demote-cohost',
+
   // In-call text chat (added after Phase 7). Independent of the speaker floor —
   // everyone in the room can post, including listeners.
   //   CHAT_SEND    : client -> server { text, kind }. kind is 'text' (default)
@@ -97,8 +109,15 @@ export const MODES = {
 };
 
 // Every participant has exactly one role.
+//   host     — created the room / promoted on host leave. Full control. One only.
+//   cohost   — appointed by the host; same moderator powers, but can't touch the
+//              host or appoint/drop a co-host. Zero or one per room.
+//   speaker  — cleared to talk (everyone in open mode; granted the floor in
+//              moderated mode).
+//   listener — moderated mode, not cleared to talk; client silences its tracks.
 export const ROLES = {
   HOST: 'host',
+  COHOST: 'cohost',
   SPEAKER: 'speaker',
   LISTENER: 'listener',
 };

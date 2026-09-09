@@ -17,6 +17,7 @@ import { MODES, ROLES } from '@listen/shared';
 /**
  * roomId -> {
  *   hostId: string | null,
+ *   cohostId: string | null,   // one appointed co-host, or null
  *   mode: 'open' | 'moderated',
  *   participants: { [socketId]: { id, name, role } },
  *   queue: string[]      // socketIds of listeners with a raised hand (Phase 5)
@@ -37,6 +38,7 @@ const CHAT_HISTORY = 100;
 function createRoom() {
   return {
     hostId: null,
+    cohostId: null,
     mode: MODES.OPEN,
     participants: {},
     queue: [],
@@ -84,14 +86,16 @@ export function addParticipant(roomId, socketId, name) {
 
 /**
  * Phase 3 — the ONE place a participant's role changes.
- * Validates the role and never touches the host (whose role tracks room.hostId).
- * Phases 4-7 (set-mode, grant-floor, revoke-floor, …) all go through here.
+ * Validates the role and never touches the host or the co-host (whose roles
+ * track room.hostId / room.cohostId). Phases 4-7 (set-mode, grant-floor,
+ * revoke-floor, …) all go through here, so none of them can disturb a co-host —
+ * only the dedicated promote/demote helpers below can.
  */
 export function setRole(room, socketId, role) {
   const participant = room?.participants[socketId];
   if (!participant) return;
   if (!Object.values(ROLES).includes(role)) return;
-  if (socketId === room.hostId) return; // the host is always 'host'
+  if (socketId === room.hostId || socketId === room.cohostId) return;
   participant.role = role;
 
   // A demoted speaker can't be "the active speaker" any more — drop them from
@@ -111,8 +115,9 @@ export function setRole(room, socketId, role) {
  *   open      -> every non-host becomes a speaker (free-for-all)
  *   moderated -> every non-host becomes a listener (host controls the mic)
  *
- * The host's role never changes. A "kept speakers across the flip" set is still
- * deferred; for now, moderated demotes everyone.
+ * The host's and the co-host's roles never change (setRole no-ops for both).
+ * A "kept speakers across the flip" set is still deferred; for now, moderated
+ * demotes everyone else.
  *
  * Any flip also empties the queue — a raised hand from the previous mode is
  * stale, and after open -> moderated everyone is a listener again anyway.
@@ -125,8 +130,44 @@ export function setMode(room, mode) {
   room.queue = [];
   const nonHostRole = mode === MODES.MODERATED ? ROLES.LISTENER : ROLES.SPEAKER;
   for (const id of Object.keys(room.participants)) {
-    setRole(room, id, nonHostRole); // no-ops for the host
+    setRole(room, id, nonHostRole); // no-ops for the host and the co-host
   }
+}
+
+// The role a former host/co-host settles into for the current mode.
+function normalRole(room) {
+  return room.mode === MODES.MODERATED ? ROLES.LISTENER : ROLES.SPEAKER;
+}
+
+/**
+ * Co-host — the host hands full moderator power to one other participant.
+ * At most one at a time: appointing a new one drops the old back to normal.
+ * The role is assigned directly here (setRole deliberately refuses to touch a
+ * co-host), same as host promotion in removeParticipant.
+ */
+export function promoteCohost(room, socketId) {
+  const participant = room?.participants[socketId];
+  if (!participant || socketId === room.hostId || socketId === room.cohostId) return;
+
+  if (room.cohostId && room.participants[room.cohostId]) {
+    const prev = room.cohostId;
+    room.cohostId = null;
+    setRole(room, prev, normalRole(room));
+  }
+
+  room.cohostId = socketId;
+  participant.role = ROLES.COHOST;
+  room.queue = room.queue.filter((id) => id !== socketId); // not waiting in line
+}
+
+/**
+ * Drop the co-host back to a normal participant for the current mode (listener
+ * when moderated, speaker when open). Host-only; usable any time.
+ */
+export function demoteCohost(room, socketId) {
+  if (!room || room.cohostId !== socketId) return;
+  room.cohostId = null;
+  setRole(room, socketId, normalRole(room)); // cohostId is null now, so it applies
 }
 
 /* --------------------------------------------------------------------------
@@ -291,6 +332,7 @@ export function removeParticipant(socketId) {
     room.queue = room.queue.filter((id) => id !== socketId);
     room.speaking = room.speaking.filter((id) => id !== socketId);
     delete room.sharing[socketId];
+    if (room.cohostId === socketId) room.cohostId = null;
 
     const remaining = Object.keys(room.participants);
     if (remaining.length === 0) {
@@ -299,9 +341,12 @@ export function removeParticipant(socketId) {
     }
 
     if (room.hostId === socketId) {
-      const nextHostId = remaining[0];
-      room.hostId = nextHostId;
-      room.participants[nextHostId].role = ROLES.HOST;
+      // The co-host is the natural successor; otherwise the next by insertion.
+      const heir =
+        room.cohostId && room.participants[room.cohostId] ? room.cohostId : remaining[0];
+      if (room.cohostId === heir) room.cohostId = null;
+      room.hostId = heir;
+      room.participants[heir].role = ROLES.HOST;
     }
 
     return { roomId, room };
@@ -320,6 +365,7 @@ export function snapshot(roomId) {
   return {
     roomId,
     hostId: room.hostId,
+    cohostId: room.cohostId,
     mode: room.mode,
     participants: Object.values(room.participants),
     queue: [...room.queue],

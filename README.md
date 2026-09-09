@@ -102,6 +102,13 @@ top of the Phase 2 call:
   **One media stage, Google-Meet style:** no one presenting → cameras are a
   grid; someone presenting → the screen fills the main area and the cameras
   become a filmstrip. Needs HTTPS off localhost.
+- **Co-host:** the host appoints one other participant (**Make co-host** in the
+  participant list) who then has every moderator power — mode toggle, the
+  raised-hands dashboard, grant/revoke, force-mute, remove, reorder. The host
+  can **Remove co-host** at any time (they drop to a listener in a moderated
+  room). Nobody — not even a co-host — can mute or remove the host, and only the
+  host appoints/drops co-hosts. If the host leaves, the co-host inherits the
+  room.
 
 Test: open 3–4 tabs at http://localhost:5173/?room=demo, allow camera in each.
 Talking in one tab glows that tile everywhere. As the host, flip to Moderated,
