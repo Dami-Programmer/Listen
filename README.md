@@ -61,9 +61,11 @@ top of the Phase 2 call:
   sorted host-first with coloured role pills; each video tile shows its role.
 - **Phase 4 (moderator toggle):** `set-mode {mode}` is rejected unless you're
   the host. Moderated → every non-host becomes a listener and their client
-  silences its own mic/camera; open → everyone back to speaker, tracks
-  re-enabled. Host sees an Open | Moderated switch; others see a locked banner;
-  listeners see a "listening only" note instead of the mic/camera buttons.
+  silences its own mic/camera; **on the flip, the host is unmuted and everyone
+  else muted** (the host takes the floor). Open → everyone back to speaker,
+  tracks re-enabled. Host sees an Open | Moderated switch; others see a locked
+  banner; listeners see a "listening only" note instead of the mic/camera
+  buttons.
 - **Phase 5 (hand-raising & speaker queue):** listeners get a ✋ raise/lower
   toggle that adds them to `room.queue` (server-owned, oldest first) and shows
   their place in line. The host gets a "Raised hands" dashboard — **Grant**

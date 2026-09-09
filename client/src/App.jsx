@@ -320,7 +320,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
     stopShare,
     mediaError,
     isListener,
-  } = useCall({ selfId, participants, inCall: true, sharing });
+  } = useCall({ selfId, participants, inCall: true, sharing, mode: state?.mode });
 
   const isHost = self?.role === ROLES.HOST;
   // A moderator is the host OR the appointed co-host — same control surface.

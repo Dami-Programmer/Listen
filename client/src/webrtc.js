@@ -21,7 +21,7 @@
 // is polite). No single "caller" any more.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { EVENTS, ROLES } from '@listen/shared';
+import { EVENTS, MODES, ROLES } from '@listen/shared';
 import { socket } from './socket.js';
 
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
@@ -53,8 +53,9 @@ function friendlyMediaError(err) {
  * @param {boolean}     args.inCall        true once joined and wanting media
  * @param {object}      args.sharing       room-state `sharing` map: socketId -> the
  *                                         id of that peer's screen MediaStream
+ * @param {string}      args.mode          room-state mode ('open' | 'moderated')
  */
-export function useCall({ selfId, participants, inCall, sharing = {} }) {
+export function useCall({ selfId, participants, inCall, sharing = {}, mode }) {
   const myRole = participants.find((p) => p.id === selfId)?.role ?? null;
   const isListener = myRole === ROLES.LISTENER;
 
@@ -360,6 +361,24 @@ export function useCall({ selfId, participants, inCall, sharing = {} }) {
     socket.on(EVENTS.FORCE_MUTE, onForceMute);
     return () => socket.off(EVENTS.FORCE_MUTE, onForceMute);
   }, []);
+
+  // --- effect G: flipping to moderated hands the room to the host --------
+  // The moment the room becomes moderated, the host holds the floor: their mic
+  // is unmuted and everyone else's is muted. Listeners also get muted by
+  // effect D (their role changes), but this additionally covers the co-host and
+  // unmutes the host. A one-shot on the transition — anyone can toggle after.
+  const prevModeRef = useRef(mode);
+  useEffect(() => {
+    const was = prevModeRef.current;
+    prevModeRef.current = mode;
+    if (was === mode || mode !== MODES.MODERATED) return;
+
+    const micTrack = localStreamRef.current?.getAudioTracks()[0];
+    if (!micTrack) return;
+    const iAmHost = myRole === ROLES.HOST;
+    micTrack.enabled = iAmHost;
+    setMicOn(iAmHost);
+  }, [mode, myRole]);
 
   // --- screen sharing ----------------------------------------------------
   const stopShare = useCallback(() => {

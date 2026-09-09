@@ -99,9 +99,12 @@ unless the caller is a moderator (host or co-host — originally host-only);
 `setMode` in `rooms.js` recomputes every non-moderator role (moderated →
 listener, open → speaker) and someone joining a moderated room now enters as a
 listener. Client: `useCall` watches my own role and silences my outbound tracks
-when it becomes `listener` (re-enables on the way back). UI: a moderator gets an
-Open | Moderated switch, non-moderators get a locked banner, listeners get a
-"listening only" note instead of mic/camera buttons. "Keep a specific speaker
+when it becomes `listener` (re-enables on the way back). **The moment the room
+flips to moderated, `webrtc.js` effect G resets mics to "the host has the
+floor": the host's mic is unmuted, everyone else's is muted (a one-shot on the
+transition — anyone can toggle after).** UI: a moderator gets an Open |
+Moderated switch, non-moderators get a locked banner, listeners get a "listening
+only" note instead of mic/camera buttons. "Keep a specific speaker
 across the flip" is partly answered by the co-host (a co-host survives a mode
 flip); a general per-speaker pin is still deferred.
 
