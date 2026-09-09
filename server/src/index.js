@@ -22,7 +22,7 @@ import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import { Server } from 'socket.io';
-import { EVENTS, MODES, ROLES, STICKERS } from '@listen/shared';
+import { CHAT_FILE_MAX_BYTES, EVENTS, MODES, ROLES, STICKERS } from '@listen/shared';
 import {
   addChatMessage,
   addParticipant,
@@ -65,6 +65,9 @@ app.get('/health', (_req, res) => {
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: CLIENT_ORIGIN, methods: ['GET', 'POST'] },
+  // Chat attachments travel as data: URLs — allow frames well over the 1 MB
+  // default (a 5 MB file is ~6.7 MB base64, plus JSON overhead).
+  maxHttpBufferSize: 12 * 1024 * 1024,
 });
 
 // Send the current snapshot of a room to everyone in it.
@@ -463,7 +466,7 @@ io.on('connection', (socket) => {
   // timestamps every message, keeps a bounded history, and fans it out on its
   // own event (never in room-state, which would resend the whole log on every
   // join/role change). Text is escaped by React on render.
-  socket.on(EVENTS.CHAT_SEND, ({ text, kind } = {}, ack) => {
+  socket.on(EVENTS.CHAT_SEND, ({ text, kind, file } = {}, ack) => {
     const room = getRoom(joinedRoomId);
     const participant = room?.participants[socket.id];
     if (!room || !participant) {
@@ -471,26 +474,52 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const isSticker = kind === 'sticker';
-    const body = String(text ?? '').trim();
-    if (isSticker) {
-      if (!STICKERS.includes(body)) {
-        ack?.({ ok: false, error: 'unknown sticker' });
-        return;
-      }
-    } else if (!body) {
-      ack?.({ ok: false, error: 'empty message' });
-      return;
-    }
-
-    const message = {
+    const base = {
       id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
       from: socket.id,
       name: participant.name,
-      text: isSticker ? body : body.slice(0, 2000),
-      kind: isSticker ? 'sticker' : 'text',
       ts: Date.now(),
     };
+    let message;
+
+    if (kind === 'file') {
+      const url = typeof file?.url === 'string' ? file.url : '';
+      if (!url.startsWith('data:')) {
+        return ack?.({ ok: false, error: 'bad attachment' });
+      }
+      // data: URL length ~= 1.37 * raw bytes (base64 + a short header).
+      if (url.length > CHAT_FILE_MAX_BYTES * 1.4) {
+        return ack?.({ ok: false, error: 'attachment too large' });
+      }
+      const name = String(file?.name ?? 'file')
+        .replace(/[/\\\r\n\t]/g, '_')
+        .trim()
+        .slice(0, 200) || 'file';
+      message = {
+        ...base,
+        kind: 'file',
+        file: {
+          name,
+          type: String(file?.type ?? 'application/octet-stream').slice(0, 100),
+          size: Number.isFinite(file?.size) ? Math.max(0, Math.round(file.size)) : url.length,
+          url,
+        },
+      };
+    } else {
+      const isSticker = kind === 'sticker';
+      const body = String(text ?? '').trim();
+      if (isSticker) {
+        if (!STICKERS.includes(body)) return ack?.({ ok: false, error: 'unknown sticker' });
+      } else if (!body) {
+        return ack?.({ ok: false, error: 'empty message' });
+      }
+      message = {
+        ...base,
+        kind: isSticker ? 'sticker' : 'text',
+        text: isSticker ? body : body.slice(0, 2000),
+      };
+    }
+
     addChatMessage(room, message);
     ack?.({ ok: true });
     io.to(joinedRoomId).emit(EVENTS.CHAT_MESSAGE, message);

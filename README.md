@@ -92,7 +92,10 @@ top of the Phase 2 call:
   100 per room, and broadcasts `chat-message`. There's an emoji tray and a
   sticker tray (large emoji stickers, no image assets). Recent history arrives
   in the join ack so late joiners catch up. A `chat-typing` relay drives the
-  iMessage-style bouncing-dots "X is typing" row.
+  iMessage-style bouncing-dots "X is typing" row. **Photos and files** attach via
+  a 📎 button or Ctrl+V — images are downscaled client-side and travel as
+  `data:` URLs (5 MB cap, 40 MB per-room budget); images show inline, other
+  files as a download chip.
 - **Screen sharing:** in an open room anyone can share; in a moderated room only
   the host + speakers can (a listener has no Share button, the server rejects it,
   and a demoted speaker's share is dropped). Several people can share at once.

@@ -73,12 +73,16 @@ export const EVENTS = {
 
   // In-call text chat (added after Phase 7). Independent of the speaker floor —
   // everyone in the room can post, including listeners.
-  //   CHAT_SEND    : client -> server { text, kind }. kind is 'text' (default)
-  //     or 'sticker' (then text must be one of STICKERS). The server trims,
-  //     length-caps, names and timestamps it.
+  //   CHAT_SEND    : client -> server { text, kind, file }.
+  //     - kind 'text' (default): the server trims + length-caps `text`.
+  //     - kind 'sticker': `text` must be one of STICKERS.
+  //     - kind 'file': `file` is { name, type, size, url } where `url` is a
+  //       data: URL. Images are downscaled client-side; the server caps the
+  //       decoded size at CHAT_FILE_MAX_BYTES and keeps a per-room byte budget.
   //   CHAT_MESSAGE : server -> everyone in the room, one stored message:
-  //     { id, from, name, text, kind: 'text'|'sticker', ts }
-  //   Recent history (last 100) rides along in the join-room ack as `chat`.
+  //     { id, from, name, ts, kind, text? , file? }
+  //   Recent history (last 100, within the byte budget) rides along in the
+  //   join-room ack as `chat`.
   //   CHAT_TYPING : the iMessage-style "someone is typing" ping. Client -> server
   //     { typing: bool } while the composer has focus + content; server relays
   //     { id, name, typing } to everyone else. Ephemeral — never stored, never in
@@ -158,3 +162,12 @@ export const STICKERS = [
   '🥳',
   '😎',
 ];
+
+// Chat attachments (added after the waiting room). Files travel as data: URLs
+// over Socket.IO — no file storage, matching the app's in-memory model. Images
+// are downscaled client-side first, so this cap mostly bites non-image files.
+export const CHAT_FILE_MAX_BYTES = 5 * 1024 * 1024;
+
+// Per-room ceiling on the bytes held in the chat ring buffer for attachments.
+// Once exceeded, the oldest file messages are dropped (text stays).
+export const CHAT_ATTACHMENT_BUDGET_BYTES = 40 * 1024 * 1024;

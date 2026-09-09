@@ -12,7 +12,7 @@
 // silences its outbound tracks. `setRole` below is the single place any role
 // changes, so Phases 4-7 never poke `participant.role` directly.
 
-import { MODES, ROLES } from '@listen/shared';
+import { CHAT_ATTACHMENT_BUDGET_BYTES, MODES, ROLES } from '@listen/shared';
 
 /**
  * roomId -> {
@@ -342,6 +342,16 @@ export function addChatMessage(room, message) {
   if (room.chat.length > CHAT_HISTORY) {
     room.chat = room.chat.slice(-CHAT_HISTORY);
   }
+  // Keep the bytes held for attachments bounded — drop the oldest file messages
+  // (leaving text/stickers alone) until we're back under the budget.
+  const bytes = (m) => m.file?.url?.length ?? 0;
+  let total = room.chat.reduce((n, m) => n + bytes(m), 0);
+  if (total <= CHAT_ATTACHMENT_BUDGET_BYTES) return;
+  room.chat = room.chat.filter((m) => {
+    if (total <= CHAT_ATTACHMENT_BUDGET_BYTES || !m.file) return true;
+    total -= bytes(m);
+    return false;
+  });
 }
 
 /**

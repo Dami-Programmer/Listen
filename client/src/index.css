@@ -421,6 +421,59 @@ button.ghost.danger:hover:not(:disabled) {
   padding: 2px 0;
 }
 
+/* Inline image attachment. */
+.chat-image {
+  display: block;
+  max-width: 260px;
+  max-height: 240px;
+  border-radius: 12px;
+  border: 1px solid #2a2e37;
+  cursor: zoom-in;
+}
+
+/* Non-image attachment: a download chip. */
+.chat-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  max-width: 260px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: #23262f;
+  border: 1px solid #2a2e37;
+  text-decoration: none;
+  color: #e8e8ea;
+}
+.chat-msg.mine .chat-file {
+  background: #1c3a24;
+  border-color: #2b5c38;
+}
+.chat-file:hover {
+  border-color: #7ee787;
+}
+.chat-file-icon {
+  font-size: 1.4rem;
+  flex-shrink: 0;
+}
+.chat-file-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.chat-file-name {
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-file-size {
+  font-size: 0.68rem;
+  color: #9aa0a6;
+}
+.chat-attach-err {
+  padding: 0 0 8px;
+}
+
 .chat-time {
   font-size: 0.68rem;
   color: #6b7178;

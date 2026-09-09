@@ -195,6 +195,14 @@ regardless of speaking state, so "revoke mid-speech" needed no server change.
   tray (curated ~48, inserts into the input) and a sticker tray (sends
   immediately, rendered large). Chat state lives in `<App/>`; React escapes all
   message text on render.
+- **Attachments** (added after the waiting room): a 📎 button (and Ctrl+V paste)
+  sends `kind: 'file'` with `file: { name, type, size, url }` where `url` is a
+  `data:` URL — no file storage, matching the in-memory model. Raster images are
+  downscaled client-side to ≤1600px JPEG first. The server caps the decoded size
+  at `CHAT_FILE_MAX_BYTES` (5 MB) and keeps a per-room 40 MB attachment budget
+  (oldest file messages are evicted first, text stays). `maxHttpBufferSize` is
+  raised to 12 MB. Images render inline (click to open); other files render as a
+  download chip. Filenames are sanitised server-side.
 - `chat-typing {typing}` — the iMessage bouncing-dots indicator. The composer
   sends `true` on the first keystroke, re-sends at most every 3s while typing
   continues, and `false` after 3.5s idle / on send / on blur / on unmount. The
