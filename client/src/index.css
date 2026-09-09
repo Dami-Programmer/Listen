@@ -428,21 +428,37 @@ button.small {
   background: #e35a5a;
 }
 
-/* --- thumbnail strip --------------------------------------------- */
-.thumb-strip {
+/* --- joiner carousel: three cards on screen, slides in pages of 3 --- */
+.thumb-carousel {
   display: flex;
   gap: 12px;
-  align-items: flex-start;
+  align-items: stretch;
   min-height: 120px;
+}
+.thumb-viewport {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.thumb-track {
+  display: flex;
+  transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform;
+}
+.thumb-page {
+  flex: 0 0 100%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
 }
 .thumb {
   position: relative;
-  flex: 1 1 0;
   min-width: 0;
   height: clamp(120px, 19vh, 200px);
   border-radius: 14px;
   overflow: hidden;
   background: #0c0c0e;
+  box-shadow: 0 10px 24px -12px rgba(20, 20, 40, 0.32);
 }
 .thumb .tile {
   border-radius: 14px;
@@ -485,20 +501,43 @@ button.small {
   width: 15px;
   height: 15px;
 }
-.thumb-more {
-  flex: 0 0 44px;
-  align-self: stretch;
+.thumb-nav {
+  flex: 0 0 46px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.thumb-nav-btn {
+  flex: 1;
+  min-height: 44px;
+  border: none;
   border-radius: 14px;
   background: var(--dark);
   color: #fff;
-  border: none;
   display: grid;
   place-items: center;
   padding: 0;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.15s ease;
 }
-.thumb-more svg {
+.thumb-nav-btn svg {
   width: 22px;
   height: 22px;
+}
+.thumb-nav-btn.prev svg {
+  transform: rotate(180deg);
+}
+.thumb-nav-btn:hover:not(:disabled) {
+  transform: scale(1.03);
+}
+.thumb-nav-btn:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+@media (prefers-reduced-motion: reduce) {
+  .thumb-track {
+    transition: none;
+  }
 }
 
 /* --- side panel: Room Chat / Participant ------------------------- */
@@ -910,10 +949,11 @@ button.small {
   .join-req {
     max-width: none;
   }
-  .thumb-strip {
-    overflow-x: auto;
-  }
   .thumb {
-    flex: 0 0 40%;
+    height: clamp(96px, 26vw, 150px);
+  }
+  .thumb-name {
+    font-size: 0.72rem;
+    padding: 2px 9px;
   }
 }

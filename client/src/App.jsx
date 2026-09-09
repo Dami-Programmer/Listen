@@ -314,7 +314,7 @@ function WaitingScreen({ roomId, onCancel }) {
 // --- the in-call screen ----------------------------------------------------
 function CallView({ state, chat, typers, selfId, connected, onLeave }) {
   const [tab, setTab] = useState('chat'); // right panel: 'chat' | 'people'
-  const stripRef = useRef(null);
+  const [page, setPage] = useState(0); // joiner carousel — which set of three
 
   const participants = state?.participants ?? [];
   const self = participants.find((p) => p.id === selfId);
@@ -492,6 +492,23 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
         showMic: true,
       });
     });
+
+  // The strip is a carousel: three cards on screen, sliding between "pages" of
+  // three. The data drives everything — how many pages, which three show, and
+  // whether the arrows are live.
+  const PER_PAGE = 3;
+  const stripPages = [];
+  for (let i = 0; i < stripTiles.length; i += PER_PAGE) {
+    stripPages.push(stripTiles.slice(i, i + PER_PAGE));
+  }
+  const lastPage = Math.max(0, stripPages.length - 1);
+  const curPage = Math.min(page, lastPage); // clamp render if people left
+  const stripOverflow = stripTiles.length > PER_PAGE;
+
+  // Someone left and collapsed a page we were parked on — step back into range.
+  useEffect(() => {
+    if (page > lastPage) setPage(lastPage);
+  }, [page, lastPage]);
 
   return (
     <div className="bg">
@@ -675,35 +692,64 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
             </div>
 
             {stripTiles.length > 0 && (
-              <div className="thumb-strip" ref={stripRef}>
-                {stripTiles.map((t) => (
-                  <div className="thumb" key={t.key}>
-                    <VideoTile
-                      stream={t.stream}
-                      name={t.name}
-                      muted={t.muted ?? false}
-                      mirror={t.mirror ?? false}
-                      speaking={t.speaking ?? false}
-                      avatarSize={46}
-                    />
-                    {t.showMic && (
-                      <span className={`mic-badge${t.micOn ? '' : ' muted'}`} aria-hidden="true">
-                        {t.micOn ? <Mic /> : <MicOff />}
-                      </span>
-                    )}
-                    <span className="thumb-name">{t.name}</span>
-                  </div>
-                ))}
-                {stripTiles.length > 4 && (
-                  <button
-                    className="thumb-more"
-                    aria-label="Scroll thumbnails"
-                    onClick={() =>
-                      stripRef.current?.scrollBy({ left: 240, behavior: 'smooth' })
-                    }
+              <div className="thumb-carousel">
+                <div className="thumb-viewport">
+                  <div
+                    className="thumb-track"
+                    style={{ transform: `translateX(-${curPage * 100}%)` }}
                   >
-                    <Chevron />
-                  </button>
+                    {stripPages.map((group, gi) => (
+                      <div
+                        className="thumb-page"
+                        key={gi}
+                        aria-hidden={gi !== curPage}
+                      >
+                        {group.map((t) => (
+                          <div className="thumb" key={t.key}>
+                            <VideoTile
+                              stream={t.stream}
+                              name={t.name}
+                              muted={t.muted ?? false}
+                              mirror={t.mirror ?? false}
+                              speaking={t.speaking ?? false}
+                              avatarSize={46}
+                            />
+                            {t.showMic && (
+                              <span
+                                className={`mic-badge${t.micOn ? '' : ' muted'}`}
+                                aria-hidden="true"
+                              >
+                                {t.micOn ? <Mic /> : <MicOff />}
+                              </span>
+                            )}
+                            <span className="thumb-name">{t.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {stripOverflow && (
+                  <div className="thumb-nav">
+                    {curPage > 0 && (
+                      <button
+                        className="thumb-nav-btn prev"
+                        onClick={() => setPage(curPage - 1)}
+                        aria-label="Show previous participants"
+                      >
+                        <Chevron />
+                      </button>
+                    )}
+                    <button
+                      className="thumb-nav-btn next"
+                      onClick={() => setPage(curPage + 1)}
+                      disabled={curPage >= lastPage}
+                      aria-label="Show more participants"
+                    >
+                      <Chevron />
+                    </button>
+                  </div>
                 )}
               </div>
             )}
