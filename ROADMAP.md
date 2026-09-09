@@ -130,7 +130,7 @@ Clear floor) plus a Revoke button on each speaker row. `webrtc.js` needed no
 change — effect D already re-enables/silences tracks off the role. `grant-floor`
 never touches other speakers, so it doubles as "add co-speaker" — **two or more
 speakers can hold the floor at once** (in moderated mode the silence rule below
-still cycles out whichever one goes quiet for 5 s).
+still cycles out whichever one goes quiet for 10 s).
 
 ## Phase 6 — Active-speaker & automated silence detection
 
@@ -139,7 +139,7 @@ still cycles out whichever one goes quiet for 5 s).
 - Each client runs a Web Audio `AnalyserNode` on its own mic -> emits throttled
   `speaking: true/false`.
 - Server highlights the active speaker for everyone (glow on the tile).
-- Silence rule (moderated only): speaker quiet for 5s -> server revokes their
+- Silence rule (moderated only): speaker quiet for 10s -> server revokes their
   floor and auto-promotes `queue[0]`.
 - Host is exempt — the silence timer never arms for the host.
 
@@ -151,8 +151,8 @@ only on the transition (rising edge immediately, falling edge after a 600 ms
 hangover). `rooms.js` keeps `room.speaking` (socketIds in start order);
 `snapshot` exposes `activeSpeakerId` = the last entry, and the client draws a
 green glow on that one tile. Silence rule (`server/src/index.js`): a
-`speaking: false` from a non-host speaker in a moderated room arms a 5 s timer;
-firing it calls `revokeFloor` + `grantFloor(queue[0])`. The timer is cleared on
+`speaking: false` from a non-host speaker in a moderated room arms a 10 s timer
+(`SILENCE_MS`); firing it calls `revokeFloor` + `grantFloor(queue[0])`. The timer is cleared on
 `speaking: true`, grant, revoke, clear-floor, mode flip, disconnect, and
 host-promotion. `armSilence` bails on any non-`speaker` role, so the host **and
 the co-host** are exempt. Active-speaker glow works in open mode too; only the

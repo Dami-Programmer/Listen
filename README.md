@@ -76,7 +76,7 @@ top of the Phase 2 call:
   with a Web Audio `AnalyserNode` and sends `speaking: true/false` only when it
   flips. The server elects `activeSpeakerId` (most recent talker) and the room
   draws a green glow on that tile. In a moderated room, a non-host speaker who
-  goes quiet for 5 s is auto-revoked and `queue[0]` takes the floor. The host is
+  goes quiet for 10 s is auto-revoked and `queue[0]` takes the floor. The host is
   never on that timer.
 
 - **Phase 7 (full host controls):** the participants list gives the host, for
@@ -121,7 +121,7 @@ top of the Phase 2 call:
 
 Test: open 3–4 tabs at http://localhost:5173/?room=demo, allow camera in each.
 Talking in one tab glows that tile everywhere. As the host, flip to Moderated,
-**Grant** a raised hand, then have that speaker stay silent — after ~5 s the
+**Grant** a raised hand, then have that speaker stay silent — after ~10 s the
 floor auto-passes to the next raised hand. **Mute** or **Remove** anyone from
 the participants list. Type in the chat, drop an emoji or a sticker, and open a
 fresh tab to confirm the last 100 messages replay on join. Hit **Share screen**

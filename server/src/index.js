@@ -86,7 +86,7 @@ function broadcastRoom(roomId) {
 // their first word, because the client only ever sends "speaking: false" after
 // a "speaking: true". The host is exempt: armSilence bails on any non-speaker
 // role, and the host's role is 'host'.
-const SILENCE_MS = 5000;
+const SILENCE_MS = 10000;
 const silenceTimers = new Map(); // `${roomId}::${socketId}` -> Timeout
 
 const silenceKey = (roomId, socketId) => `${roomId}::${socketId}`;
