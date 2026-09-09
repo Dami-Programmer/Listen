@@ -4,6 +4,13 @@ A moderated group video-call app. Google Meet base layer + host-authoritative
 moderation on top. Everything about who may speak lives on the server; the client
 never decides its own permissions.
 
+**Where it stands:** Phases 0–7 are complete. A batch of features was then added
+out of sequence — chat (with attachments, emoji, stickers, typing), screen
+sharing, co-host, and a waiting room — all under
+[Beyond Phase 7](#beyond-phase-7--features-added-out-of-sequence). **Phase 8
+(resilience & deploy) is the only planned phase not started.** Source:
+<https://github.com/Dami-Programmer/Listen>.
+
 ---
 
 ## Phase 0 — Foundation & decisions
@@ -54,6 +61,8 @@ binds a stream to a `<video>`; `App.jsx` splits into join screen + call view
 with mic/camera/leave. Server relays peer negotiation via one `rtc-signal`
 event (`server/src/index.js`). Peer discovery reuses the `room-state` snapshot;
 the greater socket id in each pair sends the offer. STUN only — TURN is Phase 8.
+(The one-offer-per-pair rule was later replaced by perfect negotiation — see
+Screen sharing.)
 
 ## Phase 3 — Roles foundation
 
@@ -68,8 +77,9 @@ the greater socket id in each pair sends the offer. STUN only — TURN is Phase 
 
 **Status: done.** Roles were already in the participant shape from Phase 1; this
 phase added `setRole` in `rooms.js` as the single choke point for role changes
-(Phases 4-7 all route through it), a host-first sorted participant list, and
-coloured role pills in the list and on each video tile.
+(everything routes through it), a host-first sorted participant list, and
+coloured role pills in the list and on each video tile. A fourth role, `cohost`,
+was added later (see Co-host).
 
 ## Phase 4 — Moderator mode toggle
 
@@ -85,13 +95,15 @@ coloured role pills in the list and on each video tile.
 **Deliverable:** host flips the room between free-for-all and locked-down.
 
 **Status: done.** `set-mode {mode}` in `server/src/index.js` is hard-rejected
-unless `socket.id === room.hostId`; `setMode` in `rooms.js` recomputes every
-non-host role (moderated → listener, open → speaker) and someone joining a
-moderated room now enters as a listener. Client: `useCall` watches my own role
-and silences my outbound tracks when it becomes `listener` (re-enables on the
-way back). UI: host gets an Open | Moderated switch, non-hosts get a locked
-banner, listeners get a "listening only" note instead of mic/camera buttons.
-The "keep specific speakers across the flip" exception is deferred to Phase 5.
+unless the caller is a moderator (host or co-host — originally host-only);
+`setMode` in `rooms.js` recomputes every non-moderator role (moderated →
+listener, open → speaker) and someone joining a moderated room now enters as a
+listener. Client: `useCall` watches my own role and silences my outbound tracks
+when it becomes `listener` (re-enables on the way back). UI: a moderator gets an
+Open | Moderated switch, non-moderators get a locked banner, listeners get a
+"listening only" note instead of mic/camera buttons. "Keep a specific speaker
+across the flip" is partly answered by the co-host (a co-host survives a mode
+flip); a general per-speaker pin is still deferred.
 
 ## Phase 5 — Hand-raising & speaker queue
 
@@ -109,15 +121,16 @@ The "keep specific speakers across the flip" exception is deferred to Phase 5.
 **Deliverable:** host runs a structured session — people request, host grants.
 
 **Status: done.** `raise-hand` / `lower-hand` (listener, moderated only)
-maintain `room.queue` in `rooms.js`; the host-only `grant-floor`,
+maintain `room.queue` in `rooms.js`; the moderator-only `grant-floor`,
 `revoke-floor`, and `clear-floor` all route through `setRole`. `lower-hand`
-accepts `{ targetId }` so the host can dismiss a hand. Any mode flip empties the
-queue. Client: listeners get a ✋ raise/lower toggle showing their place in
-line; the host gets a "Raised hands" dashboard (Grant / Dismiss per person,
+accepts `{ targetId }` so a moderator can dismiss a hand. Any mode flip empties
+the queue. Client: listeners get a ✋ raise/lower toggle showing their place in
+line; a moderator gets a "Raised hands" dashboard (Grant / Dismiss per person,
 Clear floor) plus a Revoke button on each speaker row. `webrtc.js` needed no
 change — effect D already re-enables/silences tracks off the role. `grant-floor`
-never touches other speakers, so it doubles as "add co-speaker". "Keep specific
-speakers across a mode flip" is still deferred.
+never touches other speakers, so it doubles as "add co-speaker" — **two or more
+speakers can hold the floor at once** (in moderated mode the silence rule below
+still cycles out whichever one goes quiet for 5 s).
 
 ## Phase 6 — Active-speaker & automated silence detection
 
@@ -141,11 +154,15 @@ green glow on that one tile. Silence rule (`server/src/index.js`): a
 `speaking: false` from a non-host speaker in a moderated room arms a 5 s timer;
 firing it calls `revokeFloor` + `grantFloor(queue[0])`. The timer is cleared on
 `speaking: true`, grant, revoke, clear-floor, mode flip, disconnect, and
-host-promotion. The host is exempt — `armSilence` bails on any non-`speaker`
-role. Active-speaker glow works in open mode too; only the silence enforcement
-is moderated-only.
+host-promotion. `armSilence` bails on any non-`speaker` role, so the host **and
+the co-host** are exempt. Active-speaker glow works in open mode too; only the
+silence enforcement is moderated-only.
 
-## Phase 7 — Full host moderation controls
+> **Known gap:** the `speaking` event isn't role-checked server-side, so a
+> hand-rolled client could fake the glow / dodge the silence timer. Cosmetic
+> today; worth folding into Phase 8 hardening.
+
+## Phase 7 — Full moderation controls
 
 **Goal:** host has complete authority.
 
@@ -157,9 +174,9 @@ is moderated-only.
 
 **Deliverable:** polished host dashboard; host can fully run the room.
 
-**Status: done.** Three new host-only events in `server/src/index.js`, each
-re-checked with `requireHostRoom` + a `requireTarget` guard (real member of my
-room, never myself):
+**Status: done.** Three new moderator-only events in `server/src/index.js`, each
+re-checked with `requireModeratorRoom` + a `requireTarget` guard (a real member
+of my room, never myself, **never the host**):
 
 - `force-mute {targetId}` — media is peer-to-peer so the server can't mute
   anyone; it relays `FORCE_MUTE` to the target and `webrtc.js` effect F disables
@@ -178,42 +195,51 @@ listener), **Revoke** (take it back mid-speech), **Mute**, and **Remove**.
 `window.confirm` gates Remove and Clear floor. Revoke-floor already worked
 regardless of speaking state, so "revoke mid-speech" needed no server change.
 
-## In-call chat (added after Phase 7, out of sequence)
+---
 
-**Goal:** people can text the room during the call, with emoji and stickers.
+## Beyond Phase 7 — features added out of sequence
 
-- `chat-send {text, kind}` — anyone in the room (listeners included; chat is
-  independent of the speaker floor). Server trims, caps text at 2000 chars,
+Everything below was built after Phase 7, in this order: chat → screen sharing →
+co-host → waiting room → chat attachments. Each is done.
+
+### In-call chat, emoji, stickers, attachments, typing
+
+**Goal:** people can text the room during the call — with emoji, stickers,
+photo/file attachments, and a typing indicator.
+
+- `chat-send {text, kind, file}` — anyone in the room (listeners included; chat
+  is independent of the speaker floor). Server trims, caps text at 2000 chars,
   names + timestamps it, keeps the last 100 per room (`room.chat` in
   `rooms.js`), and fans it out on `chat-message` — never in room-state, which
   would resend the whole log on every join.
 - `kind: 'sticker'` — `text` must be one of `STICKERS` in `shared/index.js`
   (plain emoji, so no image assets to host). The picker reads the same list.
-- Recent history rides along in the `join-room` ack as `chat`, so a late joiner
-  has context.
+- `kind: 'file'` — `file: { name, type, size, url }` where `url` is a `data:`
+  URL (no file storage, matching the in-memory model). Raster images
+  (jpeg/png/webp) are downscaled client-side to ≤1600 px JPEG q0.82 before
+  sending, so a phone photo doesn't blow the cap. The server requires a `data:`
+  URL, caps the decoded size at `CHAT_FILE_MAX_BYTES` (5 MB), strips path
+  separators / control chars from the filename, and keeps a per-room 40 MB
+  attachment budget (`CHAT_ATTACHMENT_BUDGET_BYTES` — oldest *file* messages are
+  evicted first, text/stickers stay). `maxHttpBufferSize` is raised 1 MB → 12 MB.
+  Client: a 📎 button and Ctrl+V paste; images render inline (click to open),
+  other files as a download chip.
+- Recent history (within the byte budget) rides along in the `join-room` ack as
+  `chat`, so a late joiner has context.
+- `chat-typing {typing}` — the iMessage bouncing-dots indicator. The composer
+  sends `true` on the first keystroke, re-sends at most every 3 s while typing
+  continues, and `false` after 3.5 s idle / on send / on blur / on unmount. The
+  server relays `{id, name, typing}` to everyone else (and a `false` when a
+  typer disconnects); receivers expire a stale typer after 5 s. Never stored.
 - Client: `<ChatPanel>` — message log (own messages right-aligned), an emoji
   tray (curated ~48, inserts into the input) and a sticker tray (sends
   immediately, rendered large). Chat state lives in `<App/>`; React escapes all
   message text on render.
-- **Attachments** (added after the waiting room): a 📎 button (and Ctrl+V paste)
-  sends `kind: 'file'` with `file: { name, type, size, url }` where `url` is a
-  `data:` URL — no file storage, matching the in-memory model. Raster images are
-  downscaled client-side to ≤1600px JPEG first. The server caps the decoded size
-  at `CHAT_FILE_MAX_BYTES` (5 MB) and keeps a per-room 40 MB attachment budget
-  (oldest file messages are evicted first, text stays). `maxHttpBufferSize` is
-  raised to 12 MB. Images render inline (click to open); other files render as a
-  download chip. Filenames are sanitised server-side.
-- `chat-typing {typing}` — the iMessage bouncing-dots indicator. The composer
-  sends `true` on the first keystroke, re-sends at most every 3s while typing
-  continues, and `false` after 3.5s idle / on send / on blur / on unmount. The
-  server relays `{id, name, typing}` to everyone else (and a `false` when a
-  typer disconnects); receivers expire a stale typer after 5s. Never stored.
 
-**Status: done.**
+### Screen sharing
 
-## Screen sharing (added after in-call chat, out of sequence)
-
-**Goal:** anyone in the room can share their screen; several at once.
+**Goal:** in an open room anyone can share their screen; several at once. In a
+moderated room only the host + speakers can.
 
 - **The signaling layer became renegotiation-capable.** `webrtc.js` no longer
   has a single deterministic "caller" per pair — it uses the MDN *perfect
@@ -229,11 +255,11 @@ regardless of speaking state, so "revoke mid-speech" needed no server change.
   (socketId → the screen MediaStream's id) and puts it in every snapshot, so
   each client can pick the screen track out of a peer's inbound media and label
   the tile. Cleared on stop and on disconnect.
-- **In an open room anyone can share; in a moderated room only the host +
-  speakers can.** `setSharing` ignores a listener's start request, and `setRole`
-  drops a demoted speaker from `room.sharing` (so flipping to moderated / a
-  revoke also stops their share). Client mirror: no Share button for a listener,
-  and `webrtc.js` stops the media cooperatively when my role becomes `listener`.
+- **Role gating.** `setSharing` ignores a listener's start request, and
+  `setRole` drops a demoted speaker from `room.sharing` (so flipping to
+  moderated / a revoke / clear-floor also stops their share). Client mirror: no
+  Share button for a listener, and `webrtc.js` stops the media cooperatively
+  when my role becomes `listener`.
 - Client: **one media stage, Google-Meet style.** No one presenting → the
   cameras are a responsive grid. Someone presenting → the screen(s) fill the
   main area (16:9, let-boxed, one full-width or two side by side) and every
@@ -241,34 +267,29 @@ regardless of speaking state, so "revoke mid-speech" needed no server change.
   screens). A **Share screen / Stop sharing** button in the controls (and next
   to a listener's raise-hand). Needs HTTPS off localhost (Phase 8).
 
-**Status: done.**
-
-## Co-host (added after screen sharing, out of sequence)
+### Co-host
 
 **Goal:** the host appoints one other participant who gets every moderator
 power, and can drop them back to a listener at any time.
 
 - New role `cohost` in `shared/index.js`, plus `promote-cohost` / `demote-cohost`
   events (**host-only** — a co-host can't appoint or drop a co-host).
-- `rooms.js`: `promoteCohost` / `demoteCohost` (the only paths that touch a
+- `rooms.js`: `promoteCohost` / `demoteCohost` are the only paths that touch a
   co-host's role — `setRole` deliberately no-ops for `room.hostId` *and*
-  `room.cohostId`, so mode flips / grant / revoke / clear-floor can't disturb
-  them). One co-host at a time; appointing a new one drops the old to
-  normal-for-mode. A co-host is dropped to `listener` when moderated, `speaker`
-  when open.
+  `room.cohostId`, so mode flips / grant / revoke / clear-floor / the silence
+  rule can't disturb them. One co-host at a time; appointing a new one drops the
+  old to normal-for-mode (`listener` when moderated, `speaker` when open).
 - `server/src/index.js`: a `requireModeratorRoom` guard (host **or** co-host)
   replaces `requireHostRoom` on every Phase 4/5/7 control — set-mode, grant /
   revoke / clear-floor, dismiss-hand, force-mute, remove, reorder-queue.
-  `requireTarget` now also refuses `room.hostId`, so **nobody, not even a
-  co-host, can mute or remove the host.**
+  `requireTarget` also refuses `room.hostId`, so **nobody, not even a co-host,
+  can mute or remove the host.**
 - Host succession: when the host leaves, the co-host inherits the room
   (otherwise the next by insertion order), and `cohostId` clears.
-- Client: co-host sees the full moderator surface; the host's participant list
+- Client: a co-host sees the full moderator surface; the host's participant list
   gets **Make co-host** / **Remove co-host**; a distinct role pill.
 
-**Status: done.**
-
-## Waiting room (added after co-host, out of sequence)
+### Waiting room
 
 **Goal:** anyone joining needs a moderator to let them in.
 
@@ -282,13 +303,22 @@ power, and can drop them back to a listener at any time.
   `set-lock { locked }` toggles the lock — unlocking admits everyone currently
   waiting. Disconnecting from the lobby clears the entry. If a room empties
   while someone waits, the oldest waiter is admitted as the new host so the
-  room survives.
+  room survives. `rtc-signal` was also tightened to require the **sender** be a
+  full participant.
 - `snapshot` carries `locked` + `waiting` (`[{ id, name }]`).
 - Client: a `<WaitingScreen>` ("waiting for the host to let you in…"); a
   moderator gets a **Door locked / Door open** toggle and a **Waiting to join**
   card with Admit / Deny per person.
 
-**Status: done.**
+### Deferred / not built
+
+- **Per-speaker "pin"** — exempt a chosen speaker from the silence timer without
+  giving them moderator powers (a lighter version of what the co-host does).
+- **Chat moderation** — delete a message, mute someone's chat. Not built; would
+  follow the Phase 7 pattern.
+- Everything in Phase 8 below (reconnect handling especially).
+
+---
 
 ## Phase 8 — Resilience & deploy
 
@@ -296,10 +326,12 @@ power, and can drop them back to a listener at any time.
 
 - TURN server (coturn or hosted) — STUN-only will fail for many home networks;
   this is required, not optional.
-- Reconnect handling, ICE-failure recovery, device-permission error states,
-  device pickers.
+- Reconnect handling (a dropped socket currently bounces you to the join
+  screen), ICE-failure recovery, device-permission error states, device pickers.
 - Deploy: client to static hosting, server to a Node host with WebSocket support,
-  TURN alongside.
+  TURN alongside, HTTPS (required for `getUserMedia` / `getDisplayMedia` off
+  localhost).
+- Observability: structured logs, error tracking, basic metrics.
 - Real-world test with friends on different networks.
 
 **Deliverable:** shareable URL that actually works.
@@ -313,6 +345,10 @@ power, and can drop them back to a listener at any time.
   code is designed to not care how media is routed.
 - Everything host-authoritative lives on the server; the client never decides its
   own permissions.
+- **Single process, all in memory.** One Node process holds every room in a
+  `Map`; a restart drops every call. No horizontal scale (would need Redis + the
+  Socket.IO adapter). Chat, chat history, and attachments (bounded at 40 MB of
+  file bytes per room) are all in that memory too.
 
 ## Decisions (answers to the doc's open questions)
 
