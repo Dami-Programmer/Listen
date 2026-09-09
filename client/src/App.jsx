@@ -450,24 +450,28 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
   const micOf = (id) => state?.mics?.[id] ?? true;
   const hostName = participants.find((p) => p.id === state?.hostId)?.name;
   const canShare = !isListener && navigator.mediaDevices?.getDisplayMedia;
+  const streamOf = (id) => remotes.find((r) => r.id === id)?.stream;
 
-  // Main tile = a screen if anyone's presenting, otherwise your own camera.
+  // Big tile = a screen if anyone's presenting, otherwise your own camera.
   const mainStream = presenting ? screenTiles[0].stream : localStream;
+  const mainMuted = presenting ? Boolean(screenTiles[0].muted) : true;
   const mainName = presenting ? screenTiles[0].label : (self?.name ?? 'You');
   const mainLabel = presenting ? screenTiles[0].label : 'You';
 
-  // Thumbnail strip: the other people (+ me and any extra screens while
-  // someone is presenting).
+  // The strip below: EVERYONE in the room who isn't on the big tile — driven by
+  // the participant list, so a person shows up the instant they join (as an
+  // avatar, then their video once the peer connection is up). When someone is
+  // presenting, that includes me and any extra screens too.
   const stripTiles = [];
   if (presenting) {
     screenTiles.slice(1).forEach((s) =>
-      stripTiles.push({ key: `sc-${s.key}`, stream: s.stream, name: s.label, muted: true }),
+      stripTiles.push({ key: `sc-${s.key}`, stream: s.stream, name: s.label, muted: Boolean(s.muted) }),
     );
-    if (localStream) {
+    if (self) {
       stripTiles.push({
-        key: 'me',
+        key: selfId,
         stream: localStream,
-        name: `${self?.name ?? 'You'} (you)`,
+        name: `${self.name ?? 'You'} (you)`,
         muted: true,
         mirror: true,
         speaking: activeSpeakerId === selfId,
@@ -476,16 +480,18 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
       });
     }
   }
-  remotes.forEach(({ id, stream }) => {
-    stripTiles.push({
-      key: id,
-      stream,
-      name: peerOf(id)?.name ?? 'Guest',
-      speaking: activeSpeakerId === id,
-      micOn: micOf(id),
-      showMic: true,
+  participants
+    .filter((p) => p.id !== selfId)
+    .forEach((p) => {
+      stripTiles.push({
+        key: p.id,
+        stream: streamOf(p.id),
+        name: p.name,
+        speaking: activeSpeakerId === p.id,
+        micOn: micOf(p.id),
+        showMic: true,
+      });
     });
-  });
 
   return (
     <div className="bg">
@@ -602,7 +608,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
               <VideoTile
                 stream={mainStream}
                 name={mainName}
-                muted={presenting || true}
+                muted={mainMuted}
                 mirror={!presenting}
                 speaking={!presenting && activeSpeakerId === selfId}
                 avatarSize={110}
