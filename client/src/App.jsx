@@ -591,6 +591,10 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
       speaking: activeSpeakerId === p.id,
       micOn: isSelf ? micOn : micOf(p.id),
       showMic: true,
+      // your own strip card carries your mic/camera toggles — nobody else's
+      // does, so a user only ever controls their own media
+      selfControls: isSelf && !isListener,
+      camOn: isSelf ? camOn : undefined,
       onPick: isSelf ? () => setFocusId(null) : () => setFocusId(p.id),
       pickLabel: isSelf
         ? 'Put yourself back on the main screen'
@@ -803,7 +807,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
                   >
                     <Hand />
                   </button>
-                ) : (
+                ) : spotlightIsSelf ? (
                   <>
                     <button
                       className={micOn ? '' : 'off'}
@@ -820,7 +824,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
                       {camOn ? <Cam /> : <CamOff />}
                     </button>
                   </>
-                )}
+                ) : null}
                 <button className="hangup" onClick={onLeave} aria-label="Leave call">
                   <Phone />
                 </button>
@@ -850,13 +854,32 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
                               speaking={t.speaking ?? false}
                               avatarSize={46}
                             />
-                            {t.showMic && (
-                              <span
-                                className={`mic-badge${t.micOn ? '' : ' muted'}`}
-                                aria-hidden="true"
-                              >
-                                {t.micOn ? <Mic /> : <MicOff />}
-                              </span>
+                            {t.selfControls ? (
+                              <div className="thumb-controls">
+                                <button
+                                  className={t.micOn ? '' : 'off'}
+                                  onClick={toggleMic}
+                                  aria-label={t.micOn ? 'Mute mic' : 'Unmute mic'}
+                                >
+                                  {t.micOn ? <Mic /> : <MicOff />}
+                                </button>
+                                <button
+                                  className={t.camOn ? '' : 'off'}
+                                  onClick={toggleCam}
+                                  aria-label={t.camOn ? 'Turn camera off' : 'Turn camera on'}
+                                >
+                                  {t.camOn ? <Cam /> : <CamOff />}
+                                </button>
+                              </div>
+                            ) : (
+                              t.showMic && (
+                                <span
+                                  className={`mic-badge${t.micOn ? '' : ' muted'}`}
+                                  aria-hidden="true"
+                                >
+                                  {t.micOn ? <Mic /> : <MicOff />}
+                                </span>
+                              )
                             )}
                             <span className="thumb-name">{t.name}</span>
                             {t.onPick && (

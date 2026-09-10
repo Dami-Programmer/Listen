@@ -673,6 +673,42 @@ button.small {
 .thumb .tile {
   border-radius: 14px;
 }
+/* your own strip card carries a mini mic/camera bar (only your own card) */
+.thumb-controls {
+  position: absolute;
+  left: 50%;
+  bottom: 38px;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  gap: 6px;
+  padding: 5px 6px;
+  border-radius: 999px;
+  background: rgba(20, 20, 26, 0.5);
+  backdrop-filter: blur(10px);
+}
+.thumb-controls button {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+.thumb-controls button:hover {
+  background: rgba(255, 255, 255, 0.34);
+}
+.thumb-controls button.off {
+  background: #fff;
+  color: var(--ink);
+}
+.thumb-controls svg {
+  width: 15px;
+  height: 15px;
+}
 /* click anywhere on a card to swap that person onto the main tile */
 .thumb-hit {
   position: absolute;
