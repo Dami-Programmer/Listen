@@ -259,7 +259,7 @@ button.small {
    opens or closes beside it, glides to its new width instead of snapping */
 .meeting-pill h1,
 .meeting-pill p {
-  transition: opacity 0.4s ease;
+  transition: opacity 0.7s ease;
 }
 @keyframes pill-in {
   from {
@@ -296,7 +296,7 @@ button.small {
   overflow: hidden;
   white-space: nowrap;
 }
-.join-req--in {
+/* .join-req--in {
   animation: join-req-in 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 .join-req--out {
@@ -306,7 +306,7 @@ button.small {
 /* in is the exact time-reverse of out: it unrolls its own width (so the
    pill next to it glides rather than jumps), then settles the slide + scale.
    The two easings are mirror images of each other. */
-@keyframes join-req-in {
+/* @keyframes join-req-in {
   from {
     opacity: 0;
     max-width: 0;
@@ -337,7 +337,53 @@ button.small {
     padding-right: 0;
     transform: translateX(44px) scale(0.94);
   }
+}  */
+
+.join-req--in {
+  animation: join-req-in 2.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
+
+.join-req--out {
+  animation: join-req-out 1.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  pointer-events: none;
+}
+
+@keyframes join-req-in {
+  from {
+    opacity: 0;
+    max-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    transform: translateX(44px) scale(0.94);
+  }
+
+  to {
+    opacity: 1;
+    max-width: 420px;
+    padding-left: 22px;
+    padding-right: 12px;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes join-req-out {
+  from {
+    opacity: 1;
+    max-width: 420px;
+    padding-left: 22px;
+    padding-right: 12px;
+    transform: translateX(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    max-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    transform: translateX(44px) scale(0.94);
+  }
+}
+
 .join-req span {
   font-size: 0.9rem;
   font-weight: 600;
@@ -372,12 +418,32 @@ button.small {
   flex-wrap: wrap;
 }
 .seg {
+  position: relative;
   display: inline-flex;
   background: var(--surface);
   border-radius: 999px;
   padding: 4px;
 }
+/* the dark pill sits behind the buttons and slides to whichever is `.on` */
+.seg::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc(50% - 4px);
+  border-radius: 999px;
+  background: var(--dark);
+  transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.seg:has(button:last-child.on)::before {
+  transform: translateX(100%);
+}
 .seg button {
+  flex: 1;
+  position: relative;
+  z-index: 1;
   border: none;
   background: transparent;
   color: var(--ink-2);
@@ -385,9 +451,10 @@ button.small {
   border-radius: 999px;
   font-size: 0.82rem;
   font-weight: 600;
+  white-space: nowrap;
+  transition: color 0.32s ease;
 }
 .seg button.on {
-  background: var(--dark);
   color: var(--on-dark);
 }
 .lock-btn {
@@ -679,6 +746,7 @@ button.small {
   min-height: 0;
 }
 .side-tabs {
+  position: relative;
   display: inline-flex;
   align-self: flex-start;
   margin: 12px 12px 2px;
@@ -686,7 +754,25 @@ button.small {
   border-radius: 999px;
   padding: 4px;
 }
+.side-tabs::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc(50% - 4px);
+  border-radius: 999px;
+  background: var(--dark);
+  transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.side-tabs:has(button:last-child.on)::before {
+  transform: translateX(100%);
+}
 .side-tabs button {
+  flex: 1;
+  position: relative;
+  z-index: 1;
   border: none;
   background: transparent;
   color: var(--ink-2);
@@ -694,10 +780,23 @@ button.small {
   font-size: 0.78rem;
   padding: 6px 16px;
   border-radius: 999px;
+  white-space: nowrap;
+  transition: color 0.32s ease;
 }
 .side-tabs button.on {
-  background: var(--dark);
   color: var(--on-dark);
+}
+
+/* browsers without :has() — fall back to the button just filling in */
+@supports not (selector(:has(*))) {
+  .seg::before,
+  .side-tabs::before {
+    display: none;
+  }
+  .seg button.on,
+  .side-tabs button.on {
+    background: var(--dark);
+  }
 }
 
 /* chat */
@@ -806,6 +905,12 @@ button.small {
   .toast--out,
   .meeting-pill {
     animation-duration: 0.001s;
+  }
+  .seg::before,
+  .side-tabs::before,
+  .seg button,
+  .side-tabs button {
+    transition: none;
   }
 }
 
