@@ -165,6 +165,7 @@ button.small {
   padding: 22px;
 }
 .shell {
+  position: relative;
   width: min(1440px, 100%);
   background: var(--shell);
   border-radius: var(--r-shell);
@@ -173,6 +174,51 @@ button.small {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* --- transient "someone joined" toast --------------------------- */
+.toast-stack {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 16px;
+  border-radius: 14px;
+  background: var(--dark);
+  color: var(--on-dark);
+  font-size: 0.85rem;
+  font-weight: 500;
+  box-shadow: 0 18px 44px -18px rgba(20, 20, 40, 0.55);
+  animation: toast-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.toast strong {
+  font-weight: 700;
+}
+.toast-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #46d68a;
+  flex-shrink: 0;
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(calc(100% + 16px));
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .topbar {
@@ -212,6 +258,17 @@ button.small {
   border-radius: 18px;
   padding: 12px 12px 12px 22px;
   max-width: 420px;
+  animation: join-req-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes join-req-in {
+  from {
+    opacity: 0;
+    transform: translateX(28px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
 }
 .join-req span {
   font-size: 0.9rem;
@@ -615,6 +672,70 @@ button.small {
   background: var(--mine);
   color: var(--mine-ink);
 }
+
+/* iMessage-style entrance: the bubble blooms up from the sender's side,
+   once, only for a message that wasn't already in the log. */
+.msg--enter .msg-head {
+  animation: msg-head-in 0.4s ease both;
+}
+.msg--enter .chat-bubble,
+.msg--enter .chat-sticker,
+.msg--enter .chat-image,
+.msg--enter .chat-file {
+  animation: msg-in 0.44s cubic-bezier(0.2, 0.9, 0.24, 1.02) both;
+  transform-origin: left bottom;
+}
+.msg--enter.mine .chat-bubble,
+.msg--enter.mine .chat-image,
+.msg--enter.mine .chat-file {
+  transform-origin: right bottom;
+  animation-name: msg-in-mine;
+}
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(9px) scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes msg-in-mine {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.32);
+  }
+  55% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes msg-head-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .msg--enter .msg-head,
+  .msg--enter .chat-bubble,
+  .msg--enter .chat-sticker,
+  .msg--enter .chat-image,
+  .msg--enter .chat-file {
+    animation: none;
+  }
+  .join-req,
+  .toast {
+    animation-duration: 0.001s;
+  }
+}
+
 .chat-sticker {
   font-size: 2.6rem;
   line-height: 1;

@@ -89,6 +89,11 @@ export default function ChatPanel({ messages, typers, selfId }) {
   const inputRef = useRef(null);
   const fileRef = useRef(null);
   const typingRef = useRef({ active: false, lastSent: 0, idle: null });
+  // Message ids we've already rendered — anything new gets the iMessage-style
+  // "pop in" animation exactly once. Whatever's in the log on first mount is
+  // treated as already seen so history doesn't all animate at once.
+  const seenRef = useRef(new Set());
+  const primedRef = useRef(false);
 
   const typingNames = Object.entries(typers || {})
     .filter(([id]) => id !== selfId)
@@ -98,6 +103,11 @@ export default function ChatPanel({ messages, typers, selfId }) {
     const el = logRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, typingNames.length]);
+
+  useEffect(() => {
+    messages.forEach((m) => seenRef.current.add(m.id));
+    primedRef.current = true;
+  }, [messages]);
 
   const stopTyping = () => {
     const t = typingRef.current;
@@ -184,8 +194,12 @@ export default function ChatPanel({ messages, typers, selfId }) {
         {messages.length === 0 && <p className="muted">No messages yet. Say hi 👋</p>}
         {messages.map((m) => {
           const mine = m.from === selfId;
+          const fresh = primedRef.current && !seenRef.current.has(m.id);
           return (
-            <div key={m.id} className={`msg${mine ? ' mine' : ''}`}>
+            <div
+              key={m.id}
+              className={`msg${mine ? ' mine' : ''}${fresh ? ' msg--enter' : ''}`}
+            >
               <div className="msg-head">
                 <span className="msg-name">{mine ? 'You' : m.name}</span>
                 <span className="msg-time">{timeOf(m.ts)}</span>

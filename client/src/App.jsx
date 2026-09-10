@@ -11,7 +11,7 @@
 // Remove / Grant / Revoke and queue reordering — all in <CallView/>. Every
 // button here is advisory: the server re-checks that the caller is the host.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { MODES, ROLES } from '@listen/shared';
 import { socket } from './socket.js';
 import { useCall } from './webrtc.js';
@@ -315,8 +315,11 @@ function WaitingScreen({ roomId, onCancel }) {
 function CallView({ state, chat, typers, selfId, connected, onLeave }) {
   const [tab, setTab] = useState('chat'); // right panel: 'chat' | 'people'
   const [page, setPage] = useState(0); // joiner carousel — which set of three
+  const [toasts, setToasts] = useState([]); // transient "X joined" notices
+  const seenIdsRef = useRef(null); // participant ids from the previous snapshot
 
-  const participants = state?.participants ?? [];
+  // Stable reference between snapshots so downstream effects don't churn.
+  const participants = useMemo(() => state?.participants ?? [], [state?.participants]);
   const self = participants.find((p) => p.id === selfId);
 
   // socketId -> the id of that peer's screen MediaStream (room-state).
@@ -510,9 +513,44 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
     if (page > lastPage) setPage(lastPage);
   }, [page, lastPage]);
 
+  // Announce new arrivals with a toast that slides in from the edge. We diff the
+  // participant ids against the previous snapshot; the very first snapshot is
+  // taken as the baseline so we don't greet everyone already in the room.
+  useEffect(() => {
+    const ids = participants.map((p) => p.id);
+    const prev = seenIdsRef.current;
+    seenIdsRef.current = ids;
+    if (!prev) return;
+    const arrivals = participants.filter((p) => p.id !== selfId && !prev.includes(p.id));
+    if (arrivals.length === 0) return;
+    setToasts((cur) => [
+      ...cur,
+      ...arrivals.map((p) => ({ key: `${p.id}-${Date.now()}`, name: p.name })),
+    ]);
+  }, [participants, selfId]);
+
+  // Each toast clears itself after a few seconds.
+  useEffect(() => {
+    if (toasts.length === 0) return undefined;
+    const timers = toasts.map((t) =>
+      setTimeout(() => setToasts((cur) => cur.filter((x) => x.key !== t.key)), 4200),
+    );
+    return () => timers.forEach(clearTimeout);
+  }, [toasts]);
+
   return (
     <div className="bg">
       <div className="shell">
+        {toasts.length > 0 && (
+          <div className="toast-stack" aria-live="polite">
+            {toasts.map((t) => (
+              <div className="toast" key={t.key}>
+                <span className="toast-dot" aria-hidden="true" />
+                <strong>{t.name}</strong> joined
+              </div>
+            ))}
+          </div>
+        )}
         <div className="topbar">
           <div className="meeting-pill">
             <h1>{state?.roomId ?? 'Meeting'}</h1>
@@ -522,7 +560,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
             </p>
           </div>
           {isModerator && waiting.length > 0 && (
-            <div className="join-req">
+            <div className="join-req" key={waiting[0].id}>
               <span>
                 <strong>{waiting[0].name}</strong> wants to join
                 {waiting.length > 1 ? ` (+${waiting.length - 1})` : ''}
