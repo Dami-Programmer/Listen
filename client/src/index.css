@@ -279,10 +279,12 @@ button.small {
   animation: join-req-out 0.7s cubic-bezier(0.7, 0, 0.84, 0) both;
   pointer-events: none;
 }
+/* in is the exact time-reverse of out: same 44px travel, same 0.94 scale,
+   and the two easings are mirror images of each other. */
 @keyframes join-req-in {
   from {
     opacity: 0;
-    transform: translateX(28px) scale(0.96);
+    transform: translateX(44px) scale(0.94);
   }
   to {
     opacity: 1;

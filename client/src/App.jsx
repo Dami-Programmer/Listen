@@ -119,6 +119,9 @@ export default function App() {
     function onDenied() {
       setWaiting(false);
       setRemovedNote('The host didn’t let you into the room.');
+      // Drop the socket so a retry starts a clean connection — otherwise the
+      // server still has this room pinned to the old socket.
+      socket.disconnect();
     }
     function onRoomState(snapshot) {
       setState(snapshot);

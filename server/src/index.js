@@ -457,7 +457,14 @@ io.on('connection', (socket) => {
     if (!room) return;
     if (!room.waiting[socketId]) return ack?.({ ok: false, error: 'not waiting' });
     denyWaiting(room, socketId);
-    io.to(socketId).emit(EVENTS.DENIED);
+    // Drop the denied socket entirely — it still has this room pinned as its
+    // "joined" room, so without a disconnect a retry would be told it's
+    // "already in a room". A fresh socket knocks cleanly.
+    const denied = io.sockets.sockets.get(socketId);
+    if (denied) {
+      denied.emit(EVENTS.DENIED);
+      denied.disconnect(true);
+    }
     console.log(`[room ${joinedRoomId}] ${socket.id} denied ${socketId}`);
     ack?.({ ok: true });
     broadcastRoom(joinedRoomId);
