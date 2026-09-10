@@ -311,6 +311,68 @@ function WaitingScreen({ roomId, onCancel }) {
   );
 }
 
+// The moderator's "someone wants in" card. It owns its own enter/exit so the
+// card can slide out (0.7s) after Admit/Deny — or if the person is dealt with
+// elsewhere / leaves the lobby — instead of vanishing mid-animation.
+function JoinRequest({ waiting, onAdmit, onDeny }) {
+  const front = waiting[0] ?? null;
+  const [shown, setShown] = useState(front);
+  const [phase, setPhase] = useState('in'); // 'in' | 'out'
+  const waitingRef = useRef(waiting);
+  waitingRef.current = waiting;
+
+  // Track the front of the queue while nothing is animating out.
+  useEffect(() => {
+    if (phase !== 'in') return;
+    if (!shown && front) setShown(front);
+    else if (shown && (!front || front.id !== shown.id)) setPhase('out');
+  }, [phase, shown, front]);
+
+  // Hold the card through its slide-out, then reveal whoever's next (if anyone).
+  useEffect(() => {
+    if (phase !== 'out') return undefined;
+    const t = setTimeout(() => {
+      setShown(waitingRef.current[0] ?? null);
+      setPhase('in');
+    }, 700);
+    return () => clearTimeout(t);
+  }, [phase]);
+
+  if (!shown) return null;
+
+  const leave = () => setPhase('out');
+  const extra = waiting.length > 1 ? ` (+${waiting.length - 1})` : '';
+
+  return (
+    <div className={`join-req join-req--${phase}`} key={shown.id}>
+      <span>
+        <strong>{shown.name}</strong> wants to join
+        {extra}
+      </span>
+      <button
+        className="jr-btn jr-deny"
+        onClick={() => {
+          onDeny(shown.id);
+          leave();
+        }}
+        aria-label={`Deny ${shown.name}`}
+      >
+        <X />
+      </button>
+      <button
+        className="jr-btn jr-admit"
+        onClick={() => {
+          onAdmit(shown.id);
+          leave();
+        }}
+        aria-label={`Admit ${shown.name}`}
+      >
+        <Check />
+      </button>
+    </div>
+  );
+}
+
 // --- the in-call screen ----------------------------------------------------
 function CallView({ state, chat, typers, selfId, connected, onLeave }) {
   const [tab, setTab] = useState('chat'); // right panel: 'chat' | 'people'
@@ -529,13 +591,21 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
     ]);
   }, [participants, selfId]);
 
-  // Each toast clears itself after a few seconds.
+  // Each toast lives ~3.6s, then slides out (0.7s) before it's dropped. Timers
+  // are scheduled once per toast so a re-render can't restart them.
+  const toastTimersRef = useRef(new Set());
   useEffect(() => {
-    if (toasts.length === 0) return undefined;
-    const timers = toasts.map((t) =>
-      setTimeout(() => setToasts((cur) => cur.filter((x) => x.key !== t.key)), 4200),
-    );
-    return () => timers.forEach(clearTimeout);
+    toasts.forEach((t) => {
+      if (toastTimersRef.current.has(t.key)) return;
+      toastTimersRef.current.add(t.key);
+      setTimeout(() => {
+        setToasts((cur) => cur.map((x) => (x.key === t.key ? { ...x, leaving: true } : x)));
+      }, 3600);
+      setTimeout(() => {
+        setToasts((cur) => cur.filter((x) => x.key !== t.key));
+        toastTimersRef.current.delete(t.key);
+      }, 4300);
+    });
   }, [toasts]);
 
   return (
@@ -544,7 +614,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
         {toasts.length > 0 && (
           <div className="toast-stack" aria-live="polite">
             {toasts.map((t) => (
-              <div className="toast" key={t.key}>
+              <div className={`toast${t.leaving ? ' toast--out' : ''}`} key={t.key}>
                 <span className="toast-dot" aria-hidden="true" />
                 <strong>{t.name}</strong> joined
               </div>
@@ -559,28 +629,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
               {!connected && ' · reconnecting…'}
             </p>
           </div>
-          {isModerator && waiting.length > 0 && (
-            <div className="join-req" key={waiting[0].id}>
-              <span>
-                <strong>{waiting[0].name}</strong> wants to join
-                {waiting.length > 1 ? ` (+${waiting.length - 1})` : ''}
-              </span>
-              <button
-                className="jr-btn jr-deny"
-                onClick={() => deny(waiting[0].id)}
-                aria-label={`Deny ${waiting[0].name}`}
-              >
-                <X />
-              </button>
-              <button
-                className="jr-btn jr-admit"
-                onClick={() => admit(waiting[0].id)}
-                aria-label={`Admit ${waiting[0].name}`}
-              >
-                <Check />
-              </button>
-            </div>
-          )}
+          {isModerator && <JoinRequest waiting={waiting} onAdmit={admit} onDeny={deny} />}
         </div>
 
         {isModerator && (

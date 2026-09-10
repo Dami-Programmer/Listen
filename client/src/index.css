@@ -198,7 +198,10 @@ button.small {
   font-size: 0.85rem;
   font-weight: 500;
   box-shadow: 0 18px 44px -18px rgba(20, 20, 40, 0.55);
-  animation: toast-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: toast-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.toast--out {
+  animation: toast-out 0.7s cubic-bezier(0.7, 0, 0.84, 0) both;
 }
 .toast strong {
   font-weight: 700;
@@ -218,6 +221,16 @@ button.small {
   to {
     opacity: 1;
     transform: translateX(0);
+  }
+}
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(calc(100% + 16px));
   }
 }
 
@@ -258,7 +271,13 @@ button.small {
   border-radius: 18px;
   padding: 12px 12px 12px 22px;
   max-width: 420px;
-  animation: join-req-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.join-req--in {
+  animation: join-req-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.join-req--out {
+  animation: join-req-out 0.7s cubic-bezier(0.7, 0, 0.84, 0) both;
+  pointer-events: none;
 }
 @keyframes join-req-in {
   from {
@@ -268,6 +287,16 @@ button.small {
   to {
     opacity: 1;
     transform: translateX(0) scale(1);
+  }
+}
+@keyframes join-req-out {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(44px) scale(0.94);
   }
 }
 .join-req span {
@@ -676,13 +705,13 @@ button.small {
 /* iMessage-style entrance: the bubble blooms up from the sender's side,
    once, only for a message that wasn't already in the log. */
 .msg--enter .msg-head {
-  animation: msg-head-in 0.4s ease both;
+  animation: msg-head-in 0.7s ease both;
 }
 .msg--enter .chat-bubble,
 .msg--enter .chat-sticker,
 .msg--enter .chat-image,
 .msg--enter .chat-file {
-  animation: msg-in 0.44s cubic-bezier(0.2, 0.9, 0.24, 1.02) both;
+  animation: msg-in 0.7s cubic-bezier(0.2, 0.9, 0.24, 1.02) both;
   transform-origin: left bottom;
 }
 .msg--enter.mine .chat-bubble,
@@ -730,8 +759,10 @@ button.small {
   .msg--enter .chat-file {
     animation: none;
   }
-  .join-req,
-  .toast {
+  .join-req--in,
+  .join-req--out,
+  .toast,
+  .toast--out {
     animation-duration: 0.001s;
   }
 }
