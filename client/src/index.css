@@ -419,7 +419,11 @@ button.small {
 }
 .seg {
   position: relative;
-  display: inline-flex;
+  /* grid (not flex) so both options are exactly equal width — otherwise
+     "Open" and "Moderated" keep their own widths and the 50% pill misfits */
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
   background: var(--surface);
   border-radius: 999px;
   padding: 4px;
@@ -441,7 +445,6 @@ button.small {
   transform: translateX(100%);
 }
 .seg button {
-  flex: 1;
   position: relative;
   z-index: 1;
   border: none;
