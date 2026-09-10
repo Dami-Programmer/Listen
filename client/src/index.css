@@ -27,7 +27,12 @@
 
   color-scheme: light;
   font-family:
-    'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    'Plus Jakarta Sans',
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
 }
 
 * {
@@ -243,11 +248,28 @@ button.small {
   flex: 1;
   min-width: 0;
   background: var(--surface);
-  border-radius: 18px;
+  border-radius: 50px;
   padding: 16px 24px;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  animation: pill-in 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+/* the title / "hosted by" pill eases in on load and, when the join card
+   opens or closes beside it, glides to its new width instead of snapping */
+.meeting-pill h1,
+.meeting-pill p {
+  transition: opacity 0.4s ease;
+}
+@keyframes pill-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 .meeting-pill h1 {
   margin: 0;
@@ -268,36 +290,51 @@ button.small {
   align-items: center;
   gap: 12px;
   background: var(--surface);
-  border-radius: 18px;
+  border-radius: 50px;
   padding: 12px 12px 12px 22px;
   max-width: 420px;
+  overflow: hidden;
+  white-space: nowrap;
 }
 .join-req--in {
-  animation: join-req-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: join-req-in 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 .join-req--out {
   animation: join-req-out 0.7s cubic-bezier(0.7, 0, 0.84, 0) both;
   pointer-events: none;
 }
-/* in is the exact time-reverse of out: same 44px travel, same 0.94 scale,
-   and the two easings are mirror images of each other. */
+/* in is the exact time-reverse of out: it unrolls its own width (so the
+   pill next to it glides rather than jumps), then settles the slide + scale.
+   The two easings are mirror images of each other. */
 @keyframes join-req-in {
   from {
     opacity: 0;
+    max-width: 0;
+    padding-left: 0;
+    padding-right: 0;
     transform: translateX(44px) scale(0.94);
   }
   to {
     opacity: 1;
+    max-width: 420px;
+    padding-left: 22px;
+    padding-right: 12px;
     transform: translateX(0) scale(1);
   }
 }
 @keyframes join-req-out {
   from {
     opacity: 1;
+    max-width: 420px;
+    padding-left: 22px;
+    padding-right: 12px;
     transform: translateX(0) scale(1);
   }
   to {
     opacity: 0;
+    max-width: 0;
+    padding-left: 0;
+    padding-right: 0;
     transform: translateX(44px) scale(0.94);
   }
 }
@@ -606,7 +643,9 @@ button.small {
   place-items: center;
   padding: 0;
   cursor: pointer;
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
 }
 .thumb-nav-btn svg {
   width: 22px;
@@ -764,7 +803,8 @@ button.small {
   .join-req--in,
   .join-req--out,
   .toast,
-  .toast--out {
+  .toast--out,
+  .meeting-pill {
     animation-duration: 0.001s;
   }
 }
