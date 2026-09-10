@@ -501,6 +501,21 @@ button.small {
 .main-tile.wide {
   aspect-ratio: 16 / 10;
 }
+/* full-surface click target that sits under the pills/controls (z-index 3):
+   tap the spotlit person's video to drop yourself back onto the main tile */
+.main-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+.main-hit:focus-visible {
+  outline: 2px solid var(--on-dark);
+  outline-offset: -3px;
+}
 
 .tile {
   position: absolute;
@@ -657,6 +672,25 @@ button.small {
 }
 .thumb .tile {
   border-radius: 14px;
+}
+/* click anywhere on a card to swap that person onto the main tile */
+.thumb-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  border-radius: inherit;
+  transition: box-shadow 0.15s ease;
+}
+.thumb-hit:hover {
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.7);
+}
+.thumb-hit:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--on-dark);
 }
 .thumb-name {
   position: absolute;

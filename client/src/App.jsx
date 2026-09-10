@@ -380,6 +380,7 @@ function JoinRequest({ waiting, onAdmit, onDeny }) {
 function CallView({ state, chat, typers, selfId, connected, onLeave }) {
   const [tab, setTab] = useState('chat'); // right panel: 'chat' | 'people'
   const [page, setPage] = useState(0); // joiner carousel — which set of three
+  const [focusId, setFocusId] = useState(null); // whom the user pinned to the big tile
   const [toasts, setToasts] = useState([]); // transient "X joined" notices
   const seenIdsRef = useRef(null); // participant ids from the previous snapshot
 
@@ -520,16 +521,42 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
   const canShare = !isListener && navigator.mediaDevices?.getDisplayMedia;
   const streamOf = (id) => remotes.find((r) => r.id === id)?.stream;
 
-  // Big tile = a screen if anyone's presenting, otherwise your own camera.
-  const mainStream = presenting ? screenTiles[0].stream : localStream;
-  const mainMuted = presenting ? Boolean(screenTiles[0].muted) : true;
-  const mainName = presenting ? screenTiles[0].label : (self?.name ?? 'You');
-  const mainLabel = presenting ? screenTiles[0].label : 'You';
+  // Who's on the big camera tile. Default is you; click a thumbnail to spotlight
+  // that person instead (and you drop into the strip where they were). A live
+  // screen share still owns the big tile while it runs.
+  const focusPerson =
+    focusId && focusId !== selfId ? participants.find((p) => p.id === focusId) : null;
+  const spotlightId = !presenting && focusPerson ? focusId : selfId;
+  const spotlightIsSelf = spotlightId === selfId;
 
-  // The strip below: EVERYONE in the room who isn't on the big tile — driven by
-  // the participant list, so a person shows up the instant they join (as an
-  // avatar, then their video once the peer connection is up). When someone is
-  // presenting, that includes me and any extra screens too.
+  // Big tile = a screen if anyone's presenting, otherwise the spotlit camera.
+  const mainStream = presenting
+    ? screenTiles[0].stream
+    : spotlightIsSelf
+      ? localStream
+      : streamOf(spotlightId);
+  const mainMuted = presenting ? Boolean(screenTiles[0].muted) : spotlightIsSelf;
+  const mainMirror = !presenting && spotlightIsSelf;
+  const mainSpeaking = !presenting && activeSpeakerId === spotlightId;
+  const spotlightName = spotlightIsSelf
+    ? (self?.name ?? 'You')
+    : (focusPerson?.name ?? 'Guest');
+  const mainName = presenting ? screenTiles[0].label : spotlightName;
+  const mainLabel = presenting
+    ? screenTiles[0].label
+    : spotlightIsSelf
+      ? 'You'
+      : spotlightName;
+
+  // A pinned person who left the call — fall back to showing yourself.
+  useEffect(() => {
+    if (focusId && !participants.some((p) => p.id === focusId)) setFocusId(null);
+  }, [focusId, participants]);
+
+  // The strip below: EVERYONE who isn't on the big tile — driven by the
+  // participant list, so a person shows up the instant they join (avatar first,
+  // then video). When someone is presenting, that also includes me and any
+  // extra screens. Tapping a card moves that person onto the big tile.
   const stripTiles = [];
   if (presenting) {
     screenTiles.slice(1).forEach((s) =>
@@ -548,18 +575,28 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
       });
     }
   }
-  participants
-    .filter((p) => p.id !== selfId)
-    .forEach((p) => {
-      stripTiles.push({
-        key: p.id,
-        stream: streamOf(p.id),
-        name: p.name,
-        speaking: activeSpeakerId === p.id,
-        micOn: micOf(p.id),
-        showMic: true,
-      });
+  // Everyone but me, in room order. If I've spotlit someone, I take their exact
+  // slot in the strip and they move to the big tile — a straight swap.
+  const others = participants.filter((p) => p.id !== selfId);
+  const roster =
+    spotlightIsSelf || !self ? others : others.map((p) => (p.id === spotlightId ? self : p));
+  roster.forEach((p) => {
+    const isSelf = p.id === selfId;
+    stripTiles.push({
+      key: p.id,
+      stream: isSelf ? localStream : streamOf(p.id),
+      name: isSelf ? `${p.name ?? 'You'} (you)` : p.name,
+      muted: isSelf,
+      mirror: isSelf,
+      speaking: activeSpeakerId === p.id,
+      micOn: isSelf ? micOn : micOf(p.id),
+      showMic: true,
+      onPick: isSelf ? () => setFocusId(null) : () => setFocusId(p.id),
+      pickLabel: isSelf
+        ? 'Put yourself back on the main screen'
+        : `Put ${p.name} on the main screen`,
     });
+  });
 
   // The strip is a carousel: three cards on screen, sliding between "pages" of
   // three. The data drives everything — how many pages, which three show, and
@@ -716,10 +753,19 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
                 stream={mainStream}
                 name={mainName}
                 muted={mainMuted}
-                mirror={!presenting}
-                speaking={!presenting && activeSpeakerId === selfId}
+                mirror={mainMirror}
+                speaking={mainSpeaking}
                 avatarSize={110}
               />
+
+              {!presenting && !spotlightIsSelf && (
+                <button
+                  type="button"
+                  className="main-hit"
+                  onClick={() => setFocusId(null)}
+                  aria-label="Put yourself back on the main screen"
+                />
+              )}
 
               <span className="you-pill">
                 <Avatar name={mainName} size={26} />
@@ -813,6 +859,14 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
                               </span>
                             )}
                             <span className="thumb-name">{t.name}</span>
+                            {t.onPick && (
+                              <button
+                                type="button"
+                                className="thumb-hit"
+                                onClick={t.onPick}
+                                aria-label={t.pickLabel}
+                              />
+                            )}
                           </div>
                         ))}
                       </div>
