@@ -12,7 +12,7 @@
 // silences its outbound tracks. `setRole` below is the single place any role
 // changes, so Phases 4-7 never poke `participant.role` directly.
 
-import { CHAT_ATTACHMENT_BUDGET_BYTES, MODES, ROLES } from '@listen/shared';
+import { CHAT_ATTACHMENT_BUDGET_BYTES, MODES, ROLES, cleanAvatar } from '@listen/shared';
 
 /**
  * roomId -> {
@@ -61,7 +61,7 @@ export function getRoom(roomId) {
 
 // Put a participant into a room. First joiner is host; everyone else matches
 // the room's current mode (speaker when open, listener when moderated).
-function attach(room, socketId, name) {
+function attach(room, socketId, name, avatar) {
   const isFirst = Object.keys(room.participants).length === 0;
   if (isFirst) room.hostId = socketId;
 
@@ -69,7 +69,12 @@ function attach(room, socketId, name) {
   if (isFirst) role = ROLES.HOST;
   else if (room.mode === MODES.MODERATED) role = ROLES.LISTENER;
 
-  room.participants[socketId] = { id: socketId, name: name?.trim() || 'Guest', role };
+  room.participants[socketId] = {
+    id: socketId,
+    name: name?.trim() || 'Guest',
+    role,
+    avatar: cleanAvatar(avatar),
+  };
   // Assume the mic is live until the client tells us otherwise (it reports its
   // real state as soon as its microphone opens).
   room.mics[socketId] = true;
@@ -91,13 +96,13 @@ export function setMic(room, socketId, on) {
  * through `addWaiting` / `admitWaiting` instead.
  * Returns the room.
  */
-export function addParticipant(roomId, socketId, name) {
+export function addParticipant(roomId, socketId, name, avatar) {
   let room = rooms.get(roomId);
   if (!room) {
     room = createRoom();
     rooms.set(roomId, room);
   }
-  attach(room, socketId, name);
+  attach(room, socketId, name, avatar);
   return room;
 }
 
@@ -110,11 +115,12 @@ export function addParticipant(roomId, socketId, name) {
  * locked; the first joiner (who creates the room) always bypasses.
  * ---------------------------------------------------------------------- */
 
-export function addWaiting(room, socketId, name) {
+export function addWaiting(room, socketId, name, avatar) {
   if (!room || room.participants[socketId]) return;
   room.waiting[socketId] = {
     id: socketId,
     name: name?.trim() || 'Guest',
+    avatar: cleanAvatar(avatar),
     since: Date.now(),
   };
 }
@@ -125,7 +131,7 @@ export function admitWaiting(room, socketId) {
   const w = room?.waiting?.[socketId];
   if (!w) return null;
   delete room.waiting[socketId];
-  return attach(room, socketId, w.name);
+  return attach(room, socketId, w.name, w.avatar);
 }
 
 export function denyWaiting(room, socketId) {
@@ -505,7 +511,7 @@ export function snapshot(roomId) {
     cohostId: room.cohostId,
     locked: room.locked,
     // People knocking to get in — only moderators render the admit/deny UI.
-    waiting: Object.values(room.waiting).map(({ id, name }) => ({ id, name })),
+    waiting: Object.values(room.waiting).map(({ id, name, avatar }) => ({ id, name, avatar })),
     mode: room.mode,
     participants: Object.values(room.participants),
     queue: [...room.queue],

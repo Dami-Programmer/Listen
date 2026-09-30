@@ -19,6 +19,7 @@ import VideoTile from './VideoTile.jsx';
 import ChatPanel from './ChatPanel.jsx';
 import PreJoin from './PreJoin.jsx';
 import Avatar from './Avatar.jsx';
+import Toasts from './Toasts.jsx';
 import {
   Cam,
   CamOff,
@@ -27,12 +28,14 @@ import {
   ChevronDown,
   GridView,
   Hand,
+  Lock,
   Mic,
   MicOff,
   People,
   Phone,
   Screen,
   SpotlightView,
+  Unlock,
   X,
 } from './icons.jsx';
 
@@ -67,6 +70,25 @@ function RolePill({ role }) {
 }
 
 // Room id lives in the URL (?room=…). No accounts, no persistence.
+// The profile picture is remembered on this device between visits. Storage
+// can be unavailable (private mode, blocked site data), so it's best-effort.
+const AVATAR_KEY = 'listen.avatar';
+function readSavedAvatar() {
+  try {
+    return localStorage.getItem(AVATAR_KEY);
+  } catch {
+    return null;
+  }
+}
+function saveAvatar(avatar) {
+  try {
+    if (avatar) localStorage.setItem(AVATAR_KEY, avatar);
+    else localStorage.removeItem(AVATAR_KEY);
+  } catch {
+    // not remembered — still used for this join
+  }
+}
+
 function readRoomFromUrl() {
   return new URLSearchParams(window.location.search).get('room') ?? '';
 }
@@ -74,6 +96,7 @@ function readRoomFromUrl() {
 export default function App() {
   const [roomId, setRoomId] = useState(readRoomFromUrl);
   const [name, setName] = useState('');
+  const [avatar, setAvatar] = useState(readSavedAvatar);
   const [joined, setJoined] = useState(false);
   const [selfId, setSelfId] = useState(null);
   const [state, setState] = useState(null); // latest room-state snapshot
@@ -219,7 +242,7 @@ export default function App() {
     window.history.replaceState({}, '', url);
 
     if (!socket.connected) socket.connect();
-    socket.emit(EVENTS.JOIN_ROOM, { roomId: id, name: name.trim() }, (ack) => {
+    socket.emit(EVENTS.JOIN_ROOM, { roomId: id, name: name.trim(), avatar }, (ack) => {
       if (ack?.ok && ack.waiting) {
         // Locked room — sit in the lobby until a moderator admits us.
         setSelfId(ack.selfId);
@@ -256,10 +279,15 @@ export default function App() {
       <PreJoin
         roomId={roomId}
         name={name}
+        avatar={avatar}
         error={error}
         note={removedNote}
         onRoomId={setRoomId}
         onName={setName}
+        onAvatar={(a) => {
+          setAvatar(a);
+          saveAvatar(a);
+        }}
         onSubmit={handleJoin}
       />
     );
@@ -796,6 +824,22 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media }) {
         </div>
 
         <footer className="cs-controls">
+          {/* Door lock, bottom-left — the mirror of the chat button. Moderators
+              only: locked = newcomers wait to be admitted. */}
+          {isModerator && (
+            <button
+              className={`cs-door-btn${locked ? ' on' : ''}`}
+              onClick={toggleLock}
+              aria-label={locked ? 'Door locked — click to open' : 'Door open — click to lock'}
+              title={
+                locked
+                  ? 'Door locked: new people must be admitted'
+                  : 'Door open: anyone with the link can join'
+              }
+            >
+              {locked ? <Lock /> : <Unlock />}
+            </button>
+          )}
           <div className="cs-controls-center">
             <button
               onClick={toggleCam}
@@ -898,6 +942,15 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media }) {
             )}
           </button>
         </footer>
+
+        <Toasts
+          chat={chat}
+          queue={queue}
+          selfId={selfId}
+          participants={participants}
+          panelOpen={panelOpen}
+          onOpen={panel.show}
+        />
       </div>
 
       {/* Right column: the chat panel (design: "Design Sprint Meeting" chat).
@@ -920,7 +973,9 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media }) {
               <X />
             </button>
             {/* Me, top-right. My dot uses my own mic state directly. */}
-            {self && <Avatar name={self.name} size={44} status={micOn ? 'on' : 'off'} />}
+            {self && (
+              <Avatar name={self.name} src={self.avatar} size={44} status={micOn ? 'on' : 'off'} />
+            )}
           </div>
 
           <div className="cp-people-row" ref={peopleRef}>
@@ -942,7 +997,13 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media }) {
                 = mic on, red = muted (from the shared `mics` map). */}
             <div className="cp-avatars">
               {otherPeople.slice(0, 3).map((p) => (
-                <Avatar key={p.id} name={p.name} size={38} status={micOf(p.id) ? 'on' : 'off'} />
+                <Avatar
+                  key={p.id}
+                  name={p.name}
+                  src={p.avatar}
+                  size={38}
+                  status={micOf(p.id) ? 'on' : 'off'}
+                />
               ))}
               {otherPeople.length > 3 && (
                 <span className="cp-more">+ {otherPeople.length - 3}</span>
@@ -954,25 +1015,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media }) {
                 className={`cp-people-pop${people.closing ? ' closing' : ''}`}
                 onAnimationEnd={people.onExitEnd}
               >
-                {isModerator && (
-                  <div className="mod-bar">
-                    <button
-                      className={`ghost small${locked ? ' danger' : ''}`}
-                      onClick={toggleLock}
-                      title={
-                        locked ? 'New people must be admitted' : 'Anyone with the link can join'
-                      }
-                    >
-                      {locked ? '🔒 Door locked' : '🔓 Door open'}
-                    </button>
-                    {canPassMic && (
-                      <button className="ghost small" onClick={passMic}>
-                        🎤 Pass the mic
-                      </button>
-                    )}
-                  </div>
-                )}
-                {!isModerator && canPassMic && (
+                {canPassMic && (
                   <button className="ghost small" onClick={passMic}>
                     🎤 Pass the mic
                   </button>
@@ -1192,6 +1235,7 @@ function JoinRequest({ knocker: incoming, extra, onAdmit, onDeny }) {
       aria-live="polite"
       onAnimationEnd={handleAnimationEnd}
     >
+      <Avatar name={shown.name} src={shown.avatar} size={30} className="cs-jr-avatar" />
       <span>
         <strong>{shown.name}</strong> wants to join the meeting
         {extra > 0 && ` (+${extra})`}

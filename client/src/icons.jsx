@@ -84,6 +84,20 @@ export const X = (p) => (
   </svg>
 );
 
+export const Lock = (p) => (
+  <svg {...s} {...p}>
+    <rect x="5" y="11" width="14" height="10" rx="2" />
+    <path d="M8 11V7.5a4 4 0 0 1 8 0V11" />
+  </svg>
+);
+
+export const Unlock = (p) => (
+  <svg {...s} {...p}>
+    <rect x="5" y="11" width="14" height="10" rx="2" />
+    <path d="M8 11V7.5a4 4 0 0 1 7.75-1.4" />
+  </svg>
+);
+
 export const ChatBubble = (p) => (
   <svg {...s} {...p}>
     <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4H6.5A2.5 2.5 0 0 1 4 13.5v-8Z" />

@@ -151,7 +151,7 @@ io.on('connection', (socket) => {
   // when the host leaves, we can tell the room who was promoted.
   let joinedRoomId = null;
 
-  socket.on(EVENTS.JOIN_ROOM, ({ roomId, name } = {}, ack) => {
+  socket.on(EVENTS.JOIN_ROOM, ({ roomId, name, avatar } = {}, ack) => {
     const id = String(roomId || '').trim();
     if (!id) {
       socket.emit(EVENTS.ERROR, { message: 'roomId is required' });
@@ -170,7 +170,7 @@ io.on('connection', (socket) => {
     const existing = getRoom(id);
     if (existing && existing.locked && Object.keys(existing.participants).length > 0) {
       joinedRoomId = id;
-      addWaiting(existing, socket.id, name);
+      addWaiting(existing, socket.id, name, avatar);
       console.log(`[room ${id}] ~ ${socket.id} knocking (${existing.waiting[socket.id].name})`);
       ack?.({ ok: true, waiting: true, selfId: socket.id });
       broadcastRoom(id); // moderators' waiting list updates
@@ -179,7 +179,7 @@ io.on('connection', (socket) => {
 
     joinedRoomId = id;
     socket.join(id);
-    const room = addParticipant(id, socket.id, name);
+    const room = addParticipant(id, socket.id, name, avatar);
     console.log(
       `[room ${id}] + ${socket.id} (${room.participants[socket.id].name})` +
         `${room.hostId === socket.id ? ' [host]' : ''} — ${Object.keys(room.participants).length} in room`,

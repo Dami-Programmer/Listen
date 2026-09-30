@@ -203,3 +203,24 @@ export const CHAT_FILE_MAX_BYTES = 5 * 1024 * 1024;
 // Per-room ceiling on the bytes held in the chat ring buffer for attachments.
 // Once exceeded, the oldest file messages are dropped (text stays).
 export const CHAT_ATTACHMENT_BUDGET_BYTES = 40 * 1024 * 1024;
+
+// Profile pictures, picked in the pre-join lobby. An avatar is either an
+// uploaded photo (downscaled client-side to a small JPEG data: URL) or a
+// character image found by name search. It rides in every room-state snapshot,
+// so uploads are kept tiny and search results may only point at the two image
+// CDNs the lobby searches — no arbitrary third-party URLs on other screens.
+export const AVATAR_SIZE_PX = 128;
+export const AVATAR_MAX_CHARS = 40 * 1024;
+export const AVATAR_HOSTS = ['upload.wikimedia.org', 'thumb.wikimedia.org', 'cdn.myanimelist.net'];
+
+// Returns the avatar if it's acceptable, otherwise null.
+export function cleanAvatar(avatar) {
+  if (typeof avatar !== 'string' || !avatar || avatar.length > AVATAR_MAX_CHARS) return null;
+  if (/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(avatar)) return avatar;
+  try {
+    const url = new URL(avatar);
+    return url.protocol === 'https:' && AVATAR_HOSTS.includes(url.hostname) ? url.href : null;
+  } catch {
+    return null;
+  }
+}

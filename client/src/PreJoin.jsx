@@ -5,6 +5,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Cam, CamOff, Mic, MicOff, Speaker } from './icons.jsx';
+import AvatarPicker from './AvatarPicker.jsx';
 
 function friendlyMediaError(err) {
   switch (err?.name) {
@@ -35,7 +36,17 @@ function initials(name) {
 const canPickSpeaker =
   typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype;
 
-export default function PreJoin({ roomId, name, error, note, onRoomId, onName, onSubmit }) {
+export default function PreJoin({
+  roomId,
+  name,
+  avatar,
+  error,
+  note,
+  onRoomId,
+  onName,
+  onAvatar,
+  onSubmit,
+}) {
   const videoRef = useRef(null);
   const meterRef = useRef(null);
   const [stream, setStream] = useState(null);
@@ -200,7 +211,11 @@ export default function PreJoin({ roomId, name, error, note, onRoomId, onName, o
                   <p>Starting camera…</p>
                 ) : (
                   <>
-                    <span className="pj-initials">{initials(name)}</span>
+                    {avatar ? (
+                      <img className="pj-initials" src={avatar} alt="" />
+                    ) : (
+                      <span className="pj-initials">{initials(name)}</span>
+                    )}
                     <p>Camera is off</p>
                   </>
                 )}
@@ -326,6 +341,7 @@ export default function PreJoin({ roomId, name, error, note, onRoomId, onName, o
                 autoComplete="off"
               />
             </label>
+            <AvatarPicker name={name} avatar={avatar} onChange={onAvatar} />
             <button type="submit" className="pj-join" disabled={!roomId.trim() || !name.trim()}>
               Join now
             </button>

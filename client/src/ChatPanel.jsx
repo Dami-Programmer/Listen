@@ -370,6 +370,8 @@ export default function ChatPanel({ messages, typers, selfId, mics = {}, partici
   // matching how the video tiles treat it.
   const present = new Set(participants.map((p) => p.id));
   const statusOf = (id) => (present.has(id) ? (mics[id] === false ? 'off' : 'on') : undefined);
+  // Their profile picture, while they're still here (initials otherwise).
+  const avatarOf = (id) => participants.find((p) => p.id === id)?.avatar;
 
   // Everything still on screen (unsent messages stay until their fade ends).
   const visible = messages.filter((m) => !goneIds.has(m.id));
@@ -537,7 +539,14 @@ export default function ChatPanel({ messages, typers, selfId, mics = {}, partici
               <div className="cp-group-row">
                 {/* Avatar only for other people; it sits at the bottom of the
                     group, next to their latest message. */}
-                {!mine && <Avatar name={g.name} size={38} status={statusOf(g.from)} />}
+                {!mine && (
+                  <Avatar
+                    name={g.name}
+                    src={avatarOf(g.from)}
+                    size={38}
+                    status={statusOf(g.from)}
+                  />
+                )}
                 <div className="cp-bubbles">
                   {g.items.map((m) => {
                     const editing = editingId === m.id;
