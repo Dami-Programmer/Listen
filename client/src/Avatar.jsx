@@ -1,40 +1,66 @@
-// Initials on a deterministic pastel disc — no photos, no dependency.
-// Same name always gets the same colour.
+// A round avatar: the person's initials on a colored circle, with an optional
+// status dot in the bottom-right corner.
+//
+// The app has no profile photos (no accounts), so initials stand in for them.
+// Each person's color is picked from their NAME, not at random — so "Ada"
+// gets the same color on every screen and on every render, without anyone
+// having to store or send a color.
+//
+// The dot shows mic state: green = mic on, red = muted. (Pass `status` as
+// undefined to hide the dot, e.g. for someone who has left the call.)
 
-const PALETTE = [
-  ['#dfe7c8', '#4b5a1f'],
-  ['#f6d7c4', '#7a3b1e'],
-  ['#cfe0f2', '#254a73'],
-  ['#f3cede', '#7a2f56'],
-  ['#c9e6df', '#1f5049'],
-  ['#e6d6f2', '#4a2f66'],
-  ['#f5e0b8', '#6b4a15'],
-  ['#d5dbe6', '#33405a'],
-];
+// A handful of saturated colors that all read well with white text on the
+// dark call screen. The pink matches the "MY" avatar in the design.
+const COLORS = ['#e8358a', '#7c5cff', '#1f9bd1', '#12a37f', '#e0892b', '#d6455d', '#5b7cfa'];
 
-function hash(str) {
-  let h = 0;
-  for (let i = 0; i < str.length; i += 1) h = (h << 5) - h + str.charCodeAt(i);
-  return Math.abs(h);
+// Turn a name into a stable index into COLORS. Same name in -> same color out,
+// every time. Multiplying by 31 at each step (a classic string hash) makes
+// the ORDER of letters matter, so similar names like "May Jona" and
+// "Christiana Jona" usually land on different colors — a plain sum of letter
+// codes lumped too many names together.
+function colorFor(name = '') {
+  let hash = 0;
+  for (const ch of name) hash = (hash * 31 + ch.codePointAt(0)) >>> 0; // >>> 0 keeps it a positive 32-bit int
+  return COLORS[hash % COLORS.length];
 }
 
-function initials(name) {
-  const parts = String(name || '?')
-    .trim()
-    .split(/\s+/);
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+// "May Jona" -> "MJ", "ada" -> "AD", "" -> "?".
+function initialsOf(name = '') {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '?';
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[1][0]).toUpperCase();
 }
 
-export default function Avatar({ name, size = 36, className = '' }) {
-  const [bg, fg] = PALETTE[hash(name || '') % PALETTE.length];
+/**
+ * @param {object}  props
+ * @param {string}  props.name      whose avatar this is (drives initials + color)
+ * @param {number} [props.size=38]  diameter in px
+ * @param {'on'|'off'} [props.status] mic state for the corner dot; omit to hide it
+ * @param {string} [props.className]  extra classes (e.g. for positioning)
+ */
+export default function Avatar({ name, size = 38, status, className = '' }) {
   return (
     <span
       className={`avatar ${className}`}
-      style={{ width: size, height: size, background: bg, color: fg, fontSize: Math.round(size * 0.4) }}
-      aria-hidden="true"
+      // Size + color are per-avatar, so they're set inline; everything that's
+      // the same for every avatar lives in the `.avatar` CSS rule.
+      style={{
+        width: size,
+        height: size,
+        background: colorFor(name),
+        fontSize: Math.round(size * 0.34),
+      }}
+      title={name}
+      aria-label={name}
     >
-      {initials(name)}
+      {initialsOf(name)}
+      {status && (
+        <span
+          className={`avatar-dot ${status === 'on' ? 'on' : 'off'}`}
+          aria-label={status === 'on' ? 'mic on' : 'muted'}
+        />
+      )}
     </span>
   );
 }

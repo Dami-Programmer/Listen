@@ -1,4 +1,5 @@
-// Inline line icons — one stroke weight, currentColor.
+// Inline line icons for the dark call screen — one stroke weight, currentColor.
+// Kept minimal: only the icons the current screen actually uses.
 
 const s = {
   width: 20,
@@ -53,41 +54,21 @@ export const Screen = (p) => (
   </svg>
 );
 
-export const Hand = (p) => (
+// Four equal squares — switch to the equal-tile grid view.
+export const GridView = (p) => (
   <svg {...s} {...p}>
-    <path d="M8 11V5.5a1.5 1.5 0 0 1 3 0V11m0-.5V4a1.5 1.5 0 0 1 3 0v6.5m0-.5V6a1.5 1.5 0 0 1 3 0v7a7 7 0 0 1-7 7 7 7 0 0 1-5.8-3.1l-1.5-2.2a1.6 1.6 0 0 1 2.5-2l1.3 1.4V8a1.5 1.5 0 0 1 3 0v3" />
+    <rect x="3" y="3" width="7.5" height="7.5" rx="1.8" />
+    <rect x="13.5" y="3" width="7.5" height="7.5" rx="1.8" />
+    <rect x="3" y="13.5" width="7.5" height="7.5" rx="1.8" />
+    <rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.8" />
   </svg>
 );
 
-export const Send = (p) => (
+// One big frame with a small one in its corner — switch back to spotlight.
+export const SpotlightView = (p) => (
   <svg {...s} {...p}>
-    <path d="M4 12 20 4l-6 16-3.5-6.5L4 12Z" />
-  </svg>
-);
-
-export const Smile = (p) => (
-  <svg {...s} {...p}>
-    <circle cx="12" cy="12" r="9" />
-    <path d="M8.5 14a4 4 0 0 0 7 0M9 9.5h.01M15 9.5h.01" />
-  </svg>
-);
-
-export const Paperclip = (p) => (
-  <svg {...s} {...p}>
-    <path d="M20 11.5 12.5 19a4.5 4.5 0 0 1-6.4-6.4l8-8a3 3 0 0 1 4.3 4.3l-8 8a1.5 1.5 0 0 1-2.2-2.1l7.3-7.3" />
-  </svg>
-);
-
-export const Sticker = (p) => (
-  <svg {...s} {...p}>
-    <path d="M20 12A8 8 0 1 0 12 20h1l6-6z" />
-    <path d="M13 20v-4a3 3 0 0 1 3-3h4" />
-  </svg>
-);
-
-export const Chevron = (p) => (
-  <svg {...s} {...p}>
-    <path d="m9 5 7 7-7 7" />
+    <rect x="2.5" y="4" width="19" height="16" rx="2.5" />
+    <rect x="13" y="13" width="6" height="4.5" rx="1" />
   </svg>
 );
 
@@ -103,16 +84,121 @@ export const X = (p) => (
   </svg>
 );
 
-export const Lock = (p) => (
+export const ChatBubble = (p) => (
   <svg {...s} {...p}>
-    <rect x="4.5" y="10.5" width="15" height="10" rx="2.5" />
-    <path d="M8 10.5V7a4 4 0 0 1 8 0v3.5" />
+    <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4H6.5A2.5 2.5 0 0 1 4 13.5v-8Z" />
   </svg>
 );
 
-export const Unlock = (p) => (
+// The brand mark — soundwave bars, not a stroke icon so it skips `s`.
+export const Wave = (p) => (
+  <svg width="28" height="24" viewBox="0 0 28 24" fill="none" {...p}>
+    <rect x="0" y="9" width="5" height="10" rx="2.5" fill="#3B6FC9" />
+    <rect x="7.5" y="2" width="5" height="20" rx="2.5" fill="#3E7FD6" />
+    <rect x="15" y="5" width="5" height="17" rx="2.5" fill="#7FC9E8" />
+    <rect x="22.5" y="0" width="5" height="19" rx="2.5" fill="#4FB8E8" />
+  </svg>
+);
+
+export const Hand = (p) => (
   <svg {...s} {...p}>
-    <rect x="4.5" y="10.5" width="15" height="10" rx="2.5" />
-    <path d="M8 10.5V7a4 4 0 0 1 7.7-1.5" />
+    <path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V11m0-6.5V4a1.5 1.5 0 0 1 3 0v7m0-5.5a1.5 1.5 0 0 1 3 0V13a7 7 0 0 1-7 7h-.5a6 6 0 0 1-5-2.7L3 14.3a1.5 1.5 0 0 1 2.4-1.8L8 15" />
+  </svg>
+);
+
+// --- chat panel icons ------------------------------------------------------
+
+// Two people — the "who's here" dropdown button at the top of the chat panel.
+export const People = (p) => (
+  <svg {...s} {...p}>
+    <circle cx="9" cy="8" r="3.5" />
+    <path d="M2.5 20a6.5 6.5 0 0 1 13 0" />
+    <path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.2a6.5 6.5 0 0 1 3.5 5.8" />
+  </svg>
+);
+
+// Small "v" — marks something as a dropdown.
+export const ChevronDown = (p) => (
+  <svg {...s} {...p}>
+    <path d="m6 9 6 6 6-6" />
+  </svg>
+);
+
+// Picture frame — the "attach a photo or file" button in the composer.
+export const ImageIcon = (p) => (
+  <svg {...s} {...p}>
+    <rect x="3" y="3" width="18" height="18" rx="3" />
+    <circle cx="9" cy="9" r="1.8" />
+    <path d="m21 15-4.5-4.5L6 21" />
+  </svg>
+);
+
+// Paperclip — the "send a file" button (any file type).
+export const Paperclip = (p) => (
+  <svg {...s} {...p}>
+    <path d="m20.5 11.5-8.3 8.3a5 5 0 0 1-7.1-7.1l8.8-8.8a3.4 3.4 0 0 1 4.8 4.8l-8.8 8.8a1.7 1.7 0 0 1-2.4-2.4l8-8" />
+  </svg>
+);
+
+// Arrow into a tray — download.
+export const Download = (p) => (
+  <svg {...s} {...p}>
+    <path d="M12 3.5v12M7 11l5 5 5-5" />
+    <path d="M4 17.5V19a1.5 1.5 0 0 0 1.5 1.5h13A1.5 1.5 0 0 0 20 19v-1.5" />
+  </svg>
+);
+
+// Pencil — edit one of your messages.
+export const Pencil = (p) => (
+  <svg {...s} {...p}>
+    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4L16.5 3.5Z" />
+    <path d="m14.5 5.5 3 3" />
+  </svg>
+);
+
+// Trash can — unsend one of your messages.
+export const Trash = (p) => (
+  <svg {...s} {...p}>
+    <path d="M4 7h16M9.5 7V4.5h5V7M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7" />
+    <path d="M10 11v6M14 11v6" />
+  </svg>
+);
+
+// Smiley — opens the emoji / sticker picker.
+export const Smile = (p) => (
+  <svg {...s} {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M8.5 14.5a4.5 4.5 0 0 0 7 0" />
+    <path d="M9 9.5h.01M15 9.5h.01" strokeWidth="2.6" />
+  </svg>
+);
+
+// Paper plane — send.
+export const Send = (p) => (
+  <svg {...s} {...p}>
+    <path d="M21 3 10.5 13.5" />
+    <path d="M21 3 14.5 21l-4-7.5L3 9.5 21 3Z" />
+  </svg>
+);
+
+// Document with a folded corner — a (non-image) file attachment.
+export const FileDoc = (p) => (
+  <svg {...s} {...p}>
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" />
+    <path d="M14 3v5h5M9 13h6M9 17h4" />
+  </svg>
+);
+
+// A "T" — shown next to "<name> is typing...".
+export const TypeT = (p) => (
+  <svg {...s} {...p}>
+    <path d="M5 5h14M12 5v14M9.5 19h5" />
+  </svg>
+);
+
+export const Speaker = (p) => (
+  <svg {...s} {...p}>
+    <path d="M4 9.5v5h3.5L12 19V5L7.5 9.5H4Z" />
+    <path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" />
   </svg>
 );

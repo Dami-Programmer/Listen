@@ -26,9 +26,11 @@ export const EVENTS = {
   //   demand. No payload.
   PASS_MIC: 'pass-mic',
 
-  // MIC_STATE { on } : each client reports whether its own mic is live so other
-  //   clients can show a mute badge on that person's tile. Server keeps
+  // MIC_STATE { on } : each client reports whether its own mic is live, so
+  //   everyone else can show "is muted" on that person's tile. The server keeps
   //   `room.mics` (socketId -> bool) and includes it in every snapshot.
+  //   (Needed because audio flows browser-to-browser: the server never hears
+  //   the mic, so it only knows what each client tells it.)
   MIC_STATE: 'mic-state',
 
   // Phase 6 — active-speaker detection.
@@ -103,15 +105,34 @@ export const EVENTS = {
   CHAT_MESSAGE: 'chat-message',
   CHAT_TYPING: 'chat-typing',
 
-  // Screen sharing (added after in-call chat). Anyone in the room may share,
-  // and several people can share at once (mesh). The media itself is
-  // renegotiated peer-to-peer (perfect negotiation in webrtc.js); this event
-  // only tells the room WHO is sharing and WHICH inbound stream is the screen.
+  // Edit / unsend your OWN chat message (any mode, any role — listeners too).
+  // The server checks the requester is the message's sender; nobody can edit
+  // or unsend someone else's message.
+  //   CHAT_EDIT     : client -> server { id, text }. Text messages only.
+  //   CHAT_EDITED   : server -> everyone { id, text, editedAt }.
+  //   CHAT_UNSEND   : client -> server { id }. Any kind (text/sticker/file).
+  //   CHAT_UNSENT   : server -> everyone { id } — drop it from the chat.
+  // Both also update the stored history, so late joiners only ever see the
+  // current version (and never an unsent message).
+  CHAT_EDIT: 'chat-edit',
+  CHAT_EDITED: 'chat-edited',
+  CHAT_UNSEND: 'chat-unsend',
+  CHAT_UNSENT: 'chat-unsent',
+
+  // Screen sharing (added after in-call chat). Google-Meet-style: only ONE
+  // person presents at a time. The media itself is renegotiated peer-to-peer
+  // (perfect negotiation in webrtc.js); this event only tells the room WHO is
+  // sharing and WHICH inbound stream is the screen.
   //   SCREEN_SHARE : client -> server { on, streamId }. `on:true` carries the
   //     MediaStream id so every client can pick the screen track out of that
   //     peer's inbound media; `on:false` stops. The server keeps
-  //     `room.sharing` (socketId -> streamId) and puts it in every snapshot.
+  //     `room.sharing` (socketId -> streamId, at most one entry) and puts it
+  //     in every snapshot. Starting while someone else is presenting bumps
+  //     them — the server drops their entry and fires SCREEN_SHARE_STOPPED at
+  //     that one socket so its client actually ends the capture.
+  //   SCREEN_SHARE_STOPPED : server -> a bumped presenter, no payload.
   SCREEN_SHARE: 'screen-share',
+  SCREEN_SHARE_STOPPED: 'screen-share-stopped',
 
   // WebRTC signaling relay (Phase 2).
   // One event carries every kind of negotiation message between two peers:

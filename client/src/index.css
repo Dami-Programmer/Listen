@@ -1,1134 +1,2428 @@
-/* ============================================================================
-   Listen — light UI
-   ----------------------------------------------------------------------------
-   The open-call screen follows the provided design: a floating white shell on
-   grey, a big active-speaker tile with a frosted control bar and a thumbnail
-   strip below, and a right-hand Room Chat / Participant panel.
-
-   Contents (sections run top-to-bottom the way the screen is built):
-     1.  Design tokens
-     2.  Base / reset
-     3.  Shared bits (avatar)
-     4.  Join & waiting screens
-     5.  Call · shell + background
-     6.  Call · arrival toast
-     7.  Call · top bar (title pill + join request)
-     8.  Call · moderator strip (mode toggle + door lock)
-     9.  Call · moderator queue card (raised hands)
-     10. Call · stage layout
-     11. Call · main tile + frosted controls
-     12. Call · thumbnail carousel
-     13. Call · side panel shell + tabs
-     14. Call · chat (log, bubbles, attachments, typing, composer, pickers)
-     15. Call · participant list
-     16. Debug dump
-     17. Responsive
-
-   Spacing rhythm: everything is a multiple of 2px, and the big structural gaps
-   (shell padding, section gap, stage gap) are deliberately generous so the
-   stacked bands inside the shell have room to breathe.
-   ========================================================================== */
-
-/* ============================================================================
-   1. Design tokens
-   ========================================================================== */
 :root {
-  /* surfaces, light -> dark */
-  --bg: #e3e3e3;
-  --shell: #ffffff;
-  --surface: #f5f5f4;
-  --surface-2: #ececeb;
-  --line: #e5e5e5;
-  --tile-bg: #e5e5e5;
-
-  /* ink */
-  --ink: #0b0b0b;
-  --ink-2: #737373;
-  --ink-3: #a3a3a3;
-
-  /* accents */
-  --dark: #0b0b0b;
-  --on-dark: #ffffff;
-  --danger: #e5766d;
-  --mine: #dce7de;
-  --mine-ink: #3d4f41;
-  --accent: #0b0b0b;
-
-  /* corner radii */
-  --r-shell: 38px;
-  --r-card: 26px; /* side panel */
-  --r-video: 32px; /* main tile */
-  --r-tile: 22px; /* thumbnails, list items */
-  --r-pill: 28px; /* top-bar pills */
-  --r-bubble: 20px; /* chat bubbles */
-
-  color-scheme: light;
+  color-scheme: light dark;
   font-family:
-    'Plus Jakarta Sans',
     system-ui,
     -apple-system,
-    'Segoe UI',
+    Segoe UI,
     Roboto,
     sans-serif;
 }
 
-/* ============================================================================
-   2. Base / reset
-   ========================================================================== */
 * {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--ink);
-  -webkit-font-smoothing: antialiased;
+  background: #0f1115;
+  color: #e8e8ea;
+}
+
+.page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 64px 24px;
 }
 
 h1 {
+  margin: 0;
+  font-size: 2.5rem;
   letter-spacing: -0.02em;
 }
 
+.tagline {
+  color: #9aa0a6;
+  margin-top: 4px;
+}
+
+.card {
+  margin-top: 32px;
+  border: 1px solid #2a2e37;
+  border-radius: 12px;
+  padding: 8px 16px;
+  background: #161922;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid #2a2e37;
+  font-size: 0.9rem;
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.row span {
+  color: #9aa0a6;
+}
+
+.row code {
+  color: #7ee787;
+  text-align: right;
+  word-break: break-all;
+}
+
+.next {
+  margin-top: 32px;
+  color: #9aa0a6;
+  font-size: 0.9rem;
+}
+
+/* --- Phase 2: call view --- */
+
+/* The call needs more room than the Phase 1 forms. */
+.page.call {
+  max-width: 900px;
+}
+
+.tile {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: #000;
+  border: 1px solid #2a2e37;
+  border-radius: 12px;
+  overflow: hidden;
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+/* Phase 6: the server-elected active speaker. One tile at a time. */
+.tile.speaking {
+  border-color: #7ee787;
+  box-shadow:
+    0 0 0 2px #7ee787,
+    0 0 18px rgba(126, 231, 135, 0.45);
+}
+
+.tile video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover; /* fill the square, crop the overflow */
+  display: block;
+}
+
+/* Your own webcam feels natural flipped like a mirror. */
+.tile video.mirror {
+  transform: scaleX(-1);
+}
+
+.tile-label {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #e8e8ea;
+  font-size: 0.8rem;
+}
+
+.controls {
+  margin-top: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* A control that is currently "off" (muted mic / stopped camera). */
+.controls button.off {
+  background: #ff7b72;
+  color: #0f1115;
+}
+
+/* Phase 5: the listener note carries a raise/lower-hand button alongside it. */
+.listener-note {
+  margin-top: 20px;
+  color: #9aa0a6;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.listener-note p {
+  margin: 0;
+}
+
+/* --- Phase 3 + 4: roles & moderation --- */
+
+/* Coloured role label, used in the participant list and on video tiles. */
+.pill {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+.pill-host {
+  background: #3a2f00;
+  color: #ffd54a;
+}
+.pill-cohost {
+  background: #1e2a52;
+  color: #a9b9ff;
+}
+.pill-speaker {
+  background: #10331a;
+  color: #7ee787;
+}
+.pill-listener {
+  background: #2a2e37;
+  color: #9aa0a6;
+}
+
+/* Role pill pinned to the bottom-right of a video tile (name is bottom-left). */
+.tile-role {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+}
+
+/* Non-host's read-only "the room is locked down" notice. */
+.banner {
+  margin-top: 16px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #3a2f00;
+  color: #ffd54a;
+  font-size: 0.9rem;
+}
+
+/* Host's segmented Open | Moderated switch. */
+/* Moderator strip: mode toggle + door lock, side by side. */
+.mod-bar {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.mod-bar .mode-toggle {
+  margin-top: 0;
+}
+
+.mode-toggle {
+  margin-top: 16px;
+  display: inline-flex;
+  border: 1px solid #2a2e37;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.mode-toggle button {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #9aa0a6;
+  font-weight: 600;
+  padding: 8px 18px;
+}
+.mode-toggle button.active {
+  background: #7ee787;
+  color: #0f1115;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.topbar h1 {
+  font-size: 1.75rem;
+}
+
+.join {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+}
+
+.join label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: #9aa0a6;
+}
+
+.join input {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #2a2e37;
+  background: #0f1115;
+  color: #e8e8ea;
+  font-size: 1rem;
+}
+
+.join input:focus {
+  outline: none;
+  border-color: #7ee787;
+}
+
 button {
-  font-family: inherit;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: #7ee787;
+  color: #0f1115;
+  font-size: 0.95rem;
+  font-weight: 600;
   cursor: pointer;
 }
+
 button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
-/* ============================================================================
-   3. Shared bits
-   ========================================================================== */
-
-/* the coloured initials circle — used on tiles, in the strip, and in the
-   participant list; the component sets its own size inline */
-.avatar {
-  display: inline-grid;
-  place-items: center;
-  border-radius: 50%;
-  font-weight: 700;
-  overflow: hidden;
-  flex-shrink: 0;
-  line-height: 1;
-}
-
-/* ============================================================================
-   4. Join & waiting screens
-   ========================================================================== */
-.page {
-  min-height: 100vh;
-  max-width: 460px;
-  margin: 0 auto;
-  padding: 12vh 24px 24px;
-}
-.page h1 {
-  margin: 0;
-  font-size: 2.2rem;
-  font-weight: 800;
-}
-.tagline {
-  color: var(--ink-2);
-  margin: 6px 0 0;
-  font-size: 0.95rem;
-}
-
-.card {
-  margin-top: 28px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-card);
-  padding: 20px;
-  background: var(--shell);
-}
-.card.join {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 26px;
-}
-.card.join label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--ink-2);
-}
-.card.join input {
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--ink);
-  font-size: 1rem;
-}
-.card.join input:focus {
-  outline: none;
-  border-color: var(--dark);
-}
-
-/* buttons — the dark default, plus ghost / danger / small variants */
-button,
-.btn {
-  padding: 12px 18px;
-  border-radius: 12px;
-  border: 1px solid transparent;
-  background: var(--dark);
-  color: var(--on-dark);
-  font-size: 0.95rem;
-  font-weight: 600;
-}
 button.ghost {
-  background: var(--surface);
-  color: var(--ink);
-}
-button.ghost:hover:not(:disabled) {
-  background: var(--surface-2);
-}
-button.danger {
-  background: var(--danger);
-  color: #fff;
-}
-button.ghost.danger {
-  background: var(--surface);
-  color: var(--danger);
-}
-button.small {
-  padding: 6px 12px;
-  font-size: 0.8rem;
-  border-radius: 9px;
-}
-
-/* inline messages */
-.err {
-  color: var(--danger);
-  font-size: 0.85rem;
-  margin: 0;
-}
-.banner {
-  margin-top: 14px;
-  padding: 10px 14px;
-  border-radius: 12px;
-  background: #fdeaea;
-  color: #a23b3b;
-  font-size: 0.9rem;
-}
-.muted {
-  color: var(--ink-2);
-  font-size: 0.85rem;
-  margin: 6px 0;
-}
-
-/* ============================================================================
-   5. Call · shell + background
-   ========================================================================== */
-.bg {
-  min-height: 100dvh;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  padding: 24px;
-}
-.shell {
-  position: relative;
-  /* a large floating card — near full desktop, centred, with breathing room */
-  width: 100%;
-  max-width: 1600px;
-  min-height: calc(100dvh - 48px);
-  background: var(--shell);
-  border-radius: var(--r-shell);
-  box-shadow: 0 40px 90px -30px rgba(15, 15, 15, 0.28);
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  /* the single knob for vertical space between the bands (topbar, mod strip,
-     banners, queue card, stage) */
-  gap: 24px;
-}
-
-/* ============================================================================
-   6. Call · arrival toast ("someone joined")
-   ========================================================================== */
-.toast-stack {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  pointer-events: none;
-}
-.toast {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 11px 16px;
-  border-radius: 14px;
-  background: var(--dark);
-  color: var(--on-dark);
-  font-size: 0.85rem;
-  font-weight: 500;
-  box-shadow: 0 18px 44px -18px rgba(20, 20, 40, 0.55);
-  animation: toast-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-.toast--out {
-  animation: toast-out 0.7s cubic-bezier(0.7, 0, 0.84, 0) both;
-}
-.toast strong {
-  font-weight: 700;
-}
-.toast-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #46d68a;
-  flex-shrink: 0;
-}
-@keyframes toast-in {
-  from {
-    opacity: 0;
-    transform: translateX(calc(100% + 16px));
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-@keyframes toast-out {
-  from {
-    opacity: 1;
-    transform: translateX(0);
-  }
-  to {
-    opacity: 0;
-    transform: translateX(calc(100% + 16px));
-  }
-}
-
-/* ============================================================================
-   7. Call · top bar (title pill + join request)
-   ========================================================================== */
-.topbar {
-  display: flex;
-  gap: 24px;
-  align-items: stretch;
-}
-
-/* the title / "hosted by" pill eases in on load and, when the join card
-   opens or closes beside it, glides to its new width instead of snapping */
-.meeting-pill {
-  flex: 1;
-  min-width: 0;
-  background: var(--surface);
-  border-radius: var(--r-pill);
-  padding: 18px 28px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  animation: pill-in 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-.meeting-pill h1,
-.meeting-pill p {
-  transition: opacity 0.7s ease;
-}
-.meeting-pill h1 {
-  margin: 0;
-  font-size: 1.25rem;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.meeting-pill p {
-  margin: 3px 0 0;
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: var(--ink-2);
-}
-@keyframes pill-in {
-  from {
-    opacity: 0;
-    transform: translateY(-10px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-/* the moderator's "someone wants in" card, sitting to the right of the pill */
-.join-req {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  background: var(--surface);
-  border-radius: var(--r-pill);
-  padding: 12px 12px 12px 24px;
-  max-width: 460px;
-  overflow: hidden;
-  white-space: nowrap;
-}
-.join-req span {
-  font-size: 1rem;
-  font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.jr-btn {
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  border: none;
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  padding: 0;
-}
-.jr-deny {
-  background: var(--danger);
-  color: #fff;
-}
-.jr-admit {
-  background: var(--dark);
-  color: #fff;
-}
-
-/* the card owns its own enter/exit: "in" unrolls its own width (so the pill
-   beside it glides rather than jumps) then settles the slide + scale; "out" is
-   the time-reverse. */
-.join-req--in {
-  animation: join-req-in 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-.join-req--out {
-  animation: join-req-out 0.7s cubic-bezier(0.7, 0, 0.84, 0) both;
-  pointer-events: none;
-}
-@keyframes join-req-in {
-  from {
-    opacity: 0;
-    max-width: 0;
-    padding-left: 0;
-    padding-right: 0;
-    transform: translateX(44px) scale(0.94);
-  }
-  to {
-    opacity: 1;
-    max-width: 460px;
-    padding-left: 24px;
-    padding-right: 12px;
-    transform: translateX(0) scale(1);
-  }
-}
-@keyframes join-req-out {
-  from {
-    opacity: 1;
-    max-width: 460px;
-    padding-left: 24px;
-    padding-right: 12px;
-    transform: translateX(0) scale(1);
-  }
-  to {
-    opacity: 0;
-    max-width: 0;
-    padding-left: 0;
-    padding-right: 0;
-    transform: translateX(44px) scale(0.94);
-  }
-}
-
-/* ============================================================================
-   8. Call · moderator strip (mode toggle + door lock)
-   ========================================================================== */
-.mod-strip {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-/* segmented "Open / Moderated" toggle — grid (not flex) so both options are
-   exactly equal width, otherwise the 50% sliding pill misfits */
-.seg {
-  position: relative;
-  display: inline-grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0;
-  background: var(--surface);
-  border-radius: 999px;
-  padding: 4px;
-}
-/* the dark pill sits behind the buttons and slides to whichever is `.on` */
-.seg::before {
-  content: '';
-  position: absolute;
-  z-index: 0;
-  top: 4px;
-  bottom: 4px;
-  left: 4px;
-  width: calc(50% - 4px);
-  border-radius: 999px;
-  background: var(--dark);
-  transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.seg:has(button:last-child.on)::before {
-  transform: translateX(100%);
-}
-.seg button {
-  position: relative;
-  z-index: 1;
-  border: none;
   background: transparent;
-  color: var(--ink-3);
-  padding: 9px 18px;
-  border-radius: 999px;
-  font-size: 0.82rem;
-  font-weight: 700;
-  white-space: nowrap;
-  transition: color 0.32s ease;
-}
-.seg button.on {
-  color: var(--on-dark);
+  border-color: #2a2e37;
+  color: #e8e8ea;
+  font-weight: 500;
 }
 
-.lock-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 8px 14px;
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--ink);
-  border: none;
-  font-size: 0.8rem;
+.row.header span {
+  color: #e8e8ea;
   font-weight: 600;
 }
-.lock-btn.is-locked {
-  color: var(--danger);
+
+.err {
+  color: #ff7b72;
+  font-size: 0.85rem;
+  margin: 0;
 }
 
-/* browsers without :has() — the sliding pill can't track the active button,
-   so fall back to the active button just filling in */
-@supports not (selector(:has(*))) {
-  .seg::before,
-  .side-tabs::before {
-    display: none;
-  }
-  .seg button.on,
-  .side-tabs button.on {
-    background: var(--dark);
-  }
-}
-
-/* ============================================================================
-   9. Call · moderator queue card (raised hands)
-   ========================================================================== */
-.mod-card {
-  border-radius: var(--r-tile);
-  padding: 16px 22px;
-  background: var(--surface);
-}
-.mod-card .row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+.raw summary {
+  cursor: pointer;
   padding: 12px 0;
-  border-top: 1px solid var(--line);
-  font-size: 0.86rem;
+  color: #9aa0a6;
+  font-size: 0.85rem;
 }
-.mod-card .row.header {
-  border-top: none;
-  font-weight: 700;
+
+.raw pre {
+  margin: 0 0 12px;
+  font-size: 0.8rem;
+  color: #7ee787;
+  overflow-x: auto;
 }
-.mod-card .row:first-of-type {
-  border-top: none;
+
+/* --- Phase 5: hand-raising & the speaker queue --- */
+
+/* The host's raised-hands dashboard reuses .card / .row. */
+.card.queue .muted {
+  color: #9aa0a6;
+  font-size: 0.85rem;
+  padding: 12px 0;
+  margin: 0;
 }
-.mod-card .actions {
+
+/* A cluster of buttons (± a role pill) pinned to the right of a row. */
+.actions {
   display: inline-flex;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Compact button for in-row actions (Grant / Dismiss / Revoke / Clear floor). */
+button.small {
+  padding: 5px 12px;
+  font-size: 0.8rem;
+}
+
+/* The header row holds a title on the left and Clear floor on the right. */
+.card.queue .row.header {
+  align-items: center;
+}
+
+/* --- Phase 7: full host moderation controls --- */
+
+/* The per-participant action cluster can get wide (Grant / Mute / Remove +
+   pill); let it wrap instead of shoving the name off-screen. */
+.actions {
   flex-wrap: wrap;
   justify-content: flex-end;
 }
 
-/* ============================================================================
-   10. Call · stage layout
-   ========================================================================== */
-.stage-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(300px, 26%, 420px);
-  gap: 28px;
-  align-items: stretch;
-  /* the stage takes every pixel left under the top bands */
-  flex: 1;
-  min-height: 0;
+/* Destructive action (Remove a participant) — reads red even as a ghost button. */
+button.ghost.danger {
+  border-color: #5c2a28;
+  color: #ff7b72;
 }
-.video-col {
+button.ghost.danger:hover:not(:disabled) {
+  background: #2a1614;
+}
+
+/* Up / down arrows in the queue sit tight together. */
+.card.queue .actions button.small {
+  min-width: 1.9rem;
+}
+
+/* --- In-call chat (added after Phase 7) ---
+   The chat panel's own look lives in the "Chat panel" section near the end
+   of this file (.cp-*). Only the image thumbnail + full-screen viewer stay
+   here. */
+
+/* Inline image attachment. */
+.chat-image {
+  display: block;
+  max-width: 260px;
+  max-height: 240px;
+  border-radius: 12px;
+  border: 1px solid #2a2e37;
+  cursor: zoom-in;
+}
+/* The clickable wrapper around a chat image — a bare button with no styling
+   of its own, so the image looks exactly as before. */
+.chat-image-btn {
+  display: block;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: zoom-in;
+}
+
+/* --- full-screen image viewer (ImageViewer.jsx) ---------------------------
+   The backdrop covers the whole window: a dark tint plus a blur of the app
+   behind it. The picture sits dead-centre and zooms in from small; on close,
+   `.closing` plays both animations in reverse (zoom out + fade the blur away).
+   Change --viewer-speed to make it all faster or slower in one place. */
+.img-viewer {
+  --viewer-speed: 0.45s;
+  position: fixed;
+  inset: 0;
+  z-index: 1000; /* above everything, including the call controls */
+  display: grid;
+  place-items: center;
+  padding: 40px;
+  background: rgba(5, 8, 12, 0.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px); /* Safari */
+  cursor: zoom-out;
+  animation: img-viewer-fade-in var(--viewer-speed) ease-out forwards;
+}
+.img-viewer-img {
+  max-width: min(90vw, 1400px);
+  max-height: 85vh;
+  object-fit: contain;
+  border-radius: 16px;
+  box-shadow: 0 40px 90px -20px rgba(0, 0, 0, 0.8);
+  /* A springy ease: fast at first, settling gently at full size. */
+  animation: img-viewer-zoom-in var(--viewer-speed) cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+/* Download pill, pinned to the top-right corner of the screen. It fades in
+   with the backdrop and out again on close. */
+.img-viewer-dl {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  animation: img-viewer-fade-in-only var(--viewer-speed) ease-out both;
+}
+.img-viewer-dl:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+.img-viewer-dl svg {
+  width: 18px;
+  height: 18px;
+}
+.img-viewer.closing .img-viewer-dl {
+  animation: img-viewer-fade-out-only var(--viewer-speed) ease-in both;
+}
+
+/* Closing: the same animations, reversed. `forwards` keeps the final
+   (invisible) frame on screen until React removes the element, so there's no
+   flash back to full size at the very end. */
+.img-viewer.closing {
+  animation: img-viewer-fade-out var(--viewer-speed) ease-in forwards;
+}
+.img-viewer.closing .img-viewer-img {
+  animation: img-viewer-zoom-out var(--viewer-speed) cubic-bezier(0.64, 0, 0.78, 0) forwards;
+}
+
+@keyframes img-viewer-fade-in {
+  from {
+    background: rgba(5, 8, 12, 0);
+    backdrop-filter: blur(0);
+  }
+}
+@keyframes img-viewer-fade-out {
+  to {
+    background: rgba(5, 8, 12, 0);
+    backdrop-filter: blur(0);
+  }
+}
+@keyframes img-viewer-zoom-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+@keyframes img-viewer-zoom-out {
+  to {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+/* People who've asked their OS for less motion get a plain fade, no zoom. */
+@media (prefers-reduced-motion: reduce) {
+  .img-viewer-img {
+    animation-name: img-viewer-fade-in-only;
+  }
+  .img-viewer.closing .img-viewer-img {
+    animation-name: img-viewer-fade-out-only;
+  }
+}
+@keyframes img-viewer-fade-in-only {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes img-viewer-fade-out-only {
+  to {
+    opacity: 0;
+  }
+}
+
+/* --- one media stage (Google-Meet style) --- */
+
+.stage {
+  margin-top: 24px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+/* Not presenting: the main area IS the camera grid — as many ~220px columns as
+   fit, then wrap. */
+.stage-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+/* Presenting: the screen(s) fill the main area (one full-width, two side by
+   side if there's room), and every camera drops into the filmstrip. */
+.stage.presenting .stage-main {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr));
+}
+.stage.presenting .stage-main .tile-screen {
+  max-height: 70vh;
+}
+
+.stage-strip {
+  width: 176px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  min-width: 0;
-  min-height: 0;
+  gap: 12px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+/* Screen share: 16:9 and shown whole (not cropped like a camera). */
+.tile.tile-screen {
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+.tile.tile-screen video {
+  object-fit: contain;
+}
+
+@media (max-width: 720px) {
+  .stage {
+    flex-direction: column;
+  }
+  .stage-strip {
+    width: auto;
+    flex-direction: row;
+    max-height: none;
+    overflow-x: auto;
+  }
+  .stage-strip .tile {
+    width: 140px;
+    flex-shrink: 0;
+  }
 }
 
 /* ============================================================================
-   11. Call · main tile + frosted controls
+   Dark call screen — matches the "Design Sprint Meeting" reference.
+   Everything is scoped to `.callscreen` / `.cs-*`, so the join and waiting
+   screens keep the original rules above.
    ========================================================================== */
-.main-tile {
-  position: relative;
-  border-radius: var(--r-video);
-  overflow: hidden;
-  background: var(--tile-bg);
-  /* fills the video column; the thumbnail strip sits under it */
+/* Two columns side by side: the stage (topbar + video + controls) on the left,
+   and — when it's open — the full-height chat panel on the right. */
+.callscreen {
+  height: 100dvh;
+  background: #10161c;
+  color: #f5f7fa;
+  display: flex;
+  /* the chat panel slides in from past the right edge — clip it there */
+  overflow-x: hidden;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+/* The left column keeps exactly the spacing the whole screen used to have, so
+   the stage looks the same as before. */
+.cs-stage-col {
   flex: 1;
-  min-height: 280px;
-}
-.main-tile.wide {
-  aspect-ratio: auto;
-}
-/* full-surface click target that sits under the pills/controls (z-index 3):
-   tap the spotlit person's video to drop yourself back onto the main tile */
-.main-hit {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  border: none;
-  background: transparent;
-  padding: 0;
-  cursor: pointer;
-}
-.main-hit:focus-visible {
-  outline: 2px solid var(--on-dark);
-  outline-offset: -3px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 40px 24px;
 }
 
-/* the video surface itself — shared by the main tile and every thumbnail */
-.tile {
+.callscreen .err {
+  margin: 0;
+}
+
+/* --- header ---------------------------------------------------------- */
+.cs-topbar {
+  display: flex;
+  align-items: flex-start;
+  gap: 56px;
+  flex-shrink: 0;
+}
+.cs-brand-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex-shrink: 0;
+}
+/* the SVG is a 512² square with lots of padding — crop to the mark */
+.cs-logo {
+  width: 124px;
+  height: 92px;
+  object-fit: cover;
+  display: block;
+}
+.cs-title-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  height: 92px;
+}
+.cs-title-row h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 27px;
+  letter-spacing: -0.18px;
+  color: #f5f7fa;
+}
+.cs-mode-badge {
+  padding: 5px 20px;
+  border-radius: 9999px;
+  border: 1px solid rgba(39, 196, 243, 0.25);
+  background: rgba(39, 196, 243, 0.2);
+  color: #f5f7fa;
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+  /* both labels share one grid cell; width is set from JS and animated */
+  display: inline-grid;
+  /* track = the pill's own width, so the active word centres in it instead of
+     in a track stretched to the longest word */
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  overflow: hidden;
+  transition:
+    width 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 0.45s ease,
+    border-color 0.45s ease,
+    box-shadow 0.45s ease,
+    filter 0.25s ease,
+    transform 0.15s ease;
+}
+.cs-mode-badge:active {
+  transform: scale(0.95);
+}
+.cs-mode-badge.moderated {
+  border-color: rgba(255, 196, 64, 0.3);
+  background: rgba(255, 196, 64, 0.18);
+  box-shadow: 0 0 18px -4px rgba(255, 196, 64, 0.35);
+}
+.cs-mode-label {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(70%);
+  filter: blur(3px);
+  transition:
+    opacity 0.35s ease,
+    transform 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    filter 0.35s ease;
+}
+.cs-mode-label.active {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+/* drum roll: "Open" parks below, "Moderated" parks above, so switching rolls
+   one word out and the other in from the opposite side */
+.cs-mode-label:last-child:not(.active) {
+  transform: translateY(-70%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cs-mode-badge,
+  .cs-mode-label {
+    transition: none;
+  }
+}
+button.cs-mode-badge:hover {
+  filter: brightness(1.2);
+}
+.cs-status {
+  font-size: 13px;
+  color: #8d98a5;
+}
+
+/* join-request pill, top right */
+.cs-join-req {
+  margin: 16px 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 4px 4px 4px 20px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.02);
+  animation:
+    cs-jr-in 1.5s cubic-bezier(0.22, 1, 0.36, 1) both,
+    cs-jr-glow 2s ease-in-out 1.5s infinite;
+}
+/* the admit button rings like an incoming call while the pill is waiting */
+.cs-join-req:not(.leaving) .cs-jr-admit {
+  animation:
+    cs-ring 1.6s ease-in-out 1.5s infinite,
+    cs-admit-glow 1.6s ease-in-out 1.5s infinite;
+}
+@keyframes cs-admit-glow {
+  0%,
+  100% {
+    border-color: rgba(134, 239, 172, 0.35);
+    box-shadow: 0 0 6px 0 rgba(134, 239, 172, 0.25);
+  }
+  50% {
+    border-color: rgba(134, 239, 172, 0.9);
+    box-shadow:
+      0 0 16px 3px rgba(134, 239, 172, 0.55),
+      inset 0 0 10px rgba(134, 239, 172, 0.25);
+  }
+}
+@keyframes cs-jr-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(39, 196, 243, 0);
+    border-color: rgba(255, 255, 255, 0.16);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(39, 196, 243, 0.12);
+    border-color: rgba(39, 196, 243, 0.5);
+  }
+}
+@keyframes cs-ring {
+  0%,
+  60%,
+  100% {
+    transform: rotate(0);
+  }
+  10%,
+  30%,
+  50% {
+    transform: rotate(-12deg);
+  }
+  20%,
+  40% {
+    transform: rotate(12deg);
+  }
+}
+.cs-join-req.leaving {
+  animation: cs-jr-out 0.32s cubic-bezier(0.55, 0, 0.75, 0.3) both;
+  pointer-events: none;
+}
+@keyframes cs-jr-in {
+  from {
+    opacity: 0;
+    transform: translateX(40px);
+  }
+}
+@keyframes cs-jr-out {
+  to {
+    opacity: 0;
+    transform: translateX(40px);
+  }
+}
+.cs-join-req span {
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-size: 16px;
+  color: #8d98a5;
+  white-space: nowrap;
+}
+.cs-join-req strong {
+  font-size: 20px;
+  font-weight: 700;
+  color: #f5f7fa;
+  margin-right: 4px;
+}
+.cs-jr-btn {
+  width: 58px;
+  height: 58px;
+  padding: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  flex-shrink: 0;
+}
+.cs-jr-btn svg {
+  width: 22px;
+  height: 22px;
+  stroke-width: 2.4;
+}
+.cs-jr-deny {
+  margin-right: -12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(180deg, #6a2536, #3e1520);
+}
+.cs-jr-admit {
+  border: 1px solid rgba(134, 239, 172, 0.35);
+  background: linear-gradient(180deg, #1d3a2a, #10231a);
+  color: #86efac;
+}
+.cs-jr-btn:hover {
+  filter: brightness(1.25);
+}
+
+/* --- stage ----------------------------------------------------------- */
+.cs-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 16px;
+}
+.cs-main-tile {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  border-radius: 20px;
+  overflow: hidden;
+  background: #151b23;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.8);
+}
+.cs-main-tile > .tile {
   position: absolute;
   inset: 0;
-  overflow: hidden;
-  background: var(--tile-bg);
+  aspect-ratio: auto;
+  border: none;
+  border-radius: 0;
+  background: #151b23;
 }
-.tile video {
+.cs-main-tile > .tile .tile-label,
+.cs-main-tile > .tile .tile-role {
+  display: none;
+}
+
+/* "[mic] Christina Jona is muted" */
+.cs-name-pill {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 16px;
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+.cs-name-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: rgba(10, 14, 20, 0.45);
+  backdrop-filter: blur(12px);
+}
+.cs-name-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* everyone else, small, bottom-right of the stage */
+.cs-strip {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2;
+  display: flex;
+  gap: 10px;
+  max-width: calc(100% - 32px);
+  overflow-x: auto;
+}
+.cs-strip .tile {
+  width: 180px;
+  flex-shrink: 0;
+  aspect-ratio: 16 / 10;
+  border-radius: 12px;
+  border-color: rgba(255, 255, 255, 0.14);
+  background: #1b222b;
+}
+
+/* 6+ people: each small tile is a button — click to put it on the big screen */
+.cs-strip-pick {
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.cs-strip-pick:hover {
+  transform: translateY(-2px);
+}
+.cs-strip-pick:hover .tile {
+  border-color: rgba(39, 196, 243, 0.6);
+}
+.cs-strip-pick:focus-visible {
+  outline: 2px solid #27c4f3;
+  outline-offset: 2px;
+}
+
+/* Small "mic is off" badge in a tile's top-right corner — same dark frosted
+   look as the big tile's name pill, shrunk down for the thumbnails. */
+.tile-mic-off {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: rgba(10, 14, 20, 0.55);
+  backdrop-filter: blur(10px);
+  /* Pops in rather than snapping, matching the app's other entrances. */
+  animation: tile-badge-in 0.3s ease-out;
+}
+.tile-mic-off svg {
+  width: 14px;
+  height: 14px;
+}
+@keyframes tile-badge-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+/* --- equal-tile layouts: "you + 2 others" and "you + 3 others" ----------
+   (designs: 2 screen / 3 screen). No big frame — the tiles float on the page
+   background, all the same size, centered in the stage.
+
+     2 others:  [ A ] [ B ]            3 others:       [ A ]
+                                                   [ B ]   [ C ]
+
+   It's a 2-column CSS grid. With 3 people, the first tile spans both columns
+   and centers itself, which puts it on its own row above the other two.
+
+   Tile size: every tile is --tile-w wide, and the design's 664 x 390 shape
+   sets the height. --tile-w is the SMALLEST of three limits, so the tiles
+   always fit whichever way the stage is tight:
+     - 720px, so they don't get huge on very big screens
+     - half the stage width (minus the gap and side margins)
+     - for 2 rows: half the stage height (minus the row gap), turned into a
+       width via the 664/390 shape
+   `cqw` / `cqh` are "container query" units: 1% of the width/height of the
+   nearest container ABOVE the element using them. `.cs-grid` is that
+   container (`container-type: size`), so the width is applied on each TILE
+   (a child) — used on .cs-grid itself, they'd skip past it and measure the
+   window instead. --tile-w is just the formula; each tile evaluates it. */
+.cs-grid {
+  position: relative; /* anchors your small self-view (.cs-self-float) */
+  flex: 1;
+  min-width: 0;
+  container-type: size;
+  --gap-x: 48px;
+  --gap-y: 32px;
+  --tile-w: min(720px, (100cqw - var(--gap-x) - 104px) / 2);
+  display: grid;
+  grid-template-columns: repeat(2, auto); /* each column = its tiles' width */
+  justify-content: center;
+  align-content: center;
+  column-gap: var(--gap-x);
+  row-gap: var(--gap-y);
+}
+/* 3 and 4 others both use two rows, so the height limit applies too.
+   (4 others is simply a 2 x 2 grid — no special placement needed.) */
+.cs-grid-3,
+.cs-grid-4 {
+  --tile-w: min(
+    720px,
+    (100cqw - var(--gap-x) - 104px) / 2,
+    (100cqh - var(--gap-y)) / 2 * 664 / 390
+  );
+}
+.cs-grid > .cs-grid-tile {
+  width: var(--tile-w);
+}
+/* 3 people: the first tile takes the whole top row, centered */
+.cs-grid-3 > .cs-grid-tile:first-child {
+  grid-column: 1 / -1;
+  justify-self: center;
+}
+.cs-grid-tile {
+  position: relative;
+  min-width: 0;
+  /* the design's tiles are 664 x 390 — a little wider than 16:10 */
+  aspect-ratio: 664 / 390;
+  border-radius: 20px;
+  overflow: hidden;
+  background: #151b23;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.8);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.25s ease;
+  /* ease in when the layout switches to two tiles, rather than snapping */
+  animation: cs-grid-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+/* each tile follows the one before it by a beat */
+.cs-grid-tile:nth-child(2) {
+  animation-delay: 0.06s;
+}
+.cs-grid-tile:nth-child(3) {
+  animation-delay: 0.12s;
+}
+.cs-grid-tile:nth-child(4) {
+  animation-delay: 0.18s;
+}
+@keyframes cs-grid-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+/* the person talking: the same green glow the small tiles use */
+.cs-grid-tile.speaking {
+  border-color: #7ee787;
+  box-shadow:
+    0 0 0 2px #7ee787,
+    0 0 22px rgba(126, 231, 135, 0.4);
+}
+/* The video fills the whole tile. Its own small name label / role pill are
+   hidden — the "is muted" pill above replaces them, as on the big tile. */
+.cs-grid-tile > .tile {
+  position: absolute;
+  inset: 0;
+  aspect-ratio: auto;
+  border: none;
+  border-radius: 0;
+  background: #151b23;
+}
+.cs-grid-tile > .tile .tile-label,
+.cs-grid-tile > .tile .tile-role {
+  display: none;
+}
+/* Your small self-view in the equal-tile layouts: `.cs-strip` already gives
+   it the size, look and absolute positioning; this places it and pops it in.
+   2 others: the stage's bottom-right corner, in the space below the tiles. */
+.cs-self-float {
+  right: 0;
+  bottom: 0;
+  animation: cs-grid-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) 0.18s both;
+}
+/* 3 others: the bottom-right corner is taken by a tile, so it moves up into
+   the empty space right of the top tile, lined up with that tile's bottom
+   edge. The two rows are centered, so the top row ends exactly half a row
+   gap above the middle: bottom = 50% + half the gap. */
+.cs-grid-3 > .cs-self-float {
+  bottom: calc(50% + var(--gap-y) / 2);
+}
+/* 4 others: every corner has a tile, so the self-view sits INSIDE the last
+   tile, 16px in from its bottom-right corner (same as over the big tile). */
+.cs-self-float.inset {
+  right: 16px;
+  bottom: 16px;
+}
+
+/* --- grid view (layout toggle): everyone, you included, equal tiles -------
+   A centered flex-wrap, so an unfilled last row sits in the middle. --cols /
+   --rows come from App.jsx; each tile is the largest 664x390 box that fits
+   both the width (cols across) and the height (rows down). The -1px keeps
+   rounding from wrapping a full row. Reuses .cs-grid-tile for the look. */
+.cs-eqgrid {
+  flex: 1;
+  min-width: 0;
+  container-type: size;
+  --gap: 20px;
+  --tile-w: min(
+    (100cqw - (var(--cols) - 1) * var(--gap)) / var(--cols) - 1px,
+    (100cqh - (var(--rows) - 1) * var(--gap)) / var(--rows) * 664 / 390
+  );
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: center;
+  gap: var(--gap);
+}
+.cs-eqgrid > .cs-grid-tile {
+  width: var(--tile-w);
+}
+.cs-eqgrid > .cs-grid-tile:nth-child(n + 5) {
+  animation-delay: 0.24s;
+}
+
+/* --- presenting (design: "share") ----------------------------------------
+   The share fills .cs-main-tile on the left; everyone's camera stacks in a
+   scrollable column on the right, with a "more" chevron underneath. */
+.cs-side {
+  width: clamp(180px, 16vw, 260px);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  animation: cs-grid-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.cs-side-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+}
+.cs-side-list::-webkit-scrollbar {
+  display: none;
+}
+.cs-side-tile {
+  position: relative;
+  flex-shrink: 0;
+  aspect-ratio: 250 / 148;
+  border-radius: 16px;
+  overflow: hidden;
+  scroll-snap-align: start;
+  background: #1b222b;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.25s ease;
+}
+.cs-side-tile.speaking {
+  border-color: #7ee787;
+  box-shadow: inset 0 0 0 2px #7ee787;
+}
+.cs-side-tile > .tile {
+  position: absolute;
+  inset: 0;
+  aspect-ratio: auto;
+  border: none;
+  border-radius: 0;
+  background: #1b222b;
+}
+.cs-side-tile > .tile .tile-role {
+  display: none;
+}
+/* name centered along the bottom; mute badge top-left, as in the design */
+.cs-side-tile > .tile .tile-label {
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 16px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: none;
+  font-size: 14px;
+  color: #f5f7fa;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+}
+.cs-side-tile > .tile .tile-mic-off {
+  left: 10px;
+  right: auto;
+  top: 10px;
+}
+.cs-side-more {
+  flex-shrink: 0;
+  align-self: center;
+  width: 60%;
+  height: 40px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #151b23;
+  color: #f5f7fa;
+  transition: opacity 0.2s ease;
+}
+.cs-side-more:hover {
+  filter: brightness(1.25);
+}
+.cs-side-more.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The chat panel's styles are in the "Chat panel" section at the end. */
+
+/* --- control bar ----------------------------------------------------- */
+.cs-controls {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  flex-shrink: 0;
+}
+.cs-controls-center {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.cs-controls button {
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(180deg, #3a4048 0%, #22272e 100%);
+  color: #f5f7fa;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 8px 20px -8px rgba(0, 0, 0, 0.6);
+}
+.cs-controls button:hover:not(:disabled) {
+  filter: brightness(1.2);
+}
+.cs-controls button.on {
+  background: linear-gradient(180deg, #1f5e76 0%, #123c4c 100%);
+  border-color: rgba(39, 196, 243, 0.4);
+}
+.cs-controls .cs-hangup {
+  width: 88px;
+  border-color: rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, #6b2536 0%, #461622 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 14px 26px -6px rgba(255, 45, 74, 0.45);
+}
+.cs-controls .cs-hangup svg {
+  width: 26px;
+  height: 26px;
+}
+.cs-controls .cs-chat-btn {
+  grid-column: 3;
+  justify-self: end;
+  position: relative;
+}
+
+/* unread-message count on the chat button; pops each time it changes */
+.cs-unread {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 9999px;
+  display: grid;
+  place-items: center;
+  background: #ff2d4a;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  border: 2px solid #10161c;
+  box-shadow: 0 4px 10px -2px rgba(255, 45, 74, 0.55);
+  animation:
+    cs-badge-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both,
+    cs-hand-wave 1.6s ease-in-out 0.45s infinite;
+  transform-origin: bottom center;
+}
+@keyframes cs-badge-pop {
+  from {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+}
+
+/* moderator-only: someone's hand is up (top-left, opposite the unread count) */
+.cs-hand-flag {
+  position: absolute;
+  top: -9px;
+  left: -9px;
+  height: 26px;
+  min-width: 26px;
+  padding: 0 5px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: #ffc440;
+  color: #10161c;
+  border: 2px solid #10161c;
+  box-shadow: 0 4px 10px -2px rgba(255, 196, 64, 0.55);
+  animation:
+    cs-badge-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both,
+    cs-hand-wave 1.6s ease-in-out 0.45s infinite;
+  transform-origin: bottom center;
+}
+.cs-hand-flag svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.2;
+}
+.cs-hand-flag b {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+@keyframes cs-hand-wave {
+  0%,
+  60%,
+  100% {
+    transform: rotate(0);
+  }
+  15%,
+  45% {
+    transform: rotate(-14deg);
+  }
+  30% {
+    transform: rotate(12deg);
+  }
+}
+
+/* a freshly arrived chat message bounces in */
+.cp-item.chat-new {
+  animation: chat-bounce-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  transform-origin: bottom left;
+}
+.cp-group.mine .cp-item.chat-new {
+  transform-origin: bottom right;
+}
+@keyframes chat-bounce-in {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.85);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1.03);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cs-grid-tile,
+  .cs-self-float,
+  .cs-side,
+  .cs-unread,
+  .cs-hand-flag,
+  .cp-item.chat-new {
+    animation: none;
+  }
+  /* keep a near-instant animation so onAnimationEnd still fires */
+  .cs-join-req {
+    animation: cs-jr-in 1ms both;
+  }
+  .cs-join-req.leaving {
+    animation: cs-jr-out 1ms both;
+  }
+  .cs-join-req:not(.leaving) .cs-jr-admit {
+    animation: none;
+  }
+}
+
+@media (max-width: 900px) {
+  /* Narrow screens: stack the chat panel under the stage instead of beside. */
+  .callscreen {
+    height: auto;
+    min-height: 100dvh;
+    flex-direction: column;
+  }
+  .cs-stage-col {
+    padding: 12px 16px 16px;
+  }
+  .cs-topbar {
+    flex-wrap: wrap;
+    gap: 12px 24px;
+  }
+  .cs-join-req {
+    margin: 0;
+  }
+  .cs-body {
+    flex-direction: column;
+  }
+  .cs-main-tile {
+    flex: none;
+    aspect-ratio: 16 / 10;
+  }
+  /* the two tiles stack instead of sitting side by side */
+  /* Narrow screens: one tile per row, full width. The stage has no fixed
+     height here (the page scrolls), so the size-container trick is switched
+     off — a size container with no set height would collapse to nothing. */
+  .cs-grid {
+    container-type: normal;
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding-bottom: 130px; /* room for the self-view under the last tile */
+  }
+  .cs-grid > .cs-grid-tile {
+    width: auto; /* fill the one column */
+  }
+  .cs-grid-3 > .cs-grid-tile:first-child {
+    justify-self: stretch;
+  }
+  .cs-grid-3 > .cs-self-float {
+    bottom: 0;
+  }
+  /* presenting: the camera column becomes a sideways row under the share */
+  .cs-side {
+    width: auto;
+  }
+  .cs-side-list {
+    flex-direction: row;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+  }
+  .cs-side-tile {
+    width: 160px;
+  }
+  .cs-side-more {
+    display: none;
+  }
+  /* grid view: two per row, page scrolls */
+  .cs-eqgrid {
+    container-type: normal;
+    gap: 12px;
+  }
+  .cs-eqgrid > .cs-grid-tile {
+    width: calc(50% - 6px);
+  }
+  .cs-eqgrid > .cs-grid-tile:only-child {
+    width: 100%;
+  }
+  .cs-panel {
+    width: auto;
+  }
+  .cs-controls-center {
+    gap: 10px;
+  }
+}
+
+/* ============================================================================
+   Pre-join lobby (PreJoin.jsx) — same dark palette as the call screen.
+   ========================================================================== */
+.prejoin {
+  min-height: 100dvh;
+  background: #10161c;
+  color: #f5f7fa;
+  font-family: 'Inter', system-ui, sans-serif;
+  padding: 16px 40px 32px;
+  display: flex;
+  flex-direction: column;
+}
+.pj-top {
+  flex-shrink: 0;
+}
+.pj-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 56px;
+  max-width: 1280px;
+  width: 100%;
+  margin: 0 auto;
+  animation: pj-rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes pj-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+.pj-left {
+  flex: 1 1 720px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.pj-right {
+  flex: 0 1 360px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+/* --- preview --- */
+.pj-preview {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 20px;
+  overflow: hidden;
+  background: #151b23;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.8);
+}
+.pj-preview video {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  display: block;
+  transition: opacity 0.25s ease;
 }
-.tile video.mirror {
+.pj-preview video.mirror {
   transform: scaleX(-1);
 }
-.tile video.is-hidden {
+.pj-preview video.pj-hidden {
   opacity: 0;
 }
-.tile-fallback {
+.pj-placeholder {
   position: absolute;
   inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: #8d98a5;
+  font-size: 15px;
+  text-align: center;
+  padding: 24px;
+}
+.pj-placeholder p {
+  margin: 0;
+}
+.pj-media-err {
+  color: #ff8a9a;
+  max-width: 420px;
+}
+.pj-initials {
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
   display: grid;
   place-items: center;
-  background: radial-gradient(circle at 50% 40%, #efefee, #dedede);
+  font-size: 40px;
+  font-weight: 600;
+  color: #f5f7fa;
+  background: linear-gradient(160deg, #2a6f9e, #1b3f5c);
+  box-shadow: 0 0 0 6px rgba(39, 196, 243, 0.12);
 }
-.tile.speaking {
-  box-shadow:
-    inset 0 0 0 3px #7bd88f,
-    0 0 0 1px #7bd88f;
-}
-
-/* "You" label, top-left of the main tile */
-.you-pill {
+.pj-name-tag {
   position: absolute;
   top: 16px;
   left: 16px;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(6px);
-  border-radius: 999px;
-  padding: 6px 16px 6px 6px;
-  font-size: 0.9rem;
-  font-weight: 600;
+  font-size: 15px;
   color: #fff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
 }
 
-/* Share / Pass-the-mic buttons, top-right of the main tile */
-.tile-overlay-btns {
+/* 3-bar mic level meter, driven by --level (0..1) from JS */
+.pj-meter {
+  --level: 0;
   position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 3;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
   display: flex;
-  gap: 8px;
-}
-.tile-overlay-btns button {
-  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  background: rgba(20, 20, 26, 0.45);
-  backdrop-filter: blur(10px);
-  color: #fff;
-  font-size: 0.78rem;
-  font-weight: 600;
+  justify-content: center;
+  gap: 3px;
+  background: #27c4f3;
+  box-shadow: 0 4px 12px -2px rgba(39, 196, 243, 0.5);
+  transition: background 0.2s ease;
 }
-.tile-overlay-btns button.on {
-  background: #fff;
-  color: var(--ink);
+.pj-meter i {
+  width: 4px;
+  border-radius: 2px;
+  background: #0b1116;
+  height: calc(4px + var(--level) * 10px);
+  transition: height 0.08s linear;
+}
+.pj-meter i:nth-child(2) {
+  height: calc(4px + var(--level) * 16px);
+}
+.pj-meter.off {
+  background: rgba(10, 14, 20, 0.55);
+  box-shadow: none;
+}
+.pj-meter.off i {
+  background: #8d98a5;
 }
 
-/* frosted mic / camera / leave bar, bottom-centre of the main tile */
-.call-controls {
+.pj-toggles {
   position: absolute;
   left: 50%;
-  bottom: 20px;
+  bottom: 18px;
   transform: translateX(-50%);
-  z-index: 3;
   display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 10px 14px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.22);
+  gap: 16px;
+}
+.pj-toggles button {
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(20, 26, 33, 0.45);
   backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-}
-.call-controls button {
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  border: none;
-  padding: 0;
-  display: grid;
-  place-items: center;
-  background: rgba(255, 255, 255, 0.25);
   color: #fff;
-}
-.call-controls button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.3);
-}
-.call-controls button.off {
-  background: #fff;
-  color: var(--ink);
-}
-.call-controls .hangup {
-  width: auto;
-  min-width: 88px;
-  border-radius: 999px;
-  padding: 0 22px;
-  background: var(--danger);
-  color: #fff;
-}
-.call-controls .hangup:hover {
-  background: #d9655c;
-}
-
-/* ============================================================================
-   12. Call · thumbnail carousel
-   three cards on screen, sliding between pages of three
-   ========================================================================== */
-.thumb-carousel {
-  display: flex;
-  gap: 16px;
-  align-items: stretch;
-  min-height: 120px;
-}
-.thumb-viewport {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-}
-.thumb-track {
-  display: flex;
-  transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
-  will-change: transform;
-}
-.thumb-page {
-  flex: 0 0 100%;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-}
-.thumb {
-  position: relative;
-  min-width: 0;
-  height: clamp(120px, 19vh, 210px);
-  border-radius: var(--r-tile);
-  overflow: hidden;
-  background: var(--tile-bg);
-  box-shadow: 0 10px 24px -12px rgba(15, 15, 15, 0.25);
-}
-.thumb .tile {
-  border-radius: var(--r-tile);
-}
-
-/* your own strip card carries a mini mic/camera bar (only your own card) */
-.thumb-controls {
-  position: absolute;
-  left: 50%;
-  bottom: 38px;
-  transform: translateX(-50%);
-  z-index: 5;
-  display: flex;
-  gap: 6px;
-  padding: 5px 6px;
-  border-radius: 999px;
-  background: rgba(20, 20, 26, 0.5);
-  backdrop-filter: blur(10px);
-}
-.thumb-controls button {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: none;
-  padding: 0;
-  display: grid;
-  place-items: center;
-  background: rgba(255, 255, 255, 0.22);
-  color: #fff;
-}
-.thumb-controls button:hover {
-  background: rgba(255, 255, 255, 0.34);
-}
-.thumb-controls button.off {
-  background: #fff;
-  color: var(--ink);
-}
-.thumb-controls svg {
-  width: 15px;
-  height: 15px;
-}
-
-/* click anywhere on a card to swap that person onto the main tile */
-.thumb-hit {
-  position: absolute;
-  inset: 0;
-  z-index: 4;
-  border: none;
-  background: transparent;
-  padding: 0;
-  cursor: pointer;
-  border-radius: inherit;
-  transition: box-shadow 0.15s ease;
-}
-.thumb-hit:hover {
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.7);
-}
-.thumb-hit:focus-visible {
-  outline: none;
-  box-shadow: inset 0 0 0 2px var(--on-dark);
-}
-.thumb-name {
-  position: absolute;
-  left: 50%;
-  bottom: 12px;
-  transform: translateX(-50%);
-  z-index: 3;
-  max-width: 84%;
-  padding: 6px 16px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.32);
-  backdrop-filter: blur(6px);
-  color: #fff;
-  font-size: 0.8rem;
-  font-weight: 500;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.mic-badge {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 3;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: rgba(0, 0, 0, 0.32);
-  backdrop-filter: blur(6px);
-  color: #fff;
-}
-.mic-badge.muted {
-  background: var(--danger);
-}
-.mic-badge svg {
-  width: 16px;
-  height: 16px;
-}
-
-/* prev / next arrows to the right of the strip */
-.thumb-nav {
-  flex: 0 0 56px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.thumb-nav-btn {
-  flex: 1;
-  min-height: 44px;
-  border: none;
-  border-radius: var(--r-tile);
-  background: var(--dark);
-  color: #fff;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  cursor: pointer;
   transition:
-    opacity 0.15s ease,
+    background 0.2s ease,
+    box-shadow 0.25s ease,
     transform 0.15s ease;
 }
-.thumb-nav-btn svg {
-  width: 22px;
-  height: 22px;
+.pj-toggles button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  background: rgba(40, 48, 58, 0.6);
 }
-.thumb-nav-btn.prev svg {
-  transform: rotate(180deg);
+.pj-toggles button.off {
+  background: linear-gradient(180deg, #e0425a, #b3243c);
+  border-color: transparent;
 }
-.thumb-nav-btn:hover:not(:disabled) {
-  transform: scale(1.03);
+
+/* --- device pickers --- */
+.pj-devices {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
 }
-.thumb-nav-btn:disabled {
-  opacity: 0.28;
-  cursor: default;
+.pj-select {
+  flex: 1 1 200px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px 0 12px;
+  height: 44px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  color: #b7c0ca;
 }
+.pj-select:focus-within {
+  border-color: rgba(39, 196, 243, 0.6);
+}
+.pj-select svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.pj-select select {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: #f5f7fa;
+  font: inherit;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.pj-select select:focus {
+  outline: none;
+}
+.pj-select option {
+  background: #151b23;
+  color: #f5f7fa;
+}
+.pj-select-text {
+  flex: 1;
+  font-size: 14px;
+  color: #f5f7fa;
+}
+.pj-test {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  border: 1px solid rgba(39, 196, 243, 0.35);
+  background: rgba(39, 196, 243, 0.14);
+  color: #7fdcf9;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* --- right column --- */
+.pj-right h1 {
+  margin: 0;
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.pj-sub {
+  margin: 8px 0 24px;
+  color: #8d98a5;
+  font-size: 15px;
+}
+.pj-note {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(255, 196, 64, 0.12);
+  border: 1px solid rgba(255, 196, 64, 0.3);
+  color: #ffd57a;
+  font-size: 14px;
+}
+.pj-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.pj-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: #8d98a5;
+}
+.pj-form input {
+  height: 48px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  color: #f5f7fa;
+  font: inherit;
+  font-size: 15px;
+}
+.pj-form input:focus {
+  outline: none;
+  border-color: rgba(39, 196, 243, 0.6);
+  box-shadow: 0 0 0 3px rgba(39, 196, 243, 0.15);
+}
+.pj-join {
+  margin-top: 8px;
+  height: 52px;
+  border-radius: 9999px;
+  border: none;
+  background: linear-gradient(180deg, #33cdf7, #1698c4);
+  color: #06131a;
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: 0 12px 26px -10px rgba(39, 196, 243, 0.7);
+  transition:
+    transform 0.15s ease,
+    filter 0.15s ease;
+}
+.pj-join:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .thumb-track {
-    transition: none;
+  .pj-body {
+    animation: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .prejoin {
+    padding: 12px 16px 24px;
+  }
+  .pj-body {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 28px;
+  }
+  .pj-left,
+  .pj-right {
+    flex: none;
   }
 }
 
 /* ============================================================================
-   13. Call · side panel shell + tabs
+   Smooth hover / press on every button. Gradients can't be tweened, so the
+   hover "light-up" is a brightness filter plus a small lift, all eased.
+   Per-component rules above keep their own transition lists where they need
+   extra properties (e.g. the mode badge's width).
    ========================================================================== */
-.side-panel {
-  background: var(--surface);
-  border-radius: var(--r-card);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  align-self: stretch;
-  min-height: 0;
+button {
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.25s ease,
+    filter 0.2s ease,
+    opacity 0.2s ease,
+    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
-.side-tabs {
-  position: relative;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  align-self: stretch;
-  margin: 14px 14px 8px;
-  background: var(--shell);
-  border-radius: 999px;
-  padding: 4px;
+button:hover:not(:disabled) {
+  filter: brightness(1.12);
 }
-.side-tabs::before {
-  content: '';
-  position: absolute;
-  z-index: 0;
-  top: 4px;
-  bottom: 4px;
-  left: 4px;
-  width: calc(50% - 4px);
-  border-radius: 999px;
-  background: var(--dark);
-  transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+button:active:not(:disabled) {
+  transform: scale(0.96);
+  transition-duration: 0.08s;
 }
-.side-tabs:has(button:last-child.on)::before {
-  transform: translateX(100%);
+button.ghost:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.28);
 }
-.side-tabs button {
-  position: relative;
-  z-index: 1;
-  border: none;
-  background: transparent;
-  color: var(--ink-3);
-  font-weight: 700;
-  font-size: 0.82rem;
-  padding: 9px 16px;
-  border-radius: 999px;
-  white-space: nowrap;
-  transition: color 0.32s ease;
+
+/* call control bar: lift + deeper shadow */
+.cs-controls button:hover:not(:disabled) {
+  filter: brightness(1.2);
+  transform: translateY(-3px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 14px 26px -8px rgba(0, 0, 0, 0.7);
 }
-.side-tabs button.on {
-  color: var(--on-dark);
+.cs-controls .cs-hangup:hover:not(:disabled) {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 18px 32px -6px rgba(255, 45, 74, 0.65);
+}
+.cs-controls button:active:not(:disabled) {
+  transform: translateY(-1px) scale(0.95);
+}
+
+/* join-request accept / deny */
+.cs-jr-btn:hover:not(:disabled) {
+  filter: brightness(1.25);
+  transform: scale(1.07);
+}
+.cs-jr-deny:hover:not(:disabled) {
+  box-shadow: 0 0 16px 2px rgba(255, 45, 74, 0.45);
+}
+
+/* host mode badge */
+button.cs-mode-badge:hover {
+  box-shadow: 0 0 0 4px rgba(39, 196, 243, 0.12);
+}
+button.cs-mode-badge.moderated:hover {
+  box-shadow: 0 0 0 4px rgba(255, 196, 64, 0.14);
+}
+
+/* pre-join lobby */
+.pj-toggles button:hover:not(:disabled) {
+  box-shadow: 0 10px 22px -8px rgba(0, 0, 0, 0.7);
+}
+.pj-test:hover:not(:disabled) {
+  background-color: rgba(39, 196, 243, 0.24);
+  border-color: rgba(39, 196, 243, 0.6);
+}
+.pj-join:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 30px -10px rgba(39, 196, 243, 0.85);
+}
+.pj-join:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+
+/* chat composer tools + emoji/sticker picker */
+.cp-tool:hover:not(:disabled) {
+  color: #fff;
+  background-color: rgba(255, 255, 255, 0.07);
+}
+.cp-picker-grid button:hover {
+  transform: scale(1.18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button,
+  button:hover,
+  button:active {
+    transform: none !important;
+  }
 }
 
 /* ============================================================================
-   14. Call · chat
+   Chat panel — matches the "Design Sprint Meeting" chat design.
+   A full-height column on the right of the call screen:
+     .cp-head        close button (left) + my avatar (right)
+     .cp-people-row  people dropdown button + who's here (avatars, "+ N")
+     .cp-chat        messages (.cp-log), typing line, picker, composer
+   Class prefix `cp-` = "chat panel". Structure lives in App.jsx (head + people
+   row) and ChatPanel.jsx (everything from the messages down).
    ========================================================================== */
+.cs-panel {
+  width: 384px;
+  flex-shrink: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 28px 28px 24px;
+  /* the thin divider between the stage and the panel */
+  border-left: 1px solid rgba(255, 255, 255, 0.07);
+  background: #10161c;
+  /* glides in from the right when the chat button opens it */
+  animation: cp-slide-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+/* Closing (the ✕ or the chat button): the same slide, reversed. When it
+   finishes, React removes the panel (useExitable in App.jsx). */
+.cs-panel.closing {
+  animation: cp-slide-out 0.4s cubic-bezier(0.64, 0, 0.78, 0) both;
+}
+/* Sliding via a NEGATIVE right margin (rather than transform) means the panel
+   genuinely takes up less room as it goes — so the video column beside it
+   widens / narrows smoothly with it, instead of jumping at the end.
+   -384px = the panel's full width: at that point it's entirely off-screen. */
+@keyframes cp-slide-in {
+  from {
+    opacity: 0;
+    margin-right: -384px;
+  }
+}
+@keyframes cp-slide-out {
+  to {
+    opacity: 0;
+    margin-right: -384px;
+  }
+}
 
-/* --- message log --------------------------------------------------------- */
-/* the log is a flex column so sent messages align right, received left */
-.chat-log {
-  flex: 1;
+/* --- avatars (Avatar.jsx) ------------------------------------------------ */
+/* Width, height, color and font size are set inline per avatar. */
+.avatar {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  user-select: none;
+}
+/* Mic dot in the bottom-right corner. The dark ring (same color as the panel)
+   makes it look "cut out" of the avatar, like the design. */
+.avatar-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid #10161c;
+  transition: background-color 0.25s ease;
+}
+.avatar-dot.on {
+  background: #2fd36b;
+}
+.avatar-dot.off {
+  background: #ff3b4f;
+}
+
+/* --- top row: close + me -------------------------------------------------- */
+.cp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.cp-close {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+}
+.cp-close svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.4;
+}
+
+/* --- people row ----------------------------------------------------------- */
+.cp-people-row {
+  position: relative; /* anchors the dropdown below it */
+  margin-top: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.cp-people-btn {
+  height: 38px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+}
+.cp-people-btn.on {
+  background: rgba(255, 255, 255, 0.12);
+}
+.cp-people-icon {
+  color: #2fd36b;
+}
+.cp-chevron {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.25s ease;
+}
+/* the "v" flips to "^" while the dropdown is open */
+.cp-people-btn.on .cp-chevron {
+  transform: rotate(180deg);
+}
+.cp-avatars {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cp-more {
+  font-size: 14px;
+  color: #c9d1d9;
+}
+
+/* The dropdown: floats over the messages (so the chat doesn't jump) and
+   scrolls on its own if the room is big. It holds the old panel's cards. */
+.cp-people-pop {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  right: 0;
+  z-index: 5;
+  max-height: 60vh;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
   gap: 10px;
-  padding: 12px 14px 14px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #151c24;
+  box-shadow: 0 24px 48px -16px rgba(0, 0, 0, 0.75);
+  transform-origin: top left;
+  animation: cp-drop-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+/* Closing: folds back up toward the people button, then React removes it. */
+.cp-people-pop.closing {
+  animation: cp-drop-out 0.2s cubic-bezier(0.64, 0, 0.78, 0) both;
+}
+@keyframes cp-drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+}
+@keyframes cp-drop-out {
+  to {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+}
+.cp-people-pop .card {
+  margin-top: 0;
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+.cp-people-pop .mod-bar {
+  margin-top: 0;
+}
+.cp-people-pop .muted {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #8d98a5;
+}
+
+/* --- messages ------------------------------------------------------------- */
+.cp-chat {
+  flex: 1;
   min-height: 0;
-}
-.msg {
-  max-width: 84%;
-}
-.msg.mine {
-  align-self: flex-end;
-}
-/* a text or file message is a rounded card holding its own head + body */
-.msg:has(.chat-bubble),
-.msg:has(.chat-file) {
-  background: var(--shell);
-  border-radius: var(--r-bubble);
-  padding: 10px 14px;
-  width: fit-content;
-}
-.msg.mine:has(.chat-bubble),
-.msg.mine:has(.chat-file) {
-  background: var(--mine);
-}
-.msg-head {
   display: flex;
-  justify-content: space-between;
-  gap: 14px;
-  font-size: 0.74rem;
-  margin-bottom: 4px;
+  flex-direction: column;
+  margin-top: 12px;
 }
-.msg-name {
-  font-weight: 500;
-  color: var(--ink-2);
+.cp-log {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 24px 2px 12px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
-.msg-time {
-  color: var(--ink-3);
+.cp-empty {
+  margin: auto;
+  font-size: 14px;
+  color: #8d98a5;
 }
-.chat-bubble {
-  display: block;
+
+/* One run of messages from the same person: [avatar] [bubbles], then the
+   "• Name time" line underneath. Mine is mirrored to the right. */
+.cp-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.cp-group.mine {
+  align-items: flex-end;
+}
+.cp-group-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  /* Long messages wrap before reaching the far side, leaving a gap on the
+     opposite edge — so left vs right (them vs you) stays easy to read. */
+  max-width: 88%;
+}
+/* A group's bubbles stack on top of each other, one message per line. Each
+   bubble is only as wide as its text (align-items stops them stretching):
+   theirs line up on the left edge, mine on the right. */
+.cp-bubbles {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+.cp-group.mine .cp-bubbles {
+  align-items: flex-end;
+}
+.cp-item {
+  max-width: 100%;
+  /* a message is a row: [✎ 🗑] [bubble] — the buttons only on your own */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* --- edit / unsend your own messages ------------------------------------- */
+/* The ✎ / 🗑 buttons: invisible (and unclickable) until you hover the
+   message, tab to a button, or tap the message on a touch screen. */
+.cp-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.cp-item:hover .cp-actions,
+.cp-item.show-actions .cp-actions,
+.cp-actions:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+.cp-action {
+  width: 28px;
+  height: 28px;
   padding: 0;
-  font-size: 0.9rem;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  color: #c3cbd3;
+}
+.cp-action svg {
+  width: 15px;
+  height: 15px;
+}
+.cp-action:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+}
+.cp-action.danger:hover {
+  color: #ff5a6e;
+}
+
+/* "(edited)" after an edited message's text — small and quiet */
+.cp-edited {
+  color: #8d98a5;
+  font-size: 12px;
+}
+
+/* The inline editor that replaces your bubble while editing. */
+.cp-edit {
+  width: 270px;
+  max-width: 100%;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(47, 211, 107, 0.45);
+  background: rgba(255, 255, 255, 0.04);
+}
+.cp-edit textarea {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: #f1f4f7;
+  font: inherit;
+  font-size: 14px;
   line-height: 1.45;
-  color: var(--ink);
+}
+.cp-edit-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.cp-edit-hint {
+  flex: 1;
+  font-size: 11px;
+  color: #8d98a5;
+  white-space: nowrap;
+}
+.cp-edit-btn {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+.cp-edit-btn.save {
+  background: #2fd36b;
+  color: #06131a;
+}
+
+/* Unsend: the message shrinks and fades away, then stops being drawn
+   (ChatPanel listens for this animation's end). If it was the last message
+   in its group, the "• You 12:00 PM" line fades with it. */
+.cp-item.unsending,
+.cp-group.unsending .cp-meta {
+  pointer-events: none;
+  animation: cp-unsend 0.3s ease-in forwards;
+}
+.cp-group.mine .cp-item.unsending {
+  transform-origin: right center;
+}
+@keyframes cp-unsend {
+  to {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+}
+
+/* Outlined, not filled — same for everyone, like the design. */
+.cp-bubble {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #f1f4f7;
+  font-size: 14px;
+  line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
 }
-.msg.mine .chat-bubble {
-  color: var(--ink);
-}
 
-/* iMessage-style entrance: the whole card blooms up from the sender's side,
-   once, only for a message that wasn't already in the log. */
-.msg--enter {
-  animation: msg-in 0.7s cubic-bezier(0.2, 0.9, 0.24, 1.02) both;
-  transform-origin: left bottom;
-}
-.msg--enter.mine {
-  transform-origin: right bottom;
-  animation-name: msg-in-mine;
-}
-@keyframes msg-in {
-  from {
-    opacity: 0;
-    transform: translateY(9px) scale(0.86);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-@keyframes msg-in-mine {
-  0% {
-    opacity: 0;
-    transform: translateY(6px) scale(0.32);
-  }
-  55% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-@keyframes msg-head-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-/* --- attachments: sticker / image / file --------------------------------- */
-.chat-sticker {
-  font-size: 2.6rem;
-  line-height: 1;
-}
-.chat-image {
-  display: block;
-  max-width: 220px;
-  max-height: 220px;
-  border-radius: var(--r-bubble);
-  border: 1px solid var(--line);
-  cursor: zoom-in;
-}
-.chat-file {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  max-width: 240px;
-  padding: 2px 0;
+/* File pill: blue document badge + name. */
+.cp-file {
+  gap: 10px;
+  font-weight: 500;
   text-decoration: none;
-  color: var(--ink);
+  transition: border-color 0.2s ease;
 }
-.chat-file-icon {
-  font-size: 1.3rem;
+.cp-file:hover {
+  border-color: rgba(255, 255, 255, 0.35);
 }
-.chat-file-meta {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
+.cp-file-icon {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  background: #2f6fed;
+  color: #fff;
 }
-.chat-file-name {
-  font-size: 0.82rem;
+.cp-file-icon svg {
+  width: 14px;
+  height: 14px;
+}
+.cp-file-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.chat-file-size {
-  font-size: 0.68rem;
-  color: var(--ink-2);
+
+.cp-sticker {
+  display: block;
+  font-size: 2.6rem;
+  line-height: 1;
+}
+/* Download arrow at the end of a file pill. */
+.cp-file-dl {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: #9aa4ae;
+  transition: color 0.2s ease;
+}
+.cp-file:hover .cp-file-dl {
+  color: #fff;
 }
 
-/* --- typing indicator --------------------------------------------------- */
-.chat-typing {
+/* An image thumbnail + its corner download button. The wrapper is the
+   positioning box the button is placed against. */
+.cp-image-wrap {
+  position: relative;
+  display: inline-block;
+}
+.cp-image-dl {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(10, 14, 20, 0.6);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  /* hidden until you hover the picture (or tab to the button) */
+  opacity: 0;
+  transform: scale(0.85);
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease,
+    background-color 0.2s ease;
+}
+.cp-image-dl svg {
+  width: 16px;
+  height: 16px;
+}
+.cp-image-wrap:hover .cp-image-dl,
+.cp-image-dl:focus-visible {
+  opacity: 1;
+  transform: none;
+}
+.cp-image-dl:hover {
+  background: rgba(10, 14, 20, 0.85);
+}
+/* Touch screens have no hover — always show it there. */
+@media (hover: none) {
+  .cp-image-dl {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Image thumbnails in the panel: a touch smaller, softer border. */
+.cp-item .chat-image {
+  max-width: 230px;
+  max-height: 220px;
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+/* "• Christiana Jona 11:34 AM" */
+.cp-meta {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.76rem;
-  color: var(--ink-2);
-  padding: 2px 0 8px;
+  font-size: 12px;
+  color: #aab3bd;
 }
-.typing-dots {
-  display: inline-flex;
-  gap: 3px;
-  background: var(--shell);
-  border-radius: 999px;
-  padding: 7px 9px;
-}
-.typing-dots i {
+.cp-meta-dot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: var(--ink-3);
-  animation: blink 1.25s infinite ease-in-out;
+  background: #5b6570;
+}
+
+.cp-attach-err {
+  margin: 0 0 8px;
+}
+
+/* "T  Lisa is typing..." */
+.cp-typing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 10px;
+  font-size: 13px;
+  color: #9aa4ae;
+  animation: cp-fade-up 0.3s ease-out both;
+}
+.cp-typing b {
+  color: #fff;
+  font-weight: 600;
+}
+.cp-typing-icon {
+  width: 16px;
+  height: 16px;
+  color: #fff;
+}
+@keyframes cp-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* The original "is typing" animation: three dots in a little bubble, each
+   bouncing up in turn (staggered by animation-delay) — the iMessage look. */
+.typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 4px;
+  padding: 6px 9px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+.typing-dots i {
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #c3cbd3;
+  animation: typing-bounce 1.25s infinite ease-in-out;
 }
 .typing-dots i:nth-child(2) {
   animation-delay: 0.16s;
@@ -1136,286 +2430,179 @@ button.small {
 .typing-dots i:nth-child(3) {
   animation-delay: 0.32s;
 }
-@keyframes blink {
+@keyframes typing-bounce {
   0%,
   70%,
   100% {
-    opacity: 0.35;
+    transform: translateY(0);
+    opacity: 0.45;
   }
   35% {
+    transform: translateY(-4px);
     opacity: 1;
   }
 }
 
-/* --- composer + emoji / sticker pickers -------------------------------- */
-/* a white pill floating in the grey panel */
-.composer {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 8px 14px 14px;
-  padding: 8px;
-  background: var(--shell);
-  border-radius: 999px;
+/* --- emoji / sticker picker ----------------------------------------------- */
+.cp-picker {
+  margin-bottom: 10px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #151c24;
+  transform-origin: bottom right;
+  animation: cp-pop-up 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
-.composer input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  background: transparent;
-  border-radius: 999px;
-  padding: 10px 12px;
-  font-size: 0.9rem;
-  color: var(--ink);
+@keyframes cp-pop-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
 }
-.composer input::placeholder {
-  color: #9ca3af;
-}
-.composer input:focus {
-  outline: none;
-}
-.composer .icon-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: none;
-  background: var(--surface);
-  color: var(--ink-2);
-  display: grid;
-  place-items: center;
-  padding: 0;
-  flex-shrink: 0;
-}
-.composer .icon-btn.on {
-  color: var(--ink);
-  background: var(--surface-2);
-}
-.composer .send {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: none;
-  background: var(--dark);
-  color: #fff;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  flex-shrink: 0;
-}
-.composer .send svg {
-  width: 18px;
-  height: 18px;
-}
-
-.picker {
-  display: grid;
-  gap: 4px;
-  padding: 10px 14px;
-  border-top: 1px solid var(--line);
-  max-height: 200px;
-  overflow-y: auto;
-}
-.picker.emoji-picker {
-  grid-template-columns: repeat(8, 1fr);
-}
-.picker.sticker-picker {
-  grid-template-columns: repeat(6, 1fr);
-}
-.picker button {
-  padding: 4px;
-  background: transparent;
-  border: none;
-  border-radius: 8px;
-  font-size: 1.2rem;
-}
-.picker.sticker-picker button {
-  font-size: 1.6rem;
-}
-.picker button:hover {
-  background: var(--surface-2);
-}
-.picker-tabs {
+.cp-picker-tabs {
   display: flex;
   gap: 6px;
-  padding: 8px 14px 0;
-  border-top: 1px solid var(--line);
+  margin-bottom: 8px;
 }
-.picker-tabs button {
-  border: none;
-  background: var(--shell);
-  color: var(--ink-2);
-  font-size: 0.75rem;
-  font-weight: 600;
+.cp-picker-tabs button {
   padding: 6px 12px;
-  border-radius: 999px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #9aa4ae;
+  font-size: 13px;
+  font-weight: 600;
 }
-.picker-tabs button.on {
-  background: var(--dark);
+.cp-picker-tabs button.on {
+  background: rgba(255, 255, 255, 0.08);
   color: #fff;
 }
-.attach-err {
-  margin: 8px 14px 0;
+.cp-picker-grid {
+  display: grid;
+  gap: 2px;
+  max-height: 180px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+/* minmax(0, 1fr) — not plain 1fr — lets the columns shrink below the emoji's
+   natural width, so 8 of them always fit instead of spilling sideways. */
+.cp-picker-grid.emoji {
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+}
+.cp-picker-grid.sticker {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.cp-picker-grid button {
+  padding: 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 1.25rem;
+  line-height: 1.4;
+}
+.cp-picker-grid.sticker button {
+  font-size: 1.6rem;
 }
 
-/* --- reduced motion: kill the chat + toast + pill flourishes ----------- */
+/* --- composer: one rounded box ------------------------------------------- */
+.cp-compose {
+  padding: 14px 14px 8px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.05);
+  transition: border-color 0.2s ease;
+}
+/* a soft green edge while you're typing in it */
+.cp-compose:focus-within {
+  border-color: rgba(47, 211, 107, 0.35);
+}
+.cp-compose textarea {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: #f1f4f7;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.45;
+}
+.cp-compose textarea::placeholder {
+  color: #8d98a5;
+}
+.cp-compose-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+.cp-compose-left,
+.cp-compose-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.cp-tool {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #c3cbd3;
+}
+.cp-tool svg {
+  width: 21px;
+  height: 21px;
+}
+.cp-tool.on {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+.cp-send {
+  color: #2fd36b;
+}
+.cp-send:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .msg--enter {
-    animation: none;
+  /* The panel and dropdown can't drop their animations entirely: closing
+     waits for an animation to END before removing them. So keep a near-
+     instant 1ms one — no visible motion, but the "ended" event still fires. */
+  .cs-panel,
+  .cs-panel.closing,
+  .cp-people-pop,
+  .cp-people-pop.closing,
+  .cp-item.unsending {
+    animation-duration: 1ms;
   }
-  .join-req--in,
-  .join-req--out,
-  .toast,
-  .toast--out,
-  .meeting-pill {
-    animation-duration: 0.001s;
-  }
-  .seg::before,
-  .side-tabs::before,
-  .seg button,
-  .side-tabs button {
-    transition: none;
-  }
+  .cp-picker,
+  .cp-typing,
   .typing-dots i {
     animation: none;
   }
 }
 
-/* ============================================================================
-   15. Call · participant list (side panel tab)
-   ========================================================================== */
-.people-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 6px 14px 14px;
-  min-height: 0;
-}
-/* the panel is narrow, so lay each row out as a 2-column grid — avatar in the
-   first column, everything else in the second — and let the action buttons
-   drop onto their own line under the name instead of squeezing it to "Bian…" */
-.person {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  gap: 8px 12px;
-  margin-bottom: 8px;
-  padding: 12px 14px;
-  background: var(--shell);
-  border-radius: var(--r-bubble);
-}
-.person:last-child {
-  margin-bottom: 0;
-}
-.person-meta {
-  min-width: 0;
-}
-.person-name {
-  font-size: 0.88rem;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.person-role {
-  font-size: 0.72rem;
-  color: var(--ink-2);
-}
-/* second column, second row — full row width, buttons flow left-to-right */
-.person-actions {
-  grid-column: 2;
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  justify-content: flex-start;
-}
-
-/* role pills */
-.pill {
-  display: inline-block;
-  padding: 2px 9px;
-  border-radius: 999px;
-  font-size: 0.7rem;
-  font-weight: 700;
-}
-.pill-host {
-  background: #fbe9c8;
-  color: #8a5a12;
-}
-.pill-cohost {
-  background: #dfe3fb;
-  color: #3b3f8a;
-}
-.pill-speaker {
-  background: var(--mine);
-  color: var(--mine-ink);
-}
-.pill-listener {
-  background: var(--surface-2);
-  color: var(--ink-2);
-}
-
-/* ============================================================================
-   16. Debug dump (<details> under the waiting screen)
-   ========================================================================== */
-.raw {
-  margin-top: 4px;
-  font-size: 0.75rem;
-  color: var(--ink-2);
-}
-.raw summary {
-  cursor: pointer;
-}
-.raw pre {
-  overflow-x: auto;
-  background: var(--surface);
-  border-radius: 12px;
-  padding: 12px;
-}
-
-/* ============================================================================
-   17. Responsive
-   ========================================================================== */
-
-/* tablet: the side panel drops below the stage, the page scrolls again */
-@media (max-width: 1000px) {
-  .shell {
-    min-height: 0;
+/* Narrow screens: the panel sits under the stage, full width. */
+@media (max-width: 900px) {
+  .cs-panel {
+    width: auto;
+    padding: 20px 16px;
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+    /* stacked under the video, a sideways slide makes no sense — fade */
+    animation-name: img-viewer-fade-in-only;
   }
-  .stage-row {
-    grid-template-columns: 1fr;
-    flex: none;
-    min-height: auto;
+  .cs-panel.closing {
+    animation-name: img-viewer-fade-out-only;
   }
-  .main-tile {
-    flex: none;
-    aspect-ratio: 16 / 10;
-    min-height: 0;
-  }
-  .side-panel {
-    max-height: 60vh;
-  }
-}
-
-/* phone: tighten the shell padding back down and stack the top bar */
-@media (max-width: 620px) {
-  .bg {
-    padding: 10px;
-  }
-  .shell {
-    padding: 16px;
-    border-radius: 22px;
-    gap: 16px;
-  }
-  .topbar {
-    flex-direction: column;
-  }
-  .join-req {
-    max-width: none;
-  }
-  .thumb {
-    height: clamp(96px, 26vw, 150px);
-  }
-  .thumb-name {
-    font-size: 0.72rem;
-    padding: 2px 9px;
+  .cp-log {
+    max-height: 50vh;
   }
 }

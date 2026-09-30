@@ -1,6 +1,6 @@
 // Phase 2 — the client is now split into two screens:
 //
-//   <JoinScreen/>  room id + name form  (unchanged from Phase 1)
+//   <PreJoin/>     camera/mic check + room id + name (PreJoin.jsx)
 //   <CallView/>    the actual video call (camera tiles + mic/camera/leave)
 //
 // <App/> owns the Socket.IO lifecycle and the "have we joined yet?" flag, and
@@ -11,27 +11,40 @@
 // Remove / Grant / Revoke and queue reordering — all in <CallView/>. Every
 // button here is advisory: the server re-checks that the caller is the host.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { MODES, ROLES } from '@listen/shared';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { EVENTS, MODES, ROLES } from '@listen/shared';
 import { socket } from './socket.js';
 import { useCall } from './webrtc.js';
 import VideoTile from './VideoTile.jsx';
 import ChatPanel from './ChatPanel.jsx';
+import PreJoin from './PreJoin.jsx';
 import Avatar from './Avatar.jsx';
 import {
-  Mic,
-  MicOff,
   Cam,
   CamOff,
+  ChatBubble,
+  Check,
+  ChevronDown,
+  GridView,
+  Hand,
+  Mic,
+  MicOff,
+  People,
   Phone,
   Screen,
-  Hand,
-  Chevron,
-  Check,
+  SpotlightView,
   X,
-  Lock,
-  Unlock,
 } from './icons.jsx';
+
+// The viewer's chosen stage layout, remembered in this browser.
+const LAYOUT_KEY = 'listen.layout';
+function readLayout() {
+  try {
+    return localStorage.getItem(LAYOUT_KEY) === 'grid' ? 'grid' : 'spotlight';
+  } catch {
+    return 'spotlight';
+  }
+}
 
 // Display order for the participant list: host, co-host, speakers, listeners.
 const ROLE_RANK = {
@@ -51,17 +64,6 @@ const ROLE_LABEL = {
 // A small coloured role label. Purely visual — the server owns the actual role.
 function RolePill({ role }) {
   return <span className={`pill pill-${role}`}>{ROLE_LABEL[role] ?? role}</span>;
-}
-
-// Start / stop sharing this tab's screen. In a moderated room only the host +
-// speakers get this button; listeners don't (the server enforces it too).
-function ShareScreenButton({ sharing, onStart, onStop }) {
-  if (!navigator.mediaDevices?.getDisplayMedia) return null;
-  return (
-    <button className={sharing ? 'on' : ''} onClick={sharing ? onStop : onStart}>
-      <Screen /> {sharing ? 'Sharing' : 'Share'}
-    </button>
-  );
 }
 
 // Room id lives in the URL (?room=…). No accounts, no persistence.
@@ -87,6 +89,8 @@ export default function App() {
   // Set when the host kicks us OR turns us away at the door — shown on the join
   // screen so it doesn't just look like a dropped connection.
   const [removedNote, setRemovedNote] = useState(null);
+  // Devices + mic/cam on/off picked in the pre-join lobby, used by the call.
+  const [mediaPrefs, setMediaPrefs] = useState(null);
 
   // Drop every "is typing" indicator and its safety timer.
   const clearTypers = () => {
@@ -131,6 +135,17 @@ export default function App() {
       // A delivered message ends that person's "typing" state.
       dropTyper(msg.from);
     }
+    // Someone edited one of their messages: swap in the new text.
+    function onChatEdited({ id, text, editedAt }) {
+      setChat((c) => c.map((m) => (m.id === id ? { ...m, text, editedAt } : m)));
+    }
+    // Someone unsent one of their messages. We don't delete it from the list
+    // straight away — we flag it `unsent`, so the chat panel can play a
+    // fade-out first; the panel then stops drawing it. Everything else
+    // (unread badge, avatars) already ignores unsent messages.
+    function onChatUnsent({ id }) {
+      setChat((c) => c.map((m) => (m.id === id ? { ...m, unsent: true } : m)));
+    }
     // Add or remove one person from the typing set, with a 5s auto-expiry in
     // case their "stopped typing" ping never arrives.
     function dropTyper(id) {
@@ -161,32 +176,39 @@ export default function App() {
       setRemovedNote('The host removed you from the room.');
     }
 
+    // 'connect' / 'disconnect' are Socket.IO's own built-in lifecycle events —
+    // not part of our EVENTS enum, so they stay as literal strings.
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
-    socket.on('room-state', onRoomState);
-    socket.on('room-error', onRoomError);
-    socket.on('removed', onRemoved);
-    socket.on('admitted', onAdmitted);
-    socket.on('denied', onDenied);
-    socket.on('chat-message', onChatMessage);
-    socket.on('chat-typing', onChatTyping);
+    socket.on(EVENTS.ROOM_STATE, onRoomState);
+    socket.on(EVENTS.ERROR, onRoomError);
+    socket.on(EVENTS.REMOVED, onRemoved);
+    socket.on(EVENTS.ADMITTED, onAdmitted);
+    socket.on(EVENTS.DENIED, onDenied);
+    socket.on(EVENTS.CHAT_MESSAGE, onChatMessage);
+    socket.on(EVENTS.CHAT_EDITED, onChatEdited);
+    socket.on(EVENTS.CHAT_UNSENT, onChatUnsent);
+    socket.on(EVENTS.CHAT_TYPING, onChatTyping);
 
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
-      socket.off('room-state', onRoomState);
-      socket.off('room-error', onRoomError);
-      socket.off('removed', onRemoved);
-      socket.off('admitted', onAdmitted);
-      socket.off('denied', onDenied);
-      socket.off('chat-message', onChatMessage);
-      socket.off('chat-typing', onChatTyping);
+      socket.off(EVENTS.ROOM_STATE, onRoomState);
+      socket.off(EVENTS.ERROR, onRoomError);
+      socket.off(EVENTS.REMOVED, onRemoved);
+      socket.off(EVENTS.ADMITTED, onAdmitted);
+      socket.off(EVENTS.DENIED, onDenied);
+      socket.off(EVENTS.CHAT_MESSAGE, onChatMessage);
+      socket.off(EVENTS.CHAT_EDITED, onChatEdited);
+      socket.off(EVENTS.CHAT_UNSENT, onChatUnsent);
+      socket.off(EVENTS.CHAT_TYPING, onChatTyping);
     };
   }, []);
 
-  function handleJoin(e) {
+  function handleJoin(e, prefs) {
     e.preventDefault();
     setError(null);
+    setMediaPrefs(prefs ?? null);
     setRemovedNote(null);
     const id = roomId.trim();
     if (!id || !name.trim()) return;
@@ -197,7 +219,7 @@ export default function App() {
     window.history.replaceState({}, '', url);
 
     if (!socket.connected) socket.connect();
-    socket.emit('join-room', { roomId: id, name: name.trim() }, (ack) => {
+    socket.emit(EVENTS.JOIN_ROOM, { roomId: id, name: name.trim() }, (ack) => {
       if (ack?.ok && ack.waiting) {
         // Locked room — sit in the lobby until a moderator admits us.
         setSelfId(ack.selfId);
@@ -231,7 +253,7 @@ export default function App() {
 
   if (!joined) {
     return (
-      <JoinScreen
+      <PreJoin
         roomId={roomId}
         name={name}
         error={error}
@@ -251,44 +273,8 @@ export default function App() {
       selfId={selfId}
       connected={connected}
       onLeave={handleLeave}
+      media={mediaPrefs}
     />
-  );
-}
-
-// --- the join form (Phase 1, extracted unchanged) ---------------------------
-function JoinScreen({ roomId, name, error, note, onRoomId, onName, onSubmit }) {
-  return (
-    <main className="page">
-      <h1>Listen</h1>
-      <p className="tagline">Moderated group calls. Phase 7 — full host moderation controls.</p>
-
-      {note && <p className="banner">{note}</p>}
-
-      <form className="card join" onSubmit={onSubmit}>
-        <label>
-          <span>Room</span>
-          <input
-            value={roomId}
-            onChange={(e) => onRoomId(e.target.value)}
-            placeholder="e.g. friday-standup"
-            autoComplete="off"
-          />
-        </label>
-        <label>
-          <span>Your name</span>
-          <input
-            value={name}
-            onChange={(e) => onName(e.target.value)}
-            placeholder="e.g. Sam"
-            autoComplete="off"
-          />
-        </label>
-        <button type="submit" disabled={!roomId.trim() || !name.trim()}>
-          Join room
-        </button>
-        {error && <p className="err">{error}</p>}
-      </form>
-    </main>
   );
 }
 
@@ -314,78 +300,93 @@ function WaitingScreen({ roomId, onCancel }) {
   );
 }
 
-// The moderator's "someone wants in" card. It owns its own enter/exit so the
-// card can slide out (0.7s) after Admit/Deny — or if the person is dealt with
-// elsewhere / leaves the lobby — instead of vanishing mid-animation.
-function JoinRequest({ waiting, onAdmit, onDeny }) {
-  const front = waiting[0] ?? null;
-  const [shown, setShown] = useState(front);
-  const [phase, setPhase] = useState('in'); // 'in' | 'out'
-  const waitingRef = useRef(waiting);
-  waitingRef.current = waiting;
-
-  // Track the front of the queue while nothing is animating out.
-  useEffect(() => {
-    if (phase !== 'in') return;
-    if (!shown && front) setShown(front);
-    else if (shown && (!front || front.id !== shown.id)) setPhase('out');
-  }, [phase, shown, front]);
-
-  // Hold the card through its slide-out, then reveal whoever's next (if anyone).
-  useEffect(() => {
-    if (phase !== 'out') return undefined;
-    const t = setTimeout(() => {
-      setShown(waitingRef.current[0] ?? null);
-      setPhase('in');
-    }, 700);
-    return () => clearTimeout(t);
-  }, [phase]);
-
-  if (!shown) return null;
-
-  const leave = () => setPhase('out');
-  const extra = waiting.length > 1 ? ` (+${waiting.length - 1})` : '';
-
-  return (
-    <div className={`join-req join-req--${phase}`} key={shown.id}>
-      <span>
-        <strong>{shown.name}</strong> wants to join
-        {extra}
-      </span>
-      <button
-        className="jr-btn jr-deny"
-        onClick={() => {
-          onDeny(shown.id);
-          leave();
-        }}
-        aria-label={`Deny ${shown.name}`}
-      >
-        <X />
-      </button>
-      <button
-        className="jr-btn jr-admit"
-        onClick={() => {
-          onAdmit(shown.id);
-          leave();
-        }}
-        aria-label={`Admit ${shown.name}`}
-      >
-        <Check />
-      </button>
-    </div>
-  );
+// Open/close state for something that should animate OUT before it vanishes.
+//
+// React removes an element the instant we stop rendering it — too soon for a
+// closing animation to play. So "close" happens in two steps:
+//   1. hide() sets `closing`: the element stays on screen, but gets a
+//      `.closing` class whose CSS plays the exit animation.
+//   2. When that animation finishes, the element's onAnimationEnd calls
+//      onExitEnd(), which finally sets `open` to false and unmounts it.
+// (Same trick as the image viewer — see ImageViewer.jsx.)
+//
+//   open     — render it? (still true while the exit animation plays)
+//   closing  — the exit animation is playing
+function useExitable() {
+  const [open, setOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const show = () => {
+    setOpen(true);
+    setClosing(false); // re-opening mid-exit cancels the exit
+  };
+  const hide = () => setClosing(true);
+  const toggle = () => (open && !closing ? hide() : show());
+  function onExitEnd(e) {
+    // Children's animations bubble their animationend up to here too (and
+    // the ENTRANCE animation ends here as well) — only the element's own exit
+    // animation should remove it.
+    if (e.target !== e.currentTarget || !closing) return;
+    setOpen(false);
+    setClosing(false);
+  }
+  // Close instantly, no animation — for when a parent is already animating
+  // away and taking this with it.
+  const reset = () => {
+    setOpen(false);
+    setClosing(false);
+  };
+  return { open, closing, show, hide, toggle, onExitEnd, reset, setClosing };
 }
 
 // --- the in-call screen ----------------------------------------------------
-function CallView({ state, chat, typers, selfId, connected, onLeave }) {
-  const [tab, setTab] = useState('chat'); // right panel: 'chat' | 'people'
-  const [page, setPage] = useState(0); // joiner carousel — which set of three
-  const [focusId, setFocusId] = useState(null); // whom the user pinned to the big tile
-  const [toasts, setToasts] = useState([]); // transient "X joined" notices
-  const seenIdsRef = useRef(null); // participant ids from the previous snapshot
-
-  // Stable reference between snapshots so downstream effects don't churn.
-  const participants = useMemo(() => state?.participants ?? [], [state?.participants]);
+function CallView({ state, chat, typers, selfId, connected, onLeave, media }) {
+  const participants = state?.participants ?? [];
+  // Side panel (chat, participants, moderation) — toggled by the chat button,
+  // closed by it or by the panel's ✕. Slides out before it disappears.
+  const panel = useExitable();
+  const panelOpen = panel.open && !panel.closing; // "open" as far as unread counting cares
+  // The chat panel's people dropdown (participants + moderation), and the row
+  // it hangs off — used to close it on a click anywhere outside. It also
+  // animates out (folds back up into its button).
+  const people = useExitable();
+  const peopleOpen = people.open && !people.closing;
+  const { setClosing: setPeopleClosing } = people; // stable setter, safe for the effect below
+  const peopleRef = useRef(null);
+  // The dropdown lives inside the panel. If the panel closes while it's open,
+  // it leaves with the panel — so the next time the panel opens, start with
+  // the dropdown closed rather than popping straight back open.
+  if (!panel.open && people.open) people.reset();
+  useEffect(() => {
+    if (!peopleOpen) return undefined;
+    function onDown(e) {
+      if (peopleRef.current && !peopleRef.current.contains(e.target)) setPeopleClosing(true);
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') setPeopleClosing(true);
+    }
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [peopleOpen, setPeopleClosing]);
+  // Unread badge on the chat button: other people's messages you haven't seen
+  // yet. Opening the panel marks them all read.
+  //
+  // We remember WHICH messages you've seen (their ids), not just how many —
+  // with unsend, counts alone go wrong (unsend a read message and the next
+  // new one wouldn't show). Unread = other people's messages, not unsent,
+  // whose id isn't in `readIds`.
+  //
+  // `readIds` starts empty, so for someone who joins late, every message
+  // already in the room's history (the server hands it over on join) counts
+  // as unread — the badge shows e.g. "7" the moment they arrive, telling them
+  // there's a conversation to catch up on.
+  const [readIds, setReadIds] = useState(() => new Set());
+  const unreadMsgs = chat.filter((m) => m.from !== selfId && !m.unsent && !readIds.has(m.id));
+  if (panelOpen && unreadMsgs.length > 0) setReadIds(new Set(chat.map((m) => m.id)));
+  const unread = panelOpen ? 0 : unreadMsgs.length;
   const self = participants.find((p) => p.id === selfId);
 
   // socketId -> the id of that peer's screen MediaStream (room-state).
@@ -407,7 +408,14 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
     stopShare,
     mediaError,
     isListener,
-  } = useCall({ selfId, participants, inCall: true, sharing, mode: state?.mode });
+  } = useCall({
+    selfId,
+    participants,
+    inCall: true,
+    sharing,
+    mode: state?.mode,
+    media,
+  });
 
   const isHost = self?.role === ROLES.HOST;
   // A moderator is the host OR the appointed co-host — same control surface.
@@ -437,7 +445,38 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
   // peerId -> participant, for labelling remote tiles with name + role.
   const peerOf = (id) => participants.find((p) => p.id === id);
 
-  // --- media: a big "you" tile + a thumbnail strip; screens take over big ---
+  // Is this person's mic live? Every client reports its own mic to the server
+  // (MIC_STATE), which shares the whole room's in `state.mics`. Anyone we
+  // haven't heard about yet is assumed live, so nobody is wrongly shown muted.
+  const micOf = (id) => state?.mics?.[id] ?? true;
+
+  // --- one media stage, Google-Meet style -------------------------------
+  // Camera tiles for everyone (me first). If anyone is screen sharing, the
+  // screen(s) fill the main area and these cameras drop into a filmstrip;
+  // otherwise the cameras ARE the main grid.
+  const cameraTiles = [
+    localStream && {
+      key: 'me',
+      stream: localStream,
+      label: `${self?.name ?? 'You'} (you)`,
+      role: self?.role,
+      speaking: activeSpeakerId === selfId,
+      muted: true,
+      mirror: true,
+      // My own mic: read straight from the hook — it's instant, no round trip.
+      micOff: !micOn,
+    },
+    ...remotes.map(({ id, stream }) => ({
+      key: id,
+      stream,
+      label: peerOf(id)?.name ?? 'Guest',
+      role: peerOf(id)?.role,
+      speaking: activeSpeakerId === id,
+      // Everyone else's mic: what they last reported via the server.
+      micOff: !micOf(id),
+    })),
+  ].filter(Boolean);
+
   const screenTiles = [
     screenStream && { key: 'me', stream: screenStream, label: 'Your screen', muted: true },
     ...remoteScreens.map(({ id, stream }) => ({
@@ -449,6 +488,18 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
 
   const presenting = screenTiles.length > 0;
 
+  // Google-Meet-style: only one presenter at a time. If someone else already
+  // has the floor, starting your own share interrupts theirs — so confirm
+  // first rather than silently cutting them off.
+  const otherPresenterId = Object.keys(sharing).find((id) => id !== selfId) ?? null;
+  function handleStartShare() {
+    if (otherPresenterId) {
+      const name = peerOf(otherPresenterId)?.name ?? 'Someone';
+      if (!window.confirm(`${name} is presenting. Stop their share and present instead?`)) return;
+    }
+    startShare();
+  }
+
   // Participant list sorted host-first, then co-host, speakers, listeners, A-Z.
   const ordered = [...participants].sort(
     (a, b) => (ROLE_RANK[a.role] ?? 9) - (ROLE_RANK[b.role] ?? 9) || a.name.localeCompare(b.name),
@@ -457,7 +508,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
   // Moderator-only: flip the room mode. The server re-checks that the caller is
   // a moderator — this button just isn't rendered for anyone else.
   function changeMode(mode) {
-    socket.emit('set-mode', { mode }, (ack) => {
+    socket.emit(EVENTS.SET_MODE, { mode }, (ack) => {
       if (!ack?.ok) console.warn('[set-mode] rejected:', ack?.error);
     });
   }
@@ -470,40 +521,40 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
       if (!ack?.ok) console.warn(`[${event}] rejected:`, ack?.error);
     });
   }
-  const raiseHand = () => emit('raise-hand');
-  const lowerHand = () => emit('lower-hand'); // lower my own hand
-  const dismissHand = (targetId) => emit('lower-hand', { targetId }); // moderator
-  const grantFloor = (targetId) => emit('grant-floor', { targetId });
-  const revokeFloor = (targetId) => emit('revoke-floor', { targetId });
-  const passMic = () => emit('pass-mic'); // a speaker hands the floor on
+  const raiseHand = () => emit(EVENTS.RAISE_HAND);
+  const lowerHand = () => emit(EVENTS.LOWER_HAND); // lower my own hand
+  const dismissHand = (targetId) => emit(EVENTS.LOWER_HAND, { targetId }); // moderator
+  const grantFloor = (targetId) => emit(EVENTS.GRANT_FLOOR, { targetId });
+  const revokeFloor = (targetId) => emit(EVENTS.REVOKE_FLOOR, { targetId });
+  const passMic = () => emit(EVENTS.PASS_MIC); // a speaker hands the floor on
 
   // A plain speaker in a moderated room can pass the mic (host / co-host hold
   // the room, not "the mic").
   const canPassMic = moderated && self?.role === ROLES.SPEAKER;
 
   // Phase 7 — moderation. Destructive actions confirm first.
-  const forceMute = (targetId) => emit('force-mute', { targetId });
+  const forceMute = (targetId) => emit(EVENTS.FORCE_MUTE, { targetId });
   function removeParticipant(p) {
     if (window.confirm(`Remove ${p.name} from the call?`)) {
-      emit('remove-participant', { targetId: p.id });
+      emit(EVENTS.REMOVE_PARTICIPANT, { targetId: p.id });
     }
   }
   function clearFloor() {
-    if (window.confirm('Send every speaker back to listening?')) emit('clear-floor');
+    if (window.confirm('Send every speaker back to listening?')) emit(EVENTS.CLEAR_FLOOR);
   }
 
   // Co-host — host-only.
-  const makeCohost = (p) => emit('promote-cohost', { targetId: p.id });
+  const makeCohost = (p) => emit(EVENTS.PROMOTE_COHOST, { targetId: p.id });
   function dropCohost(p) {
     if (window.confirm(`Remove ${p.name} as co-host? They stay in the call.`)) {
-      emit('demote-cohost', { targetId: p.id });
+      emit(EVENTS.DEMOTE_COHOST, { targetId: p.id });
     }
   }
 
   // Waiting room — moderator-only.
-  const admit = (id) => emit('admit', { socketId: id });
-  const deny = (id) => emit('deny', { socketId: id });
-  const toggleLock = () => emit('set-lock', { locked: !locked });
+  const admit = (id) => emit(EVENTS.ADMIT, { socketId: id });
+  const deny = (id) => emit(EVENTS.DENY, { socketId: id });
+  const toggleLock = () => emit(EVENTS.SET_LOCK, { locked: !locked });
   // Move one queued person up (dir -1) or down (dir +1). The server only accepts
   // a full reordering of the current queue, so we send the whole new order.
   function moveInQueue(id, dir) {
@@ -512,499 +563,713 @@ function CallView({ state, chat, typers, selfId, connected, onLeave }) {
     const j = i + dir;
     if (i === -1 || j < 0 || j >= order.length) return;
     [order[i], order[j]] = [order[j], order[i]];
-    emit('reorder-queue', { order });
+    emit(EVENTS.REORDER_QUEUE, { order });
   }
 
-  // --- layout data for the open-call design ---------------------------
-  const micOf = (id) => state?.mics?.[id] ?? true;
-  const hostName = participants.find((p) => p.id === state?.hostId)?.name;
-  const canShare = !isListener && navigator.mediaDevices?.getDisplayMedia;
-  const streamOf = (id) => remotes.find((r) => r.id === id)?.stream;
+  // The one big tile: a screen share if anyone is presenting, otherwise the
+  // other person who's talking, otherwise the first other person. You're only
+  // big when you're alone — your own camera always sits in the small corner.
+  const others = cameraTiles.filter((t) => t.key !== 'me');
+  const selfTile = cameraTiles.find((t) => t.key === 'me');
+  // 6+ people: click any small tile (yours included) to put it on the big
+  // screen. The pick sticks until you click another one; if that person
+  // leaves, we fall back to the automatic choice below.
+  const [pinnedKey, setPinnedKey] = useState(null);
+  const canPick = !presenting && cameraTiles.length >= 6;
+  const pinned = canPick ? cameraTiles.find((t) => t.key === pinnedKey) : null;
+  const spotlight = presenting
+    ? screenTiles[0]
+    : (pinned ?? others.find((t) => t.speaking) ?? others[0] ?? selfTile);
+  // Everyone not in the spotlight sits in a small strip over its corner, with
+  // you pinned at the far right.
+  const stripTiles = (presenting ? others : others.filter((t) => t !== spotlight)).concat(
+    selfTile && spotlight !== selfTile ? [selfTile] : [],
+  );
+  const spotlightName = spotlight?.key === 'me' ? (self?.name ?? 'You') : spotlight?.label;
+  // "<name> is muted" works for anyone now — each tile carries its own
+  // `micOff` flag (see cameraTiles above). A screen share has no mic of its
+  // own, so it never says muted.
+  const spotlightMuted = !presenting && Boolean(spotlight?.micOff);
 
-  // Who's on the big camera tile. Default is you; click a thumbnail to spotlight
-  // that person instead (and you drop into the strip where they were). A live
-  // screen share still owns the big tile while it runs.
-  const focusPerson =
-    focusId && focusId !== selfId ? participants.find((p) => p.id === focusId) : null;
-  const spotlightId = !presenting && focusPerson ? focusId : selfId;
-  const spotlightIsSelf = spotlightId === selfId;
+  // While presenting, the big tile's pill names the PRESENTER (not "X's
+  // screen") with their live mic state: "[mic] Christina Jona is muted".
+  const presenterCam = presenting ? cameraTiles.find((t) => t.key === spotlight.key) : null;
+  const pillName = presenting
+    ? spotlight.key === 'me'
+      ? (self?.name ?? 'You')
+      : (peerOf(spotlight.key)?.name ?? 'Guest')
+    : spotlightName;
+  const pillMuted = presenting ? Boolean(presenterCam?.micOff) : spotlightMuted;
 
-  // Big tile = a screen if anyone's presenting, otherwise the spotlit camera.
-  const mainStream = presenting
-    ? screenTiles[0].stream
-    : spotlightIsSelf
-      ? localStream
-      : streamOf(spotlightId);
-  const mainMuted = presenting ? Boolean(screenTiles[0].muted) : spotlightIsSelf;
-  const mainMirror = !presenting && spotlightIsSelf;
-  const mainSpeaking = !presenting && activeSpeakerId === spotlightId;
-  const spotlightName = spotlightIsSelf
-    ? (self?.name ?? 'You')
-    : (focusPerson?.name ?? 'Guest');
-  const mainName = presenting ? screenTiles[0].label : spotlightName;
-  const mainLabel = presenting
-    ? screenTiles[0].label
-    : spotlightIsSelf
-      ? 'You'
-      : spotlightName;
+  // Equal-tile layouts, from the designs:
+  //   2 others ("2 screen"): two tiles side by side
+  //   3 others ("3 screen"): one tile centered on top, two side by side below
+  //   4 others ("5 people"): a 2 x 2 grid
+  // All tiles the same size, no big frame, your small self-view floating in
+  // the stage. Only while nobody is presenting; every other case keeps the
+  // big-tile layout below. `gridCount` is 0 when the grid isn't used.
+  const gridCount = !presenting && [2, 3, 4].includes(others.length) ? others.length : 0;
 
-  // A pinned person who left the call — fall back to showing yourself.
-  useEffect(() => {
-    if (focusId && !participants.some((p) => p.id === focusId)) setFocusId(null);
-  }, [focusId, participants]);
-
-  // The strip below: EVERYONE who isn't on the big tile — driven by the
-  // participant list, so a person shows up the instant they join (avatar first,
-  // then video). When someone is presenting, that also includes me and any
-  // extra screens. Tapping a card moves that person onto the big tile.
-  const stripTiles = [];
-  if (presenting) {
-    screenTiles.slice(1).forEach((s) =>
-      stripTiles.push({ key: `sc-${s.key}`, stream: s.stream, name: s.label, muted: Boolean(s.muted) }),
-    );
-    if (self) {
-      stripTiles.push({
-        key: selfId,
-        stream: localStream,
-        name: `${self.name ?? 'You'} (you)`,
-        muted: true,
-        mirror: true,
-        speaking: activeSpeakerId === selfId,
-        micOn,
-        showMic: true,
-      });
+  // The viewer's layout choice (control-bar toggle):
+  //   'spotlight' — everything above: big tile + your small self-view
+  //   'grid'      — EVERYONE, you included, in equal tiles; no small screen
+  // A screen share still takes the stage in either mode.
+  const [layout, setLayout] = useState(readLayout);
+  function toggleLayout() {
+    const next = layout === 'grid' ? 'spotlight' : 'grid';
+    setLayout(next);
+    try {
+      localStorage.setItem(LAYOUT_KEY, next);
+    } catch {
+      /* private mode etc. — the choice just won't be remembered */
     }
   }
-  // Everyone but me, in room order. If I've spotlit someone, I take their exact
-  // slot in the strip and they move to the big tile — a straight swap.
-  const others = participants.filter((p) => p.id !== selfId);
-  const roster =
-    spotlightIsSelf || !self ? others : others.map((p) => (p.id === spotlightId ? self : p));
-  roster.forEach((p) => {
-    const isSelf = p.id === selfId;
-    stripTiles.push({
-      key: p.id,
-      stream: isSelf ? localStream : streamOf(p.id),
-      name: isSelf ? `${p.name ?? 'You'} (you)` : p.name,
-      muted: isSelf,
-      mirror: isSelf,
-      speaking: activeSpeakerId === p.id,
-      micOn: isSelf ? micOn : micOf(p.id),
-      showMic: true,
-      // your own strip card carries your mic/camera toggles — nobody else's
-      // does, so a user only ever controls their own media
-      selfControls: isSelf && !isListener,
-      camOn: isSelf ? camOn : undefined,
-      onPick: isSelf ? () => setFocusId(null) : () => setFocusId(p.id),
-      pickLabel: isSelf
-        ? 'Put yourself back on the main screen'
-        : `Put ${p.name} on the main screen`,
-    });
-  });
+  const equalGrid = layout === 'grid' && !presenting;
+  // Near-square arrangement: 1 -> 1x1, 2 -> 2x1, 3-4 -> 2x2, 5-6 -> 3x2,
+  // 7-9 -> 3x3, 10-12 -> 4x3 ... An unfilled last row is centered.
+  const eqCols = Math.max(1, Math.ceil(Math.sqrt(cameraTiles.length)));
+  const eqRows = Math.max(1, Math.ceil(cameraTiles.length / eqCols));
 
-  // The strip is a carousel: three cards on screen, sliding between "pages" of
-  // three. The data drives everything — how many pages, which three show, and
-  // whether the arrows are live.
-  const PER_PAGE = 3;
-  const stripPages = [];
-  for (let i = 0; i < stripTiles.length; i += PER_PAGE) {
-    stripPages.push(stripTiles.slice(i, i + PER_PAGE));
-  }
-  const lastPage = Math.max(0, stripPages.length - 1);
-  const curPage = Math.min(page, lastPage); // clamp render if people left
-  const stripOverflow = stripTiles.length > PER_PAGE;
+  // Your own small screen in the grid layouts — the exact same tile as the
+  // self-view in the one-other-person layout (it reuses the `.cs-strip`
+  // styles). Where it goes depends on where there's room:
+  //   2 others: empty space bottom-right of the stage
+  //   3 others: empty space right of the top tile
+  //   4 others: no empty space at all, so it sits INSIDE the last (bottom-
+  //             right) tile's corner — just like it overlaps the big tile
+  //             in the one-other layout. `inset` adds that 16px margin.
+  const selfInLastTile = gridCount === 4;
+  const selfView = selfTile && (
+    <div className={`cs-strip cs-self-float${selfInLastTile ? ' inset' : ''}`}>
+      <VideoTile
+        sinkId={media?.speakerId}
+        stream={selfTile.stream}
+        label={selfTile.label}
+        speaking={selfTile.speaking}
+        muted={selfTile.muted}
+        mirror={selfTile.mirror}
+        micOff={selfTile.micOff}
+      />
+    </div>
+  );
 
-  // Someone left and collapsed a page we were parked on — step back into range.
-  useEffect(() => {
-    if (page > lastPage) setPage(lastPage);
-  }, [page, lastPage]);
+  const knocker = isModerator ? waiting[0] : null;
 
-  // Announce new arrivals with a toast that slides in from the edge. We diff the
-  // participant ids against the previous snapshot; the very first snapshot is
-  // taken as the baseline so we don't greet everyone already in the room.
-  useEffect(() => {
-    const ids = participants.map((p) => p.id);
-    const prev = seenIdsRef.current;
-    seenIdsRef.current = ids;
-    if (!prev) return;
-    const arrivals = participants.filter((p) => p.id !== selfId && !prev.includes(p.id));
-    if (arrivals.length === 0) return;
-    setToasts((cur) => [
-      ...cur,
-      ...arrivals.map((p) => ({ key: `${p.id}-${Date.now()}`, name: p.name })),
-    ]);
-  }, [participants, selfId]);
-
-  // Each toast lives ~3.6s, then slides out (0.7s) before it's dropped. Timers
-  // are scheduled once per toast so a re-render can't restart them.
-  const toastTimersRef = useRef(new Set());
-  useEffect(() => {
-    toasts.forEach((t) => {
-      if (toastTimersRef.current.has(t.key)) return;
-      toastTimersRef.current.add(t.key);
-      setTimeout(() => {
-        setToasts((cur) => cur.map((x) => (x.key === t.key ? { ...x, leaving: true } : x)));
-      }, 3600);
-      setTimeout(() => {
-        setToasts((cur) => cur.filter((x) => x.key !== t.key));
-        toastTimersRef.current.delete(t.key);
-      }, 4300);
-    });
-  }, [toasts]);
+  // Everyone but me — for the avatar row at the top of the chat panel (I'm
+  // shown separately, top-right).
+  const otherPeople = participants.filter((p) => p.id !== selfId);
 
   return (
-    <div className="bg">
-      <div className="shell">
-        {toasts.length > 0 && (
-          <div className="toast-stack" aria-live="polite">
-            {toasts.map((t) => (
-              <div className={`toast${t.leaving ? ' toast--out' : ''}`} key={t.key}>
-                <span className="toast-dot" aria-hidden="true" />
-                <strong>{t.name}</strong> joined
-              </div>
-            ))}
+    <main className="callscreen">
+      {/* Left column: everything that was already on screen — topbar, video,
+          controls. The chat panel is a sibling column so it can run the full
+          height of the window, like the design. */}
+      <div className="cs-stage-col">
+        <header className="cs-topbar">
+          <div className="cs-brand-col">
+            <img className="cs-logo" src="/logo.svg" alt="Listen" />
           </div>
-        )}
-        <div className="topbar">
-          <div className="meeting-pill">
-            <h1>{state?.roomId ?? 'Meeting'}</h1>
-            <p>
-              {hostName ? `hosted by ${hostName}` : 'group call'} · {participants.length} in the room
-              {!connected && ' · reconnecting…'}
-            </p>
+          <div className="cs-title-row">
+            <h1>{state?.roomId}</h1>
+            {isHost && (
+              <ModeSwitch
+                moderated={moderated}
+                onToggle={() => changeMode(moderated ? MODES.OPEN : MODES.MODERATED)}
+              />
+            )}
+            {!connected && <span className="cs-status">reconnecting…</span>}
           </div>
-          {isModerator && <JoinRequest waiting={waiting} onAdmit={admit} onDeny={deny} />}
-        </div>
 
-        {isModerator && (
-          <div className="mod-strip">
-            <div className="seg" role="group" aria-label="Room mode">
-              <button className={!moderated ? 'on' : ''} onClick={() => changeMode(MODES.OPEN)}>
-                Open
-              </button>
-              <button className={moderated ? 'on' : ''} onClick={() => changeMode(MODES.MODERATED)}>
-                Moderated
-              </button>
-            </div>
-            <button
-              className={`lock-btn${locked ? ' is-locked' : ''}`}
-              onClick={toggleLock}
-              title={locked ? 'New people must be admitted' : 'Anyone with the link can join'}
-            >
-              {locked ? <Lock /> : <Unlock />}
-              {locked ? 'Locked' : 'Anyone can join'}
-            </button>
-          </div>
-        )}
+          <JoinRequest
+            knocker={knocker}
+            extra={Math.max(0, waiting.length - 1)}
+            onAdmit={admit}
+            onDeny={deny}
+          />
+        </header>
 
-        {!isModerator && moderated && (
-          <p className="banner">🔒 Moderated — the host &amp; co-host control who speaks.</p>
-        )}
         {mediaError && <p className="err">{mediaError}</p>}
 
-        {isModerator && moderated && (
-          <div className="mod-card">
-            <div className="row header">
-              <span>Raised hands ({queued.length})</span>
-              {grantedSpeakers.length > 0 && (
-                <button className="ghost small" onClick={clearFloor}>
-                  Clear floor
-                </button>
-              )}
-            </div>
-            {queued.length === 0 ? (
-              <p className="muted">No one&apos;s waiting.</p>
-            ) : (
-              queued.map((p, i) => (
-                <div className="row" key={p.id}>
-                  <span>
-                    {i + 1}. {p.name}
-                  </span>
-                  <span className="actions">
-                    <button
-                      className="ghost small"
-                      disabled={i === 0}
-                      onClick={() => moveInQueue(p.id, -1)}
-                      aria-label={`Move ${p.name} up`}
-                    >
-                      ↑
-                    </button>
-                    <button
-                      className="ghost small"
-                      disabled={i === queued.length - 1}
-                      onClick={() => moveInQueue(p.id, +1)}
-                      aria-label={`Move ${p.name} down`}
-                    >
-                      ↓
-                    </button>
-                    <button className="small" onClick={() => grantFloor(p.id)}>
-                      Grant
-                    </button>
-                    <button className="ghost small" onClick={() => dismissHand(p.id)}>
-                      Dismiss
-                    </button>
-                  </span>
+        <div className="cs-body">
+          {equalGrid ? (
+            // Grid view: everyone (me first) in same-size tiles. --cols /
+            // --rows drive the tile size in the CSS.
+            <div className="cs-eqgrid" style={{ '--cols': eqCols, '--rows': eqRows }}>
+              {cameraTiles.map((t) => (
+                <div key={t.key} className={`cs-grid-tile${t.speaking ? ' speaking' : ''}`}>
+                  <VideoTile
+                    sinkId={media?.speakerId}
+                    stream={t.stream}
+                    label={t.label}
+                    muted={t.muted}
+                    mirror={t.mirror}
+                  />
+                  <div className="cs-name-pill">
+                    <span className="cs-name-icon">{t.micOff ? <MicOff /> : <Mic />}</span>
+                    {t.micOff ? `${t.label} is muted` : t.label}
+                  </div>
                 </div>
-              ))
-            )}
-          </div>
-        )}
-
-        <div className="stage-row">
-          <div className="video-col">
-            <div className={`main-tile${presenting ? ' wide' : ''}`}>
-              <VideoTile
-                stream={mainStream}
-                name={mainName}
-                muted={mainMuted}
-                mirror={mainMirror}
-                speaking={mainSpeaking}
-                avatarSize={110}
-              />
-
-              {!presenting && !spotlightIsSelf && (
-                <button
-                  type="button"
-                  className="main-hit"
-                  onClick={() => setFocusId(null)}
-                  aria-label="Put yourself back on the main screen"
+              ))}
+            </div>
+          ) : gridCount ? (
+            // `cs-grid-2` / `-3` / `-4` pick the arrangement in the CSS.
+            <div className={`cs-grid cs-grid-${gridCount}`}>
+              {others.map((t, i) => (
+                // One of the equal tiles. The glow for "this person is
+                // talking" goes on this wrapper (not the video inside it), so
+                // the rounded corners don't clip it.
+                <div key={t.key} className={`cs-grid-tile${t.speaking ? ' speaking' : ''}`}>
+                  <VideoTile
+                    sinkId={media?.speakerId}
+                    stream={t.stream}
+                    label={t.label}
+                    muted={t.muted}
+                    mirror={t.mirror}
+                  />
+                  {/* Same "[mic] Jonas Berg is muted" pill as the big tile. */}
+                  <div className="cs-name-pill">
+                    <span className="cs-name-icon">{t.micOff ? <MicOff /> : <Mic />}</span>
+                    {t.micOff ? `${t.label} is muted` : t.label}
+                  </div>
+                  {/* 4 others: your self-view lives in the last tile's corner */}
+                  {selfInLastTile && i === others.length - 1 && selfView}
+                </div>
+              ))}
+              {/* 2 / 3 others: your self-view floats in the stage's free space */}
+              {!selfInLastTile && selfView}
+            </div>
+          ) : (
+            <div className="cs-main-tile">
+              {spotlight && (
+                <VideoTile
+                  sinkId={media?.speakerId}
+                  key={presenting ? `screen-${spotlight.key}` : spotlight.key}
+                  stream={spotlight.stream}
+                  label={spotlight.label}
+                  muted={spotlight.muted}
+                  mirror={spotlight.mirror}
+                  screen={presenting}
                 />
               )}
-
-              <span className="you-pill">
-                <Avatar name={mainName} size={26} />
-                {mainLabel}
-              </span>
-
-              {(canShare || canPassMic) && (
-                <div className="tile-overlay-btns">
-                  {canShare && (
-                    <ShareScreenButton
-                      sharing={sharingScreen}
-                      onStart={startShare}
-                      onStop={stopShare}
-                    />
-                  )}
-                  {canPassMic && (
-                    <button onClick={passMic}>
-                      <Hand /> Pass the mic
-                    </button>
-                  )}
+              {spotlight && (
+                <div className="cs-name-pill">
+                  <span className="cs-name-icon">{pillMuted ? <MicOff /> : <Mic />}</span>
+                  {pillMuted ? `${pillName} is muted` : pillName}
                 </div>
               )}
+              {!presenting && stripTiles.length > 0 && (
+                <div className="cs-strip">
+                  {stripTiles.map((t) => {
+                    const tile = (
+                      <VideoTile
+                        sinkId={media?.speakerId}
+                        key={t.key}
+                        stream={t.stream}
+                        label={t.label}
+                        speaking={t.speaking}
+                        muted={t.muted}
+                        mirror={t.mirror}
+                        micOff={t.micOff}
+                      />
+                    );
+                    return canPick ? (
+                      <button
+                        key={t.key}
+                        className="cs-strip-pick"
+                        onClick={() => setPinnedKey(t.key)}
+                        aria-label={`Show ${t.label} on the big screen`}
+                        title={`Show ${t.label} on the big screen`}
+                      >
+                        {tile}
+                      </button>
+                    ) : (
+                      tile
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+          {/* Presenting: everyone's camera (you included) in a column beside
+              the share — the same in spotlight and grid view. */}
+          {presenting && <SideStrip tiles={cameraTiles} sinkId={media?.speakerId} />}
+        </div>
 
-              <div className="call-controls">
-                {isListener ? (
-                  <button
-                    className={handRaised ? 'off' : ''}
-                    onClick={handRaised ? lowerHand : raiseHand}
-                    aria-label={handRaised ? 'Lower hand' : 'Raise hand'}
-                    title={
-                      handRaised
-                        ? `You're #${myQueuePos + 1} in line`
-                        : 'Raise your hand to ask for the floor'
-                    }
-                  >
-                    <Hand />
-                  </button>
-                ) : spotlightIsSelf ? (
-                  <>
-                    <button
-                      className={micOn ? '' : 'off'}
-                      onClick={toggleMic}
-                      aria-label={micOn ? 'Mute mic' : 'Unmute mic'}
-                    >
-                      {micOn ? <Mic /> : <MicOff />}
-                    </button>
-                    <button
-                      className={camOn ? '' : 'off'}
-                      onClick={toggleCam}
-                      aria-label={camOn ? 'Turn camera off' : 'Turn camera on'}
-                    >
-                      {camOn ? <Cam /> : <CamOff />}
-                    </button>
-                  </>
-                ) : null}
-                <button className="hangup" onClick={onLeave} aria-label="Leave call">
-                  <Phone />
-                </button>
-              </div>
+        <footer className="cs-controls">
+          <div className="cs-controls-center">
+            <button
+              onClick={toggleCam}
+              aria-label={camOn ? 'Turn camera off' : 'Turn camera on'}
+              title={camOn ? 'Turn camera off' : 'Turn camera on'}
+            >
+              {camOn ? <Cam /> : <CamOff />}
+            </button>
+            <button
+              onClick={toggleMic}
+              disabled={isListener}
+              aria-label={micOn ? 'Mute' : 'Unmute'}
+              title={
+                isListener ? 'Raise your hand to ask for the floor' : micOn ? 'Mute' : 'Unmute'
+              }
+            >
+              {micOn && !isListener ? <Mic /> : <MicOff />}
+            </button>
+            {/* Host / co-host run the floor, so they never raise a hand. For
+                everyone else it only does something as a moderated listener. */}
+            {!isModerator && (
+              <button
+                className={handRaised ? 'on' : ''}
+                onClick={handRaised ? lowerHand : raiseHand}
+                disabled={!isListener}
+                aria-label={handRaised ? 'Lower hand' : 'Raise hand'}
+                title={
+                  isListener
+                    ? handRaised
+                      ? `Lower hand (#${myQueuePos + 1} in line)`
+                      : 'Raise hand'
+                    : moderated
+                      ? 'You already have the floor'
+                      : 'Hand-raising is for moderated rooms'
+                }
+              >
+                <Hand />
+              </button>
+            )}
+            <button
+              className="cs-hangup"
+              onClick={onLeave}
+              aria-label="Leave call"
+              title="Leave call"
+            >
+              <Phone />
+            </button>
+            {!isListener && navigator.mediaDevices?.getDisplayMedia && (
+              <button
+                className={sharingScreen ? 'on' : ''}
+                onClick={sharingScreen ? stopShare : handleStartShare}
+                aria-label={sharingScreen ? 'Stop sharing' : 'Share screen'}
+                title={sharingScreen ? 'Stop sharing' : 'Share screen'}
+              >
+                <Screen />
+              </button>
+            )}
+            <button
+              className={layout === 'grid' ? 'on' : ''}
+              onClick={toggleLayout}
+              aria-label={layout === 'grid' ? 'Switch to spotlight view' : 'Switch to grid view'}
+              title={
+                presenting
+                  ? 'Layout applies when nobody is presenting'
+                  : layout === 'grid'
+                    ? 'Spotlight view'
+                    : 'Grid view'
+              }
+            >
+              {layout === 'grid' ? <SpotlightView /> : <GridView />}
+            </button>
+          </div>
+          <button
+            className={`cs-chat-btn${panelOpen ? ' on' : ''}`}
+            onClick={panel.toggle}
+            aria-label={[
+              panelOpen ? 'Hide chat' : 'Show chat',
+              !panelOpen && unread > 0 && `${unread} unread`,
+              isModerator && moderated && queue.length > 0 && `${queue.length} hand(s) raised`,
+            ]
+              .filter(Boolean)
+              .join(', ')}
+            title={panelOpen ? 'Hide chat' : 'Show chat'}
+          >
+            <ChatBubble />
+            {isModerator && moderated && queue.length > 0 && (
+              <span
+                key={`hand-${queue.length}`}
+                className="cs-hand-flag"
+                title={`${queue.length} hand${queue.length > 1 ? 's' : ''} raised`}
+              >
+                <Hand />
+                {queue.length > 1 && <b>{queue.length}</b>}
+              </span>
+            )}
+            {unread > 0 && (
+              <span key={unread} className="cs-unread" aria-hidden="true">
+                {unread > 99 ? '99+' : unread}
+              </span>
+            )}
+          </button>
+        </footer>
+      </div>
+
+      {/* Right column: the chat panel (design: "Design Sprint Meeting" chat).
+          Top to bottom: close + my avatar; the people button + who's here;
+          the messages and composer (ChatPanel). */}
+      {panel.open && (
+        <aside
+          // `.closing` swaps the slide-in for the slide-out; when that ends,
+          // onExitEnd removes the panel for real.
+          className={`cs-panel${panel.closing ? ' closing' : ''}`}
+          onAnimationEnd={panel.onExitEnd}
+        >
+          <div className="cp-head">
+            <button
+              className="cp-close"
+              onClick={panel.hide}
+              aria-label="Close chat"
+              title="Close chat"
+            >
+              <X />
+            </button>
+            {/* Me, top-right. My dot uses my own mic state directly. */}
+            {self && <Avatar name={self.name} size={44} status={micOn ? 'on' : 'off'} />}
+          </div>
+
+          <div className="cp-people-row" ref={peopleRef}>
+            {/* Opens the dropdown with everything the old panel had: the
+                participant list + moderation, door lock, pass-the-mic and
+                raised hands. */}
+            <button
+              className={`cp-people-btn${peopleOpen ? ' on' : ''}`}
+              onClick={people.toggle}
+              aria-expanded={peopleOpen}
+              aria-label="People and room controls"
+              title="People and room controls"
+            >
+              <People className="cp-people-icon" />
+              <ChevronDown className="cp-chevron" />
+            </button>
+
+            {/* Up to three other people, then "+ N" for the rest. Dots: green
+                = mic on, red = muted (from the shared `mics` map). */}
+            <div className="cp-avatars">
+              {otherPeople.slice(0, 3).map((p) => (
+                <Avatar key={p.id} name={p.name} size={38} status={micOf(p.id) ? 'on' : 'off'} />
+              ))}
+              {otherPeople.length > 3 && (
+                <span className="cp-more">+ {otherPeople.length - 3}</span>
+              )}
             </div>
 
-            {stripTiles.length > 0 && (
-              <div className="thumb-carousel">
-                <div className="thumb-viewport">
-                  <div
-                    className="thumb-track"
-                    style={{ transform: `translateX(-${curPage * 100}%)` }}
-                  >
-                    {stripPages.map((group, gi) => (
-                      <div
-                        className="thumb-page"
-                        key={gi}
-                        aria-hidden={gi !== curPage}
-                      >
-                        {group.map((t) => (
-                          <div className="thumb" key={t.key}>
-                            <VideoTile
-                              stream={t.stream}
-                              name={t.name}
-                              muted={t.muted ?? false}
-                              mirror={t.mirror ?? false}
-                              speaking={t.speaking ?? false}
-                              avatarSize={46}
-                            />
-                            {t.selfControls ? (
-                              <div className="thumb-controls">
-                                <button
-                                  className={t.micOn ? '' : 'off'}
-                                  onClick={toggleMic}
-                                  aria-label={t.micOn ? 'Mute mic' : 'Unmute mic'}
-                                >
-                                  {t.micOn ? <Mic /> : <MicOff />}
-                                </button>
-                                <button
-                                  className={t.camOn ? '' : 'off'}
-                                  onClick={toggleCam}
-                                  aria-label={t.camOn ? 'Turn camera off' : 'Turn camera on'}
-                                >
-                                  {t.camOn ? <Cam /> : <CamOff />}
-                                </button>
-                              </div>
-                            ) : (
-                              t.showMic && (
-                                <span
-                                  className={`mic-badge${t.micOn ? '' : ' muted'}`}
-                                  aria-hidden="true"
-                                >
-                                  {t.micOn ? <Mic /> : <MicOff />}
-                                </span>
-                              )
-                            )}
-                            <span className="thumb-name">{t.name}</span>
-                            {t.onPick && (
-                              <button
-                                type="button"
-                                className="thumb-hit"
-                                onClick={t.onPick}
-                                aria-label={t.pickLabel}
-                              />
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {stripOverflow && (
-                  <div className="thumb-nav">
-                    {curPage > 0 && (
-                      <button
-                        className="thumb-nav-btn prev"
-                        onClick={() => setPage(curPage - 1)}
-                        aria-label="Show previous participants"
-                      >
-                        <Chevron />
+            {people.open && (
+              <div
+                className={`cp-people-pop${people.closing ? ' closing' : ''}`}
+                onAnimationEnd={people.onExitEnd}
+              >
+                {isModerator && (
+                  <div className="mod-bar">
+                    <button
+                      className={`ghost small${locked ? ' danger' : ''}`}
+                      onClick={toggleLock}
+                      title={
+                        locked ? 'New people must be admitted' : 'Anyone with the link can join'
+                      }
+                    >
+                      {locked ? '🔒 Door locked' : '🔓 Door open'}
+                    </button>
+                    {canPassMic && (
+                      <button className="ghost small" onClick={passMic}>
+                        🎤 Pass the mic
                       </button>
                     )}
-                    <button
-                      className="thumb-nav-btn next"
-                      onClick={() => setPage(curPage + 1)}
-                      disabled={curPage >= lastPage}
-                      aria-label="Show more participants"
-                    >
-                      <Chevron />
-                    </button>
                   </div>
                 )}
-              </div>
-            )}
-          </div>
+                {!isModerator && canPassMic && (
+                  <button className="ghost small" onClick={passMic}>
+                    🎤 Pass the mic
+                  </button>
+                )}
+                {isListener && (
+                  <p className="muted">
+                    🎧 Listening only &mdash;{' '}
+                    {handRaised
+                      ? `you're #${myQueuePos + 1} in line for the floor.`
+                      : 'raise your hand to ask for the floor.'}
+                  </p>
+                )}
 
-          <div className="side-panel">
-            <div className="side-tabs" role="tablist">
-              <button
-                role="tab"
-                aria-selected={tab === 'chat'}
-                className={tab === 'chat' ? 'on' : ''}
-                onClick={() => setTab('chat')}
-              >
-                Room Chat
-              </button>
-              <button
-                role="tab"
-                aria-selected={tab === 'people'}
-                className={tab === 'people' ? 'on' : ''}
-                onClick={() => setTab('people')}
-              >
-                Participant
-              </button>
-            </div>
+                {isModerator && moderated && (
+                  <div className="card queue">
+                    <div className="row header">
+                      <span>Raised hands ({queued.length})</span>
+                      {grantedSpeakers.length > 0 && (
+                        <button className="ghost small" onClick={clearFloor}>
+                          Clear floor
+                        </button>
+                      )}
+                    </div>
+                    {queued.length === 0 ? (
+                      <p className="muted">No one&apos;s waiting. Listeners can raise a hand.</p>
+                    ) : (
+                      queued.map((p, i) => (
+                        <div className="row" key={p.id}>
+                          <span>
+                            {i + 1}. {p.name}
+                          </span>
+                          <span className="actions">
+                            <button
+                              className="ghost small"
+                              aria-label={`Move ${p.name} up`}
+                              disabled={i === 0}
+                              onClick={() => moveInQueue(p.id, -1)}
+                            >
+                              ↑
+                            </button>
+                            <button
+                              className="ghost small"
+                              aria-label={`Move ${p.name} down`}
+                              disabled={i === queued.length - 1}
+                              onClick={() => moveInQueue(p.id, +1)}
+                            >
+                              ↓
+                            </button>
+                            <button className="small" onClick={() => grantFloor(p.id)}>
+                              Grant
+                            </button>
+                            <button className="ghost small" onClick={() => dismissHand(p.id)}>
+                              Dismiss
+                            </button>
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
 
-            {tab === 'chat' ? (
-              <ChatPanel messages={chat} typers={typers} selfId={selfId} />
-            ) : (
-              <div className="people-list">
-                {ordered.map((p) => {
-                  const canMod = isModerator && p.id !== selfId && p.role !== ROLES.HOST;
-                  const hostControls = isHost && p.id !== selfId && p.role !== ROLES.HOST;
-                  return (
-                    <div className="person" key={p.id}>
-                      <Avatar name={p.name} size={34} />
-                      <div className="person-meta">
-                        <div className="person-name">
+                <div className="card">
+                  <div className="row header">
+                    <span>Participants ({participants.length})</span>
+                  </div>
+                  {ordered.map((p) => {
+                    const canMod = isModerator && p.id !== selfId && p.role !== ROLES.HOST;
+                    const hostControls = isHost && p.id !== selfId && p.role !== ROLES.HOST;
+                    return (
+                      <div className="row" key={p.id}>
+                        <span>
                           {p.name}
                           {p.id === selfId ? ' (you)' : ''}
-                        </div>
-                        <div className="person-role">
+                        </span>
+                        <span className="actions">
+                          {canMod && moderated && p.role === ROLES.LISTENER && (
+                            <button className="small" onClick={() => grantFloor(p.id)}>
+                              Grant
+                            </button>
+                          )}
+                          {canMod && moderated && p.role === ROLES.SPEAKER && (
+                            <button className="ghost small" onClick={() => revokeFloor(p.id)}>
+                              Revoke
+                            </button>
+                          )}
+                          {hostControls &&
+                            (p.id === cohostId ? (
+                              <button className="ghost small" onClick={() => dropCohost(p)}>
+                                Remove co-host
+                              </button>
+                            ) : (
+                              <button className="ghost small" onClick={() => makeCohost(p)}>
+                                Make co-host
+                              </button>
+                            ))}
+                          {canMod && (
+                            <button className="ghost small" onClick={() => forceMute(p.id)}>
+                              Mute
+                            </button>
+                          )}
+                          {canMod && (
+                            <button
+                              className="ghost small danger"
+                              onClick={() => removeParticipant(p)}
+                            >
+                              Remove
+                            </button>
+                          )}
                           <RolePill role={p.role} />
-                          {!micOf(p.id) && ' · muted'}
-                        </div>
+                        </span>
                       </div>
-                      <div className="person-actions">
-                        {canMod && moderated && p.role === ROLES.LISTENER && (
-                          <button className="small" onClick={() => grantFloor(p.id)}>
-                            Grant
-                          </button>
-                        )}
-                        {canMod && moderated && p.role === ROLES.SPEAKER && (
-                          <button className="ghost small" onClick={() => revokeFloor(p.id)}>
-                            Revoke
-                          </button>
-                        )}
-                        {hostControls &&
-                          (p.id === cohostId ? (
-                            <button className="ghost small" onClick={() => dropCohost(p)}>
-                              Un-co-host
-                            </button>
-                          ) : (
-                            <button className="ghost small" onClick={() => makeCohost(p)}>
-                              Co-host
-                            </button>
-                          ))}
-                        {canMod && (
-                          <button className="ghost small" onClick={() => forceMute(p.id)}>
-                            Mute
-                          </button>
-                        )}
-                        {canMod && (
-                          <button
-                            className="ghost small danger"
-                            onClick={() => removeParticipant(p)}
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
-        </div>
+
+          <ChatPanel
+            messages={chat}
+            typers={typers}
+            selfId={selfId}
+            mics={state?.mics ?? {}}
+            participants={participants}
+          />
+        </aside>
+      )}
+    </main>
+  );
+}
+
+// Host-only Open / Moderated badge. Both labels are always rendered on top of
+// each other: the active one slides/fades in, the other slides/fades out, the
+// colour cross-fades, and the pill's width glides to fit the new word.
+function ModeSwitch({ moderated, onToggle }) {
+  const btnRef = useRef(null);
+  const openRef = useRef(null);
+  const modRef = useRef(null);
+
+  useLayoutEffect(() => {
+    const btn = btnRef.current;
+    let stale = false;
+    const fit = () => {
+      const label = moderated ? modRef.current : openRef.current;
+      if (stale || !btn || !label) return;
+      const { paddingLeft, paddingRight, borderLeftWidth, borderRightWidth } =
+        getComputedStyle(btn);
+      const extra = [paddingLeft, paddingRight, borderLeftWidth, borderRightWidth].reduce(
+        (sum, v) => sum + parseFloat(v),
+        0,
+      );
+      btn.style.width = `${label.offsetWidth + extra}px`;
+    };
+    fit();
+    // Re-fit once the web font has loaded and changed the word widths.
+    document.fonts?.ready.then(fit);
+    // A toggle before the font loads must not let the old mode's fit win.
+    return () => {
+      stale = true;
+    };
+  }, [moderated]);
+
+  return (
+    <button
+      ref={btnRef}
+      className={`cs-mode-badge${moderated ? ' moderated' : ''}`}
+      onClick={onToggle}
+      title="Switch room mode"
+      aria-label={`Room is ${moderated ? 'moderated' : 'open'} — click to switch`}
+    >
+      <span ref={openRef} className={`cs-mode-label${moderated ? '' : ' active'}`}>
+        Open
+      </span>
+      <span ref={modRef} className={`cs-mode-label${moderated ? ' active' : ''}`}>
+        Moderated
+      </span>
+    </button>
+  );
+}
+
+// Top-right "X wants to join the meeting" pill. Slides/fades in when someone
+// knocks and back out when they're admitted or denied (by any moderator). It
+// keeps showing the outgoing person until the exit animation ends, then swaps
+// to whoever is next in line.
+function JoinRequest({ knocker: incoming, extra, onAdmit, onDeny }) {
+  const [shown, setShown] = useState(incoming);
+  const [leaving, setLeaving] = useState(false);
+  // Whoever we just admitted/denied — ignored until the server's snapshot
+  // catches up, so the pill doesn't bounce back in.
+  const [handled, setHandled] = useState(null);
+  const knocker = incoming?.id === handled ? null : incoming;
+
+  // The door changed under us: start the exit, or show the new knocker.
+  if (!leaving && knocker?.id !== shown?.id) {
+    if (shown) setLeaving(true);
+    else setShown(knocker);
+  }
+
+  if (!shown) return null;
+
+  function act(fn) {
+    fn(shown.id);
+    setHandled(shown.id);
+    setLeaving(true); // animate out now rather than waiting for the server
+  }
+
+  function handleAnimationEnd() {
+    if (!leaving) return;
+    setLeaving(false);
+    setShown(knocker);
+  }
+
+  return (
+    <div
+      key={shown.id}
+      className={`cs-join-req${leaving ? ' leaving' : ''}`}
+      aria-live="polite"
+      onAnimationEnd={handleAnimationEnd}
+    >
+      <span>
+        <strong>{shown.name}</strong> wants to join the meeting
+        {extra > 0 && ` (+${extra})`}
+      </span>
+      <button
+        className="cs-jr-btn cs-jr-deny"
+        aria-label={`Deny ${shown.name}`}
+        disabled={leaving}
+        onClick={() => act(onDeny)}
+      >
+        <X />
+      </button>
+      <button
+        className="cs-jr-btn cs-jr-admit"
+        aria-label={`Admit ${shown.name}`}
+        disabled={leaving}
+        onClick={() => act(onAdmit)}
+      >
+        <Check />
+      </button>
+    </div>
+  );
+}
+
+// The camera column beside a screen share (design: "share"). It scrolls
+// when there are more people than fit; the chevron under it pages down one
+// tile at a time and only shows while there's more below.
+function SideStrip({ tiles, sinkId }) {
+  const listRef = useRef(null);
+  const [more, setMore] = useState(false);
+
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const check = () => setMore(el.scrollTop + el.clientHeight < el.scrollHeight - 2);
+    check();
+    el.addEventListener('scroll', check, { passive: true });
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', check);
+      ro.disconnect();
+    };
+  }, [tiles.length]);
+
+  function pageDown() {
+    const el = listRef.current;
+    const tile = el?.firstElementChild;
+    if (!tile) return;
+    const step = tile.getBoundingClientRect().height + parseFloat(getComputedStyle(el).rowGap || 0);
+    el.scrollBy({ top: step, behavior: 'smooth' });
+  }
+
+  return (
+    <div className="cs-side">
+      <div className="cs-side-list" ref={listRef}>
+        {tiles.map((t) => (
+          <div key={t.key} className={`cs-side-tile${t.speaking ? ' speaking' : ''}`}>
+            <VideoTile
+              sinkId={sinkId}
+              stream={t.stream}
+              label={t.label}
+              muted={t.muted}
+              mirror={t.mirror}
+              micOff={t.micOff}
+            />
+          </div>
+        ))}
       </div>
+      <button
+        className={`cs-side-more${more ? '' : ' hidden'}`}
+        onClick={pageDown}
+        aria-label="Show more people"
+        title="Show more people"
+        tabIndex={more ? 0 : -1}
+      >
+        <ChevronDown />
+      </button>
     </div>
   );
 }

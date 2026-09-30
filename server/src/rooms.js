@@ -31,6 +31,7 @@ import { CHAT_ATTACHMENT_BUDGET_BYTES, MODES, ROLES } from '@listen/shared';
  *   sharing: object      // socketId -> the id of that peer's screen MediaStream,
  *                        // for everyone currently screen sharing
  *   mics: object         // socketId -> bool, whether that person's mic is live
+ *                        // (each client reports its own; see setMic)
  * }
  */
 const rooms = new Map();
@@ -69,11 +70,17 @@ function attach(room, socketId, name) {
   else if (room.mode === MODES.MODERATED) role = ROLES.LISTENER;
 
   room.participants[socketId] = { id: socketId, name: name?.trim() || 'Guest', role };
-  room.mics[socketId] = true; // assume the mic is live until told otherwise
+  // Assume the mic is live until the client tells us otherwise (it reports its
+  // real state as soon as its microphone opens).
+  room.mics[socketId] = true;
   return room.participants[socketId];
 }
 
-/** A client reports whether its own mic is currently live. */
+/**
+ * A client reports whether its own mic is currently live. The server can't
+ * hear the audio itself (media is peer-to-peer), so this is the only way the
+ * rest of the room learns someone muted.
+ */
 export function setMic(room, socketId, on) {
   if (room?.participants[socketId]) room.mics[socketId] = on === true;
 }
@@ -358,6 +365,31 @@ export function setSpeaking(room, socketId, on) {
 }
 
 /**
+ * Edit one of your own text messages in the stored history. Returns the
+ * updated message, or null if it doesn't exist, isn't yours, or isn't text —
+ * the caller turns null into an error. (Ownership is checked HERE, on the
+ * server, because the client's "Edit" button alone proves nothing.)
+ */
+export function editChatMessage(room, socketId, id, text) {
+  const msg = room?.chat.find((m) => m.id === id);
+  if (!msg || msg.from !== socketId || msg.kind !== 'text') return null;
+  msg.text = text;
+  msg.editedAt = Date.now();
+  return msg;
+}
+
+/**
+ * Unsend (delete) one of your own messages from the stored history, so it's
+ * gone for late joiners too. Returns true if something was removed.
+ */
+export function unsendChatMessage(room, socketId, id) {
+  const msg = room?.chat.find((m) => m.id === id);
+  if (!msg || msg.from !== socketId) return false;
+  room.chat = room.chat.filter((m) => m.id !== id);
+  return true;
+}
+
+/**
  * In-call chat (added after Phase 7). Append one message and keep only the most
  * recent CHAT_HISTORY, so a room's chat can't grow without bound. Messages are
  * plain data the server built; the client renders text with React's default
@@ -387,19 +419,29 @@ export function addChatMessage(room, message) {
  * client can pick the screen track out of that peer's inbound media. The media
  * itself is renegotiated peer-to-peer; this is just the room-wide "who".
  *
+ * Google-Meet-style: at most one presenter. Starting a share while someone
+ * else already has the floor bumps them — their entry is dropped here and the
+ * caller (server/src/index.js) tells that one socket to actually stop
+ * capturing.
+ *
  * In a MODERATED room only the host + speakers may share — a listener's request
  * to start is ignored (they can always stop). Turning off is always allowed so
  * cleanup can't get stuck.
+ *
+ * Returns the bumped socketId, or null if no one was bumped.
  */
 export function setSharing(room, socketId, on, streamId) {
   const participant = room?.participants[socketId];
-  if (!participant) return;
+  if (!participant) return null;
   if (on && typeof streamId === 'string' && streamId) {
-    if (room.mode === MODES.MODERATED && participant.role === ROLES.LISTENER) return;
+    if (room.mode === MODES.MODERATED && participant.role === ROLES.LISTENER) return null;
+    const bumped = Object.keys(room.sharing).find((id) => id !== socketId) ?? null;
+    if (bumped) delete room.sharing[bumped];
     room.sharing[socketId] = streamId;
-  } else {
-    delete room.sharing[socketId];
+    return bumped;
   }
+  delete room.sharing[socketId];
+  return null;
 }
 
 /**
@@ -420,7 +462,7 @@ export function removeParticipant(socketId) {
     room.queue = room.queue.filter((id) => id !== socketId);
     room.speaking = room.speaking.filter((id) => id !== socketId);
     delete room.sharing[socketId];
-    delete room.mics[socketId];
+    delete room.mics[socketId]; // they've left — forget their mic state
     if (room.cohostId === socketId) room.cohostId = null;
 
     const remaining = Object.keys(room.participants);
@@ -438,8 +480,7 @@ export function removeParticipant(socketId) {
 
     if (room.hostId === socketId) {
       // The co-host is the natural successor; otherwise the next by insertion.
-      const heir =
-        room.cohostId && room.participants[room.cohostId] ? room.cohostId : remaining[0];
+      const heir = room.cohostId && room.participants[room.cohostId] ? room.cohostId : remaining[0];
       if (room.cohostId === heir) room.cohostId = null;
       room.hostId = heir;
       room.participants[heir].role = ROLES.HOST;
@@ -474,14 +515,8 @@ export function snapshot(roomId) {
     activeSpeakerId: room.speaking[room.speaking.length - 1] ?? null,
     // socketId -> screen MediaStream id, for everyone currently screen sharing.
     sharing: { ...room.sharing },
-    // socketId -> bool, whether that person's mic is live.
+    // socketId -> bool, whether that person's mic is live. Clients use this to
+    // show "is muted" on anyone's tile, not just their own.
     mics: { ...room.mics },
   };
 }
-
-// Test/debug helper — not used in the request path.
-export function _reset() {
-  rooms.clear();
-}
-
-export { rooms };

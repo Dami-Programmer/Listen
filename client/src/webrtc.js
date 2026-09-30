@@ -26,9 +26,26 @@ import { socket } from './socket.js';
 
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 
+// Self-healing (see `retry` in addPeer). If a connection to someone isn't up
+// within this long — or it drops to 'failed' — we restart it. A lost or late
+// signaling message, or a busy machine, can otherwise leave one PAIR of
+// people stuck without video for the rest of the call.
+const CONNECT_TIMEOUT_MS = 10000;
+// Give up after this many restarts in a row (resets once connected), so a
+// peer that's truly unreachable doesn't get hammered forever.
+const MAX_RESTARTS = 5;
+
 // Camera + mic. Individual tracks get muted via `track.enabled` — we never
 // renegotiate just to toggle mic/camera. (Screen share does renegotiate.)
 const MEDIA_CONSTRAINTS = { audio: true, video: true };
+
+// Use the devices picked in the pre-join lobby, when there are any.
+function constraintsFor(media) {
+  return {
+    audio: media?.audioId ? { deviceId: { exact: media.audioId } } : MEDIA_CONSTRAINTS.audio,
+    video: media?.videoId ? { deviceId: { exact: media.videoId } } : MEDIA_CONSTRAINTS.video,
+  };
+}
 
 function friendlyMediaError(err) {
   switch (err?.name) {
@@ -54,8 +71,11 @@ function friendlyMediaError(err) {
  * @param {object}      args.sharing       room-state `sharing` map: socketId -> the
  *                                         id of that peer's screen MediaStream
  * @param {string}      args.mode          room-state mode ('open' | 'moderated')
+ * @param {object}     [args.media]        pre-join choices: { audioId, videoId,
+ *                                         micOn, camOn } — applied when the
+ *                                         call opens
  */
-export function useCall({ selfId, participants, inCall, sharing = {}, mode }) {
+export function useCall({ selfId, participants, inCall, sharing = {}, mode, media }) {
   const myRole = participants.find((p) => p.id === selfId)?.role ?? null;
   const isListener = myRole === ROLES.LISTENER;
 
@@ -74,6 +94,18 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode }) {
   const screenStreamRef = useRef(null);
   // signals that arrived before the local stream was ready — replayed later.
   const pendingRef = useRef(new Map());
+  // The tail of a promise chain that runs signaling messages ONE AT A TIME, in
+  // the order they arrived. handleSignal is async (it awaits the browser), so
+  // without this, two messages could be processed at once — e.g. an ICE
+  // candidate applied before the offer it belongs to has finished, which the
+  // browser rejects ("remote description was null"). See queueSignal below.
+  const signalChainRef = useRef(Promise.resolve());
+  // Socket ids of people who were in the call with us and have since left.
+  const leftRef = useRef(new Set());
+  // Pre-join choices, read once when the camera/mic open.
+  const mediaRef = useRef(media);
+  // The stream the pre-join mic/cam on-off choice has already been applied to.
+  const prefsAppliedRef = useRef(null);
 
   // Rebuild `peerMedia` from whatever streams the peers currently have, dropping
   // any stream whose tracks have all ended (e.g. a peer stopped screen sharing).
@@ -95,6 +127,7 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode }) {
     (peerId) => {
       const entry = peersRef.current.get(peerId);
       if (!entry) return;
+      clearTimeout(entry.watchdog); // no restarts for a connection we're closing
       try {
         entry.pc.close();
       } catch {
@@ -163,8 +196,64 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode }) {
         syncRemotes();
       };
 
+      // --- self-healing ---------------------------------------------------
+      // Restart this one connection without touching anyone else's. Two cases
+      // it fixes:
+      //  - STUCK: we sent an offer, the reply got lost (or a message arrived
+      //    in an unlucky order), and the connection waits forever in
+      //    'have-local-offer'. We "rollback" (take back our unanswered offer)
+      //    so the connection is back to a clean state, then offer again.
+      //  - FAILED: the network path broke (e.g. an overloaded machine). An
+      //    ICE restart finds a fresh route and reconnects.
+      // pc.restartIce() marks the connection as needing a new offer, which
+      // fires onnegotiationneeded above — so the new offer goes out through
+      // the normal path, and collisions are still sorted out by the usual
+      // polite/impolite rules.
+      //
+      // WHO restarts: if both ends of a stuck pair restarted at the same
+      // moment, their fresh offers would keep colliding (and each would get
+      // replies to an offer it had just taken back) — stuck forever, in
+      // lockstep. So one side leads: the IMPOLITE peer (the one whose offer
+      // wins a collision) restarts after 10s. The polite peer only steps in
+      // much later (25s) as a backup, in case the other side isn't acting.
+      // A little random jitter on top keeps the two from ever lining up.
+      entry.restarts = 0;
+      const armWatchdog = () => {
+        clearTimeout(entry.watchdog);
+        const wait =
+          (entry.polite ? CONNECT_TIMEOUT_MS * 2.5 : CONNECT_TIMEOUT_MS) + Math.random() * 2000;
+        entry.watchdog = setTimeout(() => {
+          if (pc.connectionState !== 'connected') retry('not connected in time');
+        }, wait);
+      };
+      async function retry(why) {
+        if (pc.signalingState === 'closed' || entry.restarts >= MAX_RESTARTS) return;
+        entry.restarts += 1;
+        console.warn(`[webrtc] reconnecting to ${peerId} (${why}), try ${entry.restarts}`);
+        try {
+          if (pc.signalingState === 'have-local-offer') {
+            await pc.setLocalDescription({ type: 'rollback' });
+          }
+          pc.restartIce();
+        } catch (err) {
+          console.error('[webrtc] restart failed for', peerId, err);
+        }
+        armWatchdog(); // check again in a bit; retry again if still not up
+      }
+      armWatchdog();
+
       pc.onconnectionstatechange = () => {
-        if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+        const state = pc.connectionState;
+        if (state === 'connected') {
+          // Healthy: stop watching and reset the retry budget.
+          clearTimeout(entry.watchdog);
+          entry.restarts = 0;
+        } else if (state === 'failed') {
+          // Used to give up here, for good. Now the leading (impolite) side
+          // restarts right away; the polite side waits on its backup timer.
+          if (entry.polite) armWatchdog();
+          else retry('connection failed');
+        } else if (state === 'closed') {
           removePeer(peerId);
         }
       };
@@ -180,8 +269,12 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode }) {
   const handleSignal = useCallback(
     async ({ from, description, candidate }) => {
       if (!from) return;
+      // A late message from someone who already left the call — ignore it,
+      // or we'd build a fresh connection to nobody. (Socket ids are never
+      // reused, so a departed id can't belong to anyone new.)
+      if (leftRef.current.has(from)) return;
 
-      // Camera not ready yet — stash and replay once it is (see effect B).
+      // Camera not ready yet — stash and replay once it is (see effect B2).
       if (!localStreamRef.current) {
         const queue = pendingRef.current.get(from) ?? [];
         queue.push({ from, description, candidate });
@@ -194,8 +287,7 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode }) {
       try {
         if (description) {
           const offerCollision =
-            description.type === 'offer' &&
-            (entry.makingOffer || pc.signalingState !== 'stable');
+            description.type === 'offer' && (entry.makingOffer || pc.signalingState !== 'stable');
           entry.ignoreOffer = !entry.polite && offerCollision;
           if (entry.ignoreOffer) return;
 
@@ -213,10 +305,45 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode }) {
           }
         }
       } catch (err) {
+        // An OFFER that won't apply means the two ends disagree about the
+        // connection — typically the other side started over (its restart
+        // rolled back an offer we had already half-finished with it), so its
+        // fresh offer doesn't fit our old connection. The fix is to start
+        // over too: throw our connection to them away, build a new one, and
+        // answer their offer on that. Both ends are then clean and in step.
+        if (description?.type === 'offer') {
+          console.warn('[webrtc] offer from', from, "doesn't fit — rebuilding the connection");
+          removePeer(from);
+          const fresh = addPeer(from);
+          try {
+            await fresh.pc.setRemoteDescription(description);
+            syncRemotes();
+            await fresh.pc.setLocalDescription();
+            socket.emit(EVENTS.RTC_SIGNAL, {
+              targetId: from,
+              description: fresh.pc.localDescription,
+            });
+          } catch (err2) {
+            console.error('[webrtc] rebuild failed for', from, err2);
+          }
+          return;
+        }
         console.error('[webrtc] failed handling signal from', from, err);
       }
     },
-    [addPeer, syncRemotes],
+    [addPeer, removePeer, syncRemotes],
+  );
+
+  // Put one signaling message at the back of the line: it starts only after
+  // every earlier message has been fully handled. The .catch keeps one bad
+  // message from jamming the line for everything after it.
+  const queueSignal = useCallback(
+    (msg) => {
+      signalChainRef.current = signalChainRef.current
+        .then(() => handleSignal(msg))
+        .catch((err) => console.error('[webrtc] signal handling failed', err));
+    },
+    [handleSignal],
   );
 
   // --- effect A: hold the microphone + camera for as long as we're in call ---
@@ -227,12 +354,21 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode }) {
     setMediaError(null);
 
     navigator.mediaDevices
-      .getUserMedia(MEDIA_CONSTRAINTS)
+      .getUserMedia(constraintsFor(mediaRef.current))
+      // The picked device vanished (unplugged) — fall back to the defaults.
+      .catch((err) =>
+        err?.name === 'OverconstrainedError' || err?.name === 'NotFoundError'
+          ? navigator.mediaDevices.getUserMedia(MEDIA_CONSTRAINTS)
+          : Promise.reject(err),
+      )
       .then((stream) => {
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
+        const prefs = mediaRef.current;
+        stream.getAudioTracks().forEach((t) => (t.enabled = prefs?.micOn !== false));
+        stream.getVideoTracks().forEach((t) => (t.enabled = prefs?.camOn !== false));
         localStreamRef.current = stream;
         setLocalStream(stream);
         setMicOn(stream.getAudioTracks()[0]?.enabled ?? false);
@@ -252,21 +388,39 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode }) {
   }, [inCall]);
 
   // --- effect B: the signaling wire + mesh teardown -------------------------
+  // Start listening the moment we're in the call — NOT once the camera is
+  // ready. Why it matters: when the host admits you, their tab sends you a
+  // connection offer straight away, usually while your camera is still
+  // starting. If nobody is listening yet, that offer is simply lost, the host
+  // waits forever for a reply, and (depending on a coin-flip of socket ids)
+  // the two tabs can deadlock with no video between them. Listening early
+  // means an early offer lands in handleSignal, which stashes it in pendingRef
+  // until the camera is up (effect B2 replays it).
   useEffect(() => {
-    if (!inCall || !selfId || !localStream) return undefined;
+    if (!inCall || !selfId) return undefined;
 
     const peers = peersRef.current;
-    socket.on(EVENTS.RTC_SIGNAL, handleSignal);
+    const pending = pendingRef.current;
+    socket.on(EVENTS.RTC_SIGNAL, queueSignal);
+
+    return () => {
+      socket.off(EVENTS.RTC_SIGNAL, queueSignal);
+      for (const id of [...peers.keys()]) removePeer(id);
+      pending.clear(); // stashed messages for a call we've left are useless
+    };
+  }, [inCall, selfId, queueSignal, removePeer]);
+
+  // --- effect B2: camera ready -> replay whatever arrived early -------------
+  // Everything stashed while the camera was starting goes back through the
+  // same one-at-a-time line, oldest first, so an offer is always fully
+  // applied before its ICE candidates.
+  useEffect(() => {
+    if (!inCall || !selfId || !localStream) return;
 
     const queued = [...pendingRef.current.values()].flat();
     pendingRef.current.clear();
-    queued.forEach(handleSignal);
-
-    return () => {
-      socket.off(EVENTS.RTC_SIGNAL, handleSignal);
-      for (const id of [...peers.keys()]) removePeer(id);
-    };
-  }, [inCall, selfId, localStream, handleSignal, removePeer]);
+    queued.forEach(queueSignal);
+  }, [inCall, selfId, localStream, queueSignal]);
 
   // --- effect C: keep exactly one connection per other participant ----------
   useEffect(() => {
@@ -278,22 +432,35 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode }) {
       if (!peersRef.current.has(peerId)) addPeer(peerId);
     }
     for (const peerId of [...peersRef.current.keys()]) {
-      if (!others.has(peerId)) removePeer(peerId);
+      if (!others.has(peerId)) {
+        leftRef.current.add(peerId); // remember: ignore their late messages
+        removePeer(peerId);
+      }
     }
   }, [inCall, selfId, localStream, participants, addPeer, removePeer]);
 
   // --- effect D: moderation follows your role -----------------------------
   // When the host moderates the room the server sets my role to 'listener'; my
-  // client silences its OWN camera/mic tracks. Screen share is left alone —
-  // anyone may share regardless of role.
+  // client silences its OWN mic. The camera is NOT role-gated — listeners
+  // may turn theirs on and off freely; role changes never touch it.
   useEffect(() => {
     const stream = localStreamRef.current;
     if (!stream || !myRole) return;
 
     const allowed = myRole !== ROLES.LISTENER;
-    for (const track of stream.getTracks()) track.enabled = allowed;
-    setMicOn(allowed && stream.getAudioTracks().length > 0);
-    setCamOn(allowed && stream.getVideoTracks().length > 0);
+    // First pass for this stream keeps whatever was chosen in the pre-join
+    // lobby (e.g. "join with mic off"); later role changes behave as before.
+    const first = prefsAppliedRef.current !== stream;
+    prefsAppliedRef.current = stream;
+    const prefs = mediaRef.current;
+    const micWanted = !first || prefs?.micOn !== false;
+    stream.getAudioTracks().forEach((t) => (t.enabled = allowed && micWanted));
+    setMicOn(allowed && micWanted && stream.getAudioTracks().length > 0);
+    if (first) {
+      const camWanted = prefs?.camOn !== false;
+      stream.getVideoTracks().forEach((t) => (t.enabled = camWanted));
+      setCamOn(camWanted && stream.getVideoTracks().length > 0);
+    }
   }, [myRole, localStream]);
 
   // --- effect E: mic-level detection -> throttled "speaking" pings --------
@@ -380,7 +547,11 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode }) {
     setMicOn(iAmHost);
   }, [mode, myRole]);
 
-  // --- effect H: report my mic on/off so tiles can show a mute badge ----
+  // --- effect H: tell the room whenever my mic turns on or off ------------
+  // `micOn` changes from every path — the mic button, the pre-join choice, a
+  // host mute, a role change — so watching it here catches them all in one
+  // place. The server stores it and re-broadcasts, which is how other people's
+  // screens learn to show "<name> is muted".
   useEffect(() => {
     if (inCall && localStream && socket.connected) {
       socket.emit(EVENTS.MIC_STATE, { on: micOn });
@@ -433,6 +604,17 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode }) {
   // Stop sharing when the call unmounts.
   useEffect(() => () => stopShare(), [stopShare]);
 
+  // Someone else started presenting and bumped me (Google-Meet-style: only one
+  // presenter at a time). The server has already dropped me from
+  // `room.sharing`; this actually ends my capture and renegotiates it away.
+  useEffect(() => {
+    function onBumped() {
+      stopShare();
+    }
+    socket.on(EVENTS.SCREEN_SHARE_STOPPED, onBumped);
+    return () => socket.off(EVENTS.SCREEN_SHARE_STOPPED, onBumped);
+  }, [stopShare]);
+
   // In a moderated room only the host + speakers may screen share, so if my
   // role drops to 'listener' while I'm sharing, stop (the server has already
   // dropped me from `room.sharing`; this stops the actual media).
@@ -449,13 +631,13 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode }) {
     setMicOn(track.enabled);
   }, [isListener]);
 
+  // Camera: anyone, any role — including a moderated room's listeners.
   const toggleCam = useCallback(() => {
-    if (isListener) return;
     const track = localStreamRef.current?.getVideoTracks()[0];
     if (!track) return;
     track.enabled = !track.enabled;
     setCamOn(track.enabled);
-  }, [isListener]);
+  }, []);
 
   // --- split each peer's streams into camera vs screen --------------------
   const remotes = [];
@@ -481,7 +663,6 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode }) {
     startShare,
     stopShare,
     mediaError,
-    myRole,
     isListener,
   };
 }

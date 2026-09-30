@@ -31,6 +31,7 @@ import {
   clearFloor,
   demoteCohost,
   denyWaiting,
+  editChatMessage,
   getRoom,
   grantFloor,
   lowerHand,
@@ -47,6 +48,7 @@ import {
   setSharing,
   setSpeaking,
   snapshot,
+  unsendChatMessage,
 } from './rooms.js';
 
 // Load the single .env from the repo root (two levels up from server/src).
@@ -514,10 +516,11 @@ io.on('connection', (socket) => {
       if (url.length > CHAT_FILE_MAX_BYTES * 1.4) {
         return ack?.({ ok: false, error: 'attachment too large' });
       }
-      const name = String(file?.name ?? 'file')
-        .replace(/[/\\\r\n\t]/g, '_')
-        .trim()
-        .slice(0, 200) || 'file';
+      const name =
+        String(file?.name ?? 'file')
+          .replace(/[/\\\r\n\t]/g, '_')
+          .trim()
+          .slice(0, 200) || 'file';
       message = {
         ...base,
         kind: 'file',
@@ -548,6 +551,36 @@ io.on('connection', (socket) => {
     io.to(joinedRoomId).emit(EVENTS.CHAT_MESSAGE, message);
   });
 
+  // Edit your own text message. Works for everyone in the room in any mode —
+  // chat isn't tied to the speaker floor. editChatMessage() refuses anything
+  // that isn't the requester's own text message.
+  socket.on(EVENTS.CHAT_EDIT, ({ id, text } = {}, ack) => {
+    const room = getRoom(joinedRoomId);
+    if (!room || !room.participants[socket.id]) return ack?.({ ok: false, error: 'not in a room' });
+    const body = String(text ?? '').trim();
+    if (!body) return ack?.({ ok: false, error: 'empty message' });
+    const msg = editChatMessage(room, socket.id, String(id ?? ''), body.slice(0, 2000));
+    if (!msg) return ack?.({ ok: false, error: 'you can only edit your own text messages' });
+    ack?.({ ok: true });
+    io.to(joinedRoomId).emit(EVENTS.CHAT_EDITED, {
+      id: msg.id,
+      text: msg.text,
+      editedAt: msg.editedAt,
+    });
+  });
+
+  // Unsend (delete for everyone) your own message — text, sticker or file.
+  socket.on(EVENTS.CHAT_UNSEND, ({ id } = {}, ack) => {
+    const room = getRoom(joinedRoomId);
+    if (!room || !room.participants[socket.id]) return ack?.({ ok: false, error: 'not in a room' });
+    const msgId = String(id ?? '');
+    if (!unsendChatMessage(room, socket.id, msgId)) {
+      return ack?.({ ok: false, error: 'you can only unsend your own messages' });
+    }
+    ack?.({ ok: true });
+    io.to(joinedRoomId).emit(EVENTS.CHAT_UNSENT, { id: msgId });
+  });
+
   // "Someone is typing" — pure relay to the rest of the room, never stored.
   // socket.to() excludes the sender, so nobody sees their own indicator.
   socket.on(EVENTS.CHAT_TYPING, ({ typing } = {}) => {
@@ -562,23 +595,30 @@ io.on('connection', (socket) => {
   });
 
   // --- Screen sharing (added after in-call chat) -----------------------
-  // Anyone in the room may share, several at once. This only records WHO is
+  // Google-Meet-style: only one presenter at a time. This only records WHO is
   // sharing and the id of their screen stream (so clients can pick the screen
   // track out of that peer's inbound media) — the media itself is renegotiated
   // peer-to-peer. Fire-and-forget.
   socket.on(EVENTS.SCREEN_SHARE, ({ on, streamId } = {}) => {
     const room = getRoom(joinedRoomId);
     if (!room || !room.participants[socket.id]) return;
-    setSharing(room, socket.id, on === true, streamId);
+    const bumped = setSharing(room, socket.id, on === true, streamId);
+    if (bumped) {
+      io.to(bumped).emit(EVENTS.SCREEN_SHARE_STOPPED);
+      console.log(`[room ${joinedRoomId}] ${bumped} bumped by ${socket.id}'s share`);
+    }
     console.log(`[room ${joinedRoomId}] ${socket.id} screen-share ${on ? 'on' : 'off'}`);
     broadcastRoom(joinedRoomId);
   });
 
-  // Each client reports its own mic on/off so tiles can show a mute badge.
+  // --- Mic on/off reports -------------------------------------------------
+  // Each client tells us whenever its own mic turns on or off. We store it and
+  // re-broadcast the room, so every other screen can show "X is muted".
   socket.on(EVENTS.MIC_STATE, ({ on } = {}) => {
     const room = getRoom(joinedRoomId);
     if (!room || !room.participants[socket.id]) return;
-    if ((room.mics[socket.id] ?? true) === (on === true)) return; // no change
+    // Nothing changed? Skip the broadcast — no need to wake every client.
+    if ((room.mics[socket.id] ?? true) === (on === true)) return;
     setMic(room, socket.id, on);
     broadcastRoom(joinedRoomId);
   });
