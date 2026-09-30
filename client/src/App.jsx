@@ -20,6 +20,8 @@ import ChatPanel from './ChatPanel.jsx';
 import PreJoin from './PreJoin.jsx';
 import Avatar from './Avatar.jsx';
 import Toasts from './Toasts.jsx';
+import InviteCard from './InviteCard.jsx';
+import { newMeetingCode } from './meeting.js';
 import {
   Cam,
   CamOff,
@@ -28,6 +30,7 @@ import {
   ChevronDown,
   GridView,
   Hand,
+  LinkIcon,
   Lock,
   Mic,
   MicOff,
@@ -69,26 +72,28 @@ function RolePill({ role }) {
   return <span className={`pill pill-${role}`}>{ROLE_LABEL[role] ?? role}</span>;
 }
 
-// Room id lives in the URL (?room=…). No accounts, no persistence.
-// The profile picture is remembered on this device between visits. Storage
-// can be unavailable (private mode, blocked site data), so it's best-effort.
+// The profile picture is remembered for this browser TAB (sessionStorage),
+// so leaving and rejoining keeps it — but an invite link opened in another tab
+// starts clean instead of showing whoever used this browser last. Storage can
+// be unavailable (private mode, blocked site data), so it's best-effort.
 const AVATAR_KEY = 'listen.avatar';
 function readSavedAvatar() {
   try {
-    return localStorage.getItem(AVATAR_KEY);
+    return sessionStorage.getItem(AVATAR_KEY);
   } catch {
     return null;
   }
 }
 function saveAvatar(avatar) {
   try {
-    if (avatar) localStorage.setItem(AVATAR_KEY, avatar);
-    else localStorage.removeItem(AVATAR_KEY);
+    if (avatar) sessionStorage.setItem(AVATAR_KEY, avatar);
+    else sessionStorage.removeItem(AVATAR_KEY);
   } catch {
     // not remembered — still used for this join
   }
 }
 
+// Room id lives in the URL (?room=…). No accounts, no persistence.
 function readRoomFromUrl() {
   return new URLSearchParams(window.location.search).get('room') ?? '';
 }
@@ -233,8 +238,10 @@ export default function App() {
     setError(null);
     setMediaPrefs(prefs ?? null);
     setRemovedNote(null);
-    const id = roomId.trim();
-    if (!id || !name.trim()) return;
+    if (!name.trim()) return;
+    // No code typed -> this is a brand-new meeting with its own code.
+    const id = roomId.trim() || newMeetingCode();
+    setRoomId(id);
 
     // Reflect the room in the URL so it's shareable.
     const url = new URL(window.location.href);
@@ -310,7 +317,7 @@ export default function App() {
 function WaitingScreen({ roomId, onCancel }) {
   return (
     <main className="page">
-      <h1>Listen</h1>
+      <img className="cs-logo" src="/logo.svg" alt="Listen" />
       <p className="tagline">Moderated group calls.</p>
 
       <div className="card join" aria-live="polite">
@@ -448,6 +455,9 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media }) {
   const isHost = self?.role === ROLES.HOST;
   // A moderator is the host OR the appointed co-host — same control surface.
   const isModerator = isHost || self?.role === ROLES.COHOST;
+  // Whoever starts a meeting (first in, so host, and alone) gets the invite
+  // link straight away; anyone can reopen it from the Invite button.
+  const [inviteOpen, setInviteOpen] = useState(() => isHost && participants.length === 1);
   const cohostId = state?.cohostId ?? null;
   const moderated = state?.mode === MODES.MODERATED;
 
@@ -699,6 +709,14 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media }) {
           </div>
           <div className="cs-title-row">
             <h1>{state?.roomId}</h1>
+            <button
+              className={`cs-invite-btn${inviteOpen ? ' on' : ''}`}
+              onClick={() => setInviteOpen((v) => !v)}
+              aria-expanded={inviteOpen}
+              title="Get the invite link"
+            >
+              <LinkIcon /> Invite
+            </button>
             {isHost && (
               <ModeSwitch
                 moderated={moderated}
@@ -942,6 +960,10 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media }) {
             )}
           </button>
         </footer>
+
+        {inviteOpen && state?.roomId && (
+          <InviteCard roomId={state.roomId} locked={locked} onClose={() => setInviteOpen(false)} />
+        )}
 
         <Toasts
           chat={chat}

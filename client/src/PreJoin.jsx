@@ -324,11 +324,11 @@ export default function PreJoin({
 
           <form className="pj-form" onSubmit={handleSubmit}>
             <label>
-              <span>Meeting</span>
+              <span>Meeting code</span>
               <input
                 value={roomId}
                 onChange={(e) => onRoomId(e.target.value)}
-                placeholder="e.g. design-sprint"
+                placeholder="Leave empty to start a new meeting"
                 autoComplete="off"
               />
             </label>
@@ -342,8 +342,8 @@ export default function PreJoin({
               />
             </label>
             <AvatarPicker name={name} avatar={avatar} onChange={onAvatar} />
-            <button type="submit" className="pj-join" disabled={!roomId.trim() || !name.trim()}>
-              Join now
+            <button type="submit" className="pj-join" disabled={!name.trim()}>
+              {roomId.trim() ? 'Join now' : 'Start a new meeting'}
             </button>
             {error && <p className="err">{error}</p>}
           </form>

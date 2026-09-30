@@ -98,6 +98,20 @@ export const Unlock = (p) => (
   </svg>
 );
 
+export const LinkIcon = (p) => (
+  <svg {...s} {...p}>
+    <path d="M10 14a4.5 4.5 0 0 0 6.36 0l3.18-3.18a4.5 4.5 0 0 0-6.36-6.36L11.6 6.04" />
+    <path d="M14 10a4.5 4.5 0 0 0-6.36 0l-3.18 3.18a4.5 4.5 0 0 0 6.36 6.36l1.58-1.58" />
+  </svg>
+);
+
+export const Copy = (p) => (
+  <svg {...s} {...p}>
+    <rect x="9" y="9" width="11" height="11" rx="2" />
+    <path d="M5 15V6a2 2 0 0 1 2-2h8" />
+  </svg>
+);
+
 export const ChatBubble = (p) => (
   <svg {...s} {...p}>
     <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4H6.5A2.5 2.5 0 0 1 4 13.5v-8Z" />
