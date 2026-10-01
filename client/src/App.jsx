@@ -21,6 +21,9 @@ import PreJoin from './PreJoin.jsx';
 import Avatar from './Avatar.jsx';
 import Toasts from './Toasts.jsx';
 import InviteCard from './InviteCard.jsx';
+import DevicePicker from './DevicePicker.jsx';
+import { PipView } from './Pip.jsx';
+import { usePip } from './usePip.js';
 import { newMeetingCode } from './meeting.js';
 import {
   Cam,
@@ -449,6 +452,8 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media }) {
     sharingScreen,
     toggleMic,
     toggleCam,
+    devices,
+    switchDevice,
     startShare,
     stopShare,
     mediaError,
@@ -461,6 +466,9 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media }) {
     mode: state?.mode,
     media,
   });
+
+  // The floating mini-call shown while you're on another tab (Pip.jsx).
+  const { pipWin } = usePip();
 
   const isHost = self?.role === ROLES.HOST;
   // A moderator is the host OR the appointed co-host — same control surface.
@@ -497,6 +505,8 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media }) {
   // (MIC_STATE), which shares the whole room's in `state.mics`. Anyone we
   // haven't heard about yet is assumed live, so nobody is wrongly shown muted.
   const micOf = (id) => state?.mics?.[id] ?? true;
+  // Same for cameras (CAM_STATE -> `state.cams`).
+  const camOf = (id) => state?.cams?.[id] ?? true;
 
   // --- one media stage, Google-Meet style -------------------------------
   // Camera tiles for everyone (me first). If anyone is screen sharing, the
@@ -648,6 +658,21 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media }) {
       : (peerOf(spotlight.key)?.name ?? 'Guest')
     : spotlightName;
   const pillMuted = presenting ? Boolean(presenterCam?.micOff) : spotlightMuted;
+
+  // Who the floating mini-call (Pip.jsx) shows: the presenter's screen, or the
+  // spotlight person — as their avatar on a card while their camera is off.
+  const pipPerson = !spotlight
+    ? null
+    : presenting
+      ? { name: pillName, micOff: pillMuted }
+      : spotlight.key === 'me'
+        ? { name: self?.name ?? 'You', avatar: self?.avatar, camOff: !camOn, micOff: !micOn }
+        : {
+            name: peerOf(spotlight.key)?.name ?? 'Guest',
+            avatar: peerOf(spotlight.key)?.avatar,
+            camOff: !camOf(spotlight.key),
+            micOff: !micOf(spotlight.key),
+          };
 
   // Equal-tile layouts, from the designs:
   //   2 others ("2 screen"): two tiles side by side
@@ -869,23 +894,29 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media }) {
             </button>
           )}
           <div className="cs-controls-center">
-            <button
-              onClick={toggleCam}
-              aria-label={camOn ? 'Turn camera off' : 'Turn camera on'}
-              title={camOn ? 'Turn camera off' : 'Turn camera on'}
-            >
-              {camOn ? <Cam /> : <CamOff />}
-            </button>
-            <button
-              onClick={toggleMic}
-              disabled={isListener}
-              aria-label={micOn ? 'Mute' : 'Unmute'}
-              title={
-                isListener ? 'Raise your hand to ask for the floor' : micOn ? 'Mute' : 'Unmute'
-              }
-            >
-              {micOn && !isListener ? <Mic /> : <MicOff />}
-            </button>
+            {/* Mic and camera each carry a ^ on their left that opens the
+                device list (DevicePicker) — Google-Meet style. */}
+            <DevicePicker kind="video" current={devices.video} onSwitch={switchDevice}>
+              <button
+                onClick={toggleCam}
+                aria-label={camOn ? 'Turn camera off' : 'Turn camera on'}
+                title={camOn ? 'Turn camera off' : 'Turn camera on'}
+              >
+                {camOn ? <Cam /> : <CamOff />}
+              </button>
+            </DevicePicker>
+            <DevicePicker kind="audio" current={devices.audio} onSwitch={switchDevice}>
+              <button
+                onClick={toggleMic}
+                disabled={isListener}
+                aria-label={micOn ? 'Mute' : 'Unmute'}
+                title={
+                  isListener ? 'Raise your hand to ask for the floor' : micOn ? 'Mute' : 'Unmute'
+                }
+              >
+                {micOn && !isListener ? <Mic /> : <MicOff />}
+              </button>
+            </DevicePicker>
             {/* Host / co-host run the floor, so they never raise a hand. For
                 everyone else it only does something as a moderated listener. */}
             {!isModerator && (
@@ -973,6 +1004,26 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media }) {
 
         {inviteOpen && state?.roomId && (
           <InviteCard roomId={state.roomId} locked={locked} onClose={() => setInviteOpen(false)} />
+        )}
+
+        {pipWin && (
+          <PipView
+            win={pipWin}
+            main={spotlight}
+            person={pipPerson}
+            self={selfTile}
+            controls={{
+              micOn,
+              camOn,
+              isListener,
+              showHand: !isModerator && isListener,
+              handRaised,
+              toggleMic,
+              toggleCam,
+              toggleHand: handRaised ? lowerHand : raiseHand,
+              onLeave,
+            }}
+          />
         )}
 
         <Toasts

@@ -47,6 +47,14 @@ function constraintsFor(media) {
   };
 }
 
+// The deviceIds behind a stream's mic and camera tracks.
+function deviceIdsOf(stream) {
+  return {
+    audio: stream.getAudioTracks()[0]?.getSettings().deviceId ?? '',
+    video: stream.getVideoTracks()[0]?.getSettings().deviceId ?? '',
+  };
+}
+
 function friendlyMediaError(err) {
   switch (err?.name) {
     case 'NotAllowedError':
@@ -106,6 +114,11 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode, medi
   const mediaRef = useRef(media);
   // The stream the pre-join mic/cam on-off choice has already been applied to.
   const prefsAppliedRef = useRef(null);
+  // The role effect D last applied — so a device switch (new stream, same
+  // role) doesn't re-run the role logic and unmute a muted mic.
+  const roleAppliedRef = useRef(null);
+  // Which mic / camera are live right now (deviceIds), for the settings menu.
+  const [devices, setDevices] = useState({ audio: '', video: '' });
 
   // Rebuild `peerMedia` from whatever streams the peers currently have, dropping
   // any stream whose tracks have all ended (e.g. a peer stopped screen sharing).
@@ -371,6 +384,7 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode, medi
         stream.getVideoTracks().forEach((t) => (t.enabled = prefs?.camOn !== false));
         localStreamRef.current = stream;
         setLocalStream(stream);
+        setDevices(deviceIdsOf(stream));
         setMicOn(stream.getAudioTracks()[0]?.enabled ?? false);
         setCamOn(stream.getVideoTracks()[0]?.enabled ?? false);
       })
@@ -451,7 +465,11 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode, medi
     // First pass for this stream keeps whatever was chosen in the pre-join
     // lobby (e.g. "join with mic off"); later role changes behave as before.
     const first = prefsAppliedRef.current !== stream;
+    // Same role, same stream already handled (a device switch swaps in a new
+    // stream object but marks it applied): nothing to do.
+    if (!first && roleAppliedRef.current === myRole) return;
     prefsAppliedRef.current = stream;
+    roleAppliedRef.current = myRole;
     const prefs = mediaRef.current;
     const micWanted = !first || prefs?.micOn !== false;
     stream.getAudioTracks().forEach((t) => (t.enabled = allowed && micWanted));
@@ -558,6 +576,13 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode, medi
     }
   }, [micOn, inCall, localStream]);
 
+  // ...and the camera, so others can show my avatar while it's off.
+  useEffect(() => {
+    if (inCall && localStream && socket.connected) {
+      socket.emit(EVENTS.CAM_STATE, { on: camOn });
+    }
+  }, [camOn, inCall, localStream]);
+
   // --- screen sharing ----------------------------------------------------
   const stopShare = useCallback(() => {
     const stream = screenStreamRef.current;
@@ -639,6 +664,65 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode, medi
     setCamOn(track.enabled);
   }, []);
 
+  // --- switch mic / camera mid-call ---------------------------------------
+  // Open the newly picked device and swap its track in for the old one on
+  // every peer connection with replaceTrack — no renegotiation, nobody
+  // reconnects. The new track inherits the old one's on/off state, so a muted
+  // mic stays muted and a listener stays silent.
+  //
+  // The swapped tracks go into a NEW MediaStream object so everything keyed on
+  // the stream re-runs: the local preview tile and the speaking detector
+  // (effect E), which is bound to the old mic track. Effect D is told this
+  // stream is already handled, so it doesn't redo the join-time logic.
+  const switchDevice = useCallback(async (kind, deviceId) => {
+    const stream = localStreamRef.current;
+    const old = kind === 'audio' ? stream?.getAudioTracks()[0] : stream?.getVideoTracks()[0];
+    if (!stream || !deviceId || old?.getSettings().deviceId === deviceId) return;
+
+    const open = (id) =>
+      navigator.mediaDevices
+        .getUserMedia({ [kind]: { deviceId: { exact: id } } })
+        .then((s) => (kind === 'audio' ? s.getAudioTracks()[0] : s.getVideoTracks()[0]));
+
+    // Many phones/laptops can't run two cameras at once, so the old camera is
+    // released first. (Mics don't have that problem; keep the old one live
+    // until the new one is ready.)
+    if (kind === 'video') old?.stop();
+    let track;
+    try {
+      track = await open(deviceId);
+    } catch (err) {
+      setMediaError(friendlyMediaError(err));
+      if (kind !== 'video' || !old) return;
+      // Camera switch failed: bring the previous camera back.
+      try {
+        track = await open(old.getSettings().deviceId);
+      } catch {
+        return;
+      }
+    }
+    if (localStreamRef.current !== stream) {
+      track.stop(); // left the call while the device was opening
+      return;
+    }
+    track.enabled = old ? old.enabled : true;
+
+    for (const { pc } of peersRef.current.values()) {
+      // Exact match only: a screen share is another video sender.
+      const sender = old && pc.getSenders().find((s) => s.track === old);
+      if (sender) await sender.replaceTrack(track).catch(() => {});
+    }
+
+    const others = stream.getTracks().filter((t) => t !== old && t.kind !== kind);
+    const next = new MediaStream([...others, track]);
+    if (old && old.readyState !== 'ended') old.stop();
+    setMediaError(null);
+    prefsAppliedRef.current = next;
+    localStreamRef.current = next;
+    setLocalStream(next);
+    setDevices(deviceIdsOf(next));
+  }, []);
+
   // --- split each peer's streams into camera vs screen --------------------
   const remotes = [];
   const remoteScreens = [];
@@ -660,6 +744,8 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode, medi
     sharingScreen: Boolean(screenStream),
     toggleMic,
     toggleCam,
+    devices,
+    switchDevice,
     startShare,
     stopShare,
     mediaError,

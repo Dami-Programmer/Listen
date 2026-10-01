@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Cam, CamOff, Mic, MicOff, Speaker } from './icons.jsx';
 import AvatarPicker from './AvatarPicker.jsx';
+import Select from './Select.jsx';
 
 function friendlyMediaError(err) {
   switch (err?.name) {
@@ -255,57 +256,50 @@ export default function PreJoin({
           </div>
 
           <div className="pj-devices">
-            <label className="pj-select" title="Microphone">
+            <div className="pj-select">
               <Mic />
-              <select
+              <Select
                 value={curAudio}
-                onChange={(e) => setAudioId(e.target.value)}
+                onChange={setAudioId}
+                options={devices.audioinput.map((d) => ({
+                  value: d.deviceId,
+                  label: d.label || 'Microphone',
+                }))}
                 disabled={!devices.audioinput.length}
-                aria-label="Microphone"
-              >
-                {devices.audioinput.length === 0 && <option value="">Microphone</option>}
-                {devices.audioinput.map((d) => (
-                  <option key={d.deviceId} value={d.deviceId}>
-                    {d.label || 'Microphone'}
-                  </option>
-                ))}
-              </select>
-            </label>
+                placeholder="Microphone"
+                label="Microphone"
+              />
+            </div>
 
-            <label className="pj-select" title="Camera">
+            <div className="pj-select">
               <Cam />
-              <select
+              <Select
                 value={curVideo}
-                onChange={(e) => setVideoId(e.target.value)}
+                onChange={setVideoId}
+                options={devices.videoinput.map((d) => ({
+                  value: d.deviceId,
+                  label: d.label || 'Camera',
+                }))}
                 disabled={!devices.videoinput.length}
-                aria-label="Camera"
-              >
-                {devices.videoinput.length === 0 && <option value="">Camera</option>}
-                {devices.videoinput.map((d) => (
-                  <option key={d.deviceId} value={d.deviceId}>
-                    {d.label || 'Camera'}
-                  </option>
-                ))}
-              </select>
-            </label>
+                placeholder="Camera"
+                label="Camera"
+              />
+            </div>
 
-            <div className="pj-select pj-speaker" title="Speaker">
+            <div className="pj-select pj-speaker">
               <Speaker />
               {canPickSpeaker && devices.audiooutput.length > 0 ? (
-                <select
+                <Select
                   value={speakerId}
-                  onChange={(e) => setSpeakerId(e.target.value)}
-                  aria-label="Speaker"
-                >
-                  <option value="">System default</option>
-                  {devices.audiooutput
-                    .filter((d) => d.deviceId !== 'default')
-                    .map((d) => (
-                      <option key={d.deviceId} value={d.deviceId}>
-                        {d.label || 'Speaker'}
-                      </option>
-                    ))}
-                </select>
+                  onChange={setSpeakerId}
+                  options={[
+                    { value: '', label: 'System default' },
+                    ...devices.audiooutput
+                      .filter((d) => d.deviceId !== 'default')
+                      .map((d) => ({ value: d.deviceId, label: d.label || 'Speaker' })),
+                  ]}
+                  label="Speaker"
+                />
               ) : (
                 <span className="pj-select-text">System default</span>
               )}

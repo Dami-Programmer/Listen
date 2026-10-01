@@ -32,6 +32,7 @@ import { CHAT_ATTACHMENT_BUDGET_BYTES, MODES, ROLES, cleanAvatar } from '@listen
  *                        // for everyone currently screen sharing
  *   mics: object         // socketId -> bool, whether that person's mic is live
  *                        // (each client reports its own; see setMic)
+ *   cams: object         // socketId -> bool, whether that person's camera is on
  * }
  */
 const rooms = new Map();
@@ -52,6 +53,7 @@ function createRoom() {
     chat: [],
     sharing: {},
     mics: {},
+    cams: {},
   };
 }
 
@@ -78,6 +80,7 @@ function attach(room, socketId, name, avatar) {
   // Assume the mic is live until the client tells us otherwise (it reports its
   // real state as soon as its microphone opens).
   room.mics[socketId] = true;
+  room.cams[socketId] = true; // same for the camera
   return room.participants[socketId];
 }
 
@@ -88,6 +91,11 @@ function attach(room, socketId, name, avatar) {
  */
 export function setMic(room, socketId, on) {
   if (room?.participants[socketId]) room.mics[socketId] = on === true;
+}
+
+// Same for the camera: whether that person's camera is on.
+export function setCam(room, socketId, on) {
+  if (room?.participants[socketId]) room.cams[socketId] = on === true;
 }
 
 /**
@@ -469,6 +477,7 @@ export function removeParticipant(socketId) {
     room.speaking = room.speaking.filter((id) => id !== socketId);
     delete room.sharing[socketId];
     delete room.mics[socketId]; // they've left — forget their mic state
+    delete room.cams[socketId];
     if (room.cohostId === socketId) room.cohostId = null;
 
     const remaining = Object.keys(room.participants);
@@ -524,5 +533,7 @@ export function snapshot(roomId) {
     // socketId -> bool, whether that person's mic is live. Clients use this to
     // show "is muted" on anyone's tile, not just their own.
     mics: { ...room.mics },
+    // socketId -> bool, whether that person's camera is on.
+    cams: { ...room.cams },
   };
 }

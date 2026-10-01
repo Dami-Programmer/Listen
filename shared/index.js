@@ -33,6 +33,11 @@ export const EVENTS = {
   //   the mic, so it only knows what each client tells it.)
   MIC_STATE: 'mic-state',
 
+  // CAM_STATE { on } : same idea for the camera — each client reports whether
+  //   its own camera is on, kept in `room.cams` and sent in every snapshot, so
+  //   others can show an avatar instead of a black tile.
+  CAM_STATE: 'cam-state',
+
   // Phase 6 — active-speaker detection.
   // Each client watches its OWN mic level (Web Audio) and sends this only when
   // the boolean flips: { speaking: true } when it starts talking, then

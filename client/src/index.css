@@ -1658,24 +1658,10 @@ button.cs-mode-badge:hover {
   height: 18px;
   flex-shrink: 0;
 }
-.pj-select select {
+.pj-select .sel {
   flex: 1;
   min-width: 0;
   height: 100%;
-  border: none;
-  background: transparent;
-  color: #f5f7fa;
-  font: inherit;
-  font-size: 14px;
-  text-overflow: ellipsis;
-  cursor: pointer;
-}
-.pj-select select:focus {
-  outline: none;
-}
-.pj-select option {
-  background: #151b23;
-  color: #f5f7fa;
 }
 .pj-select-text {
   flex: 1;
@@ -2943,4 +2929,380 @@ img.pj-initials {
     opacity: 0;
     transform: translateY(12px);
   }
+}
+
+/* --- styled dropdown (Select.jsx): mic / camera / speaker pickers ---------- */
+.sel {
+  position: relative;
+  min-width: 0;
+}
+.sel-trigger {
+  width: 100%;
+  height: 100%;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 2px;
+  border: none;
+  background: transparent;
+  color: #f5f7fa;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.sel-trigger:focus {
+  outline: none;
+}
+.sel-trigger:disabled {
+  cursor: default;
+  color: #8d98a5;
+}
+.sel-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sel .sel-chevron {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: #8d98a5;
+  transition: transform 0.2s ease;
+}
+.sel.open .sel-chevron {
+  transform: rotate(180deg);
+}
+
+/* The floating list: rounded, dark, soft shadow. */
+.sel-list {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: -12px;
+  z-index: 70;
+  min-width: calc(100% + 12px);
+  width: max-content;
+  max-width: min(360px, calc(100vw - 32px));
+  max-height: 260px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #1a212a;
+  box-shadow:
+    0 20px 44px -12px rgba(0, 0, 0, 0.75),
+    0 0 0 1px rgba(0, 0, 0, 0.2);
+  animation: sel-in 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.sel-list.up {
+  top: auto;
+  bottom: calc(100% + 8px);
+  animation-name: sel-in-up;
+}
+.sel-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  color: #d5dbe2;
+  font-size: 14px;
+  cursor: pointer;
+}
+.sel-option span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sel-option.active {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+.sel-option.selected {
+  color: #7fdcf9;
+  font-weight: 600;
+}
+.sel .sel-check {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: #27c4f3;
+}
+@keyframes sel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+@keyframes sel-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+
+/* --- floating mini-call (Pip.jsx) — lives in the picture-in-picture window - */
+/* Google-Meet look: one rounded card (video, or the person's avatar on a
+   blue card while their camera is off), their name bottom-left, and a row of
+   rounded buttons with a red leave pill. */
+.pip-body {
+  margin: 0;
+  height: 100vh;
+  overflow: hidden;
+  background: #1f1f1f;
+  color: #f5f7fa;
+  font-family: Inter, system-ui, sans-serif;
+}
+.pip {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 10px 10px 12px;
+  box-sizing: border-box;
+}
+.pip-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 16px;
+  background: #151b23;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  overflow: hidden;
+}
+.pip-stage.card {
+  background: linear-gradient(180deg, #23299a 0%, #1a1f7a 100%);
+}
+.pip-stage > .tile {
+  position: absolute;
+  inset: 0;
+  aspect-ratio: auto;
+  border: none;
+  border-radius: 0;
+}
+.pip-stage .tile video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.pip-stage .tile-label {
+  display: none;
+}
+.pip-avatar {
+  font-size: 34px !important;
+  box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.06);
+}
+.pip-empty {
+  color: #c4c9d4;
+  font-size: 14px;
+}
+.pip-self {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  width: 32%;
+  aspect-ratio: 3 / 4;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 20px -8px rgba(0, 0, 0, 0.8);
+}
+.pip-self .tile {
+  position: absolute;
+  inset: 0;
+  aspect-ratio: auto;
+  border: none;
+  border-radius: 0;
+}
+.pip-name {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 20px;
+  font-weight: 600;
+  text-align: left;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pip-name svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: #ff5a6e;
+}
+.pip-controls {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+.pip-controls button {
+  width: 64px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 26px;
+  border: none;
+  background: #3c4043;
+  color: #f5f7fa;
+  cursor: pointer;
+  transition:
+    background-color 0.2s ease,
+    filter 0.2s ease;
+}
+.pip-controls button:hover:not(:disabled) {
+  filter: brightness(1.15);
+}
+.pip-controls button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.pip-controls button.off {
+  background: #ea4335;
+}
+.pip-controls button.on {
+  background: #1f5e76;
+}
+.pip-controls .pip-leave {
+  width: 76px;
+  background: #ea4335;
+}
+.pip-controls .pip-leave svg {
+  transform: rotate(135deg);
+}
+.pip-controls svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* --- mic / camera device picker (DevicePicker.jsx) -------------------------- */
+/* A pill holding a small ^ and the normal mic / camera button, Meet-style.
+   Selectors start with .cs-controls to beat its "every button is a 56px
+   tile" rule. */
+.dp {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+}
+.cs-controls .dp-caret {
+  width: 30px;
+  height: 56px;
+  border: none;
+  border-radius: 14px 0 0 14px;
+  background: transparent;
+  box-shadow: none;
+  color: #b7c0ca;
+}
+.cs-controls .dp-caret:hover:not(:disabled) {
+  filter: none;
+  color: #fff;
+}
+.dp-caret svg {
+  width: 16px;
+  height: 16px;
+  transform: rotate(180deg); /* ^ : the list opens upward */
+  transition: transform 0.2s ease;
+}
+.dp.open .dp-caret svg {
+  transform: rotate(0deg);
+}
+.dp.open .dp-caret {
+  color: #7fdcf9;
+}
+
+.dp-pop {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 0;
+  z-index: 60;
+  width: max-content;
+  min-width: 260px;
+  max-width: min(360px, calc(100vw - 32px));
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 8px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #1a212a;
+  box-shadow:
+    0 20px 44px -12px rgba(0, 0, 0, 0.75),
+    0 0 0 1px rgba(0, 0, 0, 0.2);
+  animation: sel-in-up 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.dp-title {
+  margin: 4px 10px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #8d98a5;
+}
+.dp-empty {
+  margin: 6px 10px 8px;
+  font-size: 13px;
+  color: #8d98a5;
+}
+.cs-controls .dp-option {
+  width: 100%;
+  height: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  box-shadow: none;
+  color: #d5dbe2;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.cs-controls .dp-option:hover:not(:disabled),
+.cs-controls .dp-option:focus-visible {
+  filter: none;
+  outline: none;
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+.dp-option span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cs-controls .dp-option.selected {
+  color: #7fdcf9;
+  font-weight: 600;
+}
+.dp-option svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: #27c4f3;
 }

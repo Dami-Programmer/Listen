@@ -43,6 +43,7 @@ import {
   reorderQueue,
   revokeFloor,
   setLock,
+  setCam,
   setMic,
   setMode,
   setSharing,
@@ -620,6 +621,15 @@ io.on('connection', (socket) => {
     // Nothing changed? Skip the broadcast — no need to wake every client.
     if ((room.mics[socket.id] ?? true) === (on === true)) return;
     setMic(room, socket.id, on);
+    broadcastRoom(joinedRoomId);
+  });
+
+  // Camera on/off reports — same as the mic.
+  socket.on(EVENTS.CAM_STATE, ({ on } = {}) => {
+    const room = getRoom(joinedRoomId);
+    if (!room || !room.participants[socket.id]) return;
+    if ((room.cams[socket.id] ?? true) === (on === true)) return;
+    setCam(room, socket.id, on);
     broadcastRoom(joinedRoomId);
   });
 
