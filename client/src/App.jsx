@@ -275,6 +275,16 @@ export default function App() {
     setSelfId(null);
     setChat([]);
     clearTypers();
+    // Leaving (or cancelling a knock) wipes the form: name, picture and
+    // meeting code, plus the ?room= in the address bar, so the next person at
+    // this screen starts from scratch.
+    setName('');
+    setAvatar(null);
+    saveAvatar(null);
+    setRoomId('');
+    const url = new URL(window.location.href);
+    url.searchParams.delete('room');
+    window.history.replaceState({}, '', url);
   }
 
   if (waiting) {
