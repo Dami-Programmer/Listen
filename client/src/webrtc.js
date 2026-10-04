@@ -24,7 +24,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { EVENTS, MODES, ROLES } from '@listen/shared';
 import { socket } from './socket.js';
 
-const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+// Fallback when the server didn't send a list: STUN only (direct routes).
+// The server's list adds a TURN relay for networks that block direct routes.
+const DEFAULT_ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 
 // Self-healing (see `retry` in addPeer). If a connection to someone isn't up
 // within this long — or it drops to 'failed' — we restart it. A lost or late
@@ -78,12 +80,13 @@ function friendlyMediaError(err) {
  * @param {boolean}     args.inCall        true once joined and wanting media
  * @param {object}      args.sharing       room-state `sharing` map: socketId -> the
  *                                         id of that peer's screen MediaStream
+ * @param {Array}      [args.iceServers]   STUN/TURN servers from the server
  * @param {string}      args.mode          room-state mode ('open' | 'moderated')
  * @param {object}     [args.media]        pre-join choices: { audioId, videoId,
  *                                         micOn, camOn } — applied when the
  *                                         call opens
  */
-export function useCall({ selfId, participants, inCall, sharing = {}, mode, media }) {
+export function useCall({ selfId, participants, inCall, sharing = {}, mode, media, iceServers }) {
   const myRole = participants.find((p) => p.id === selfId)?.role ?? null;
   const isListener = myRole === ROLES.LISTENER;
 
@@ -112,6 +115,8 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode, medi
   const leftRef = useRef(new Set());
   // Pre-join choices, read once when the camera/mic open.
   const mediaRef = useRef(media);
+  // ICE servers for every new connection (set before the call starts).
+  const iceRef = useRef(iceServers?.length ? iceServers : DEFAULT_ICE_SERVERS);
   // The stream the pre-join mic/cam on-off choice has already been applied to.
   const prefsAppliedRef = useRef(null);
   // The role effect D last applied — so a device switch (new stream, same
@@ -160,7 +165,7 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode, medi
       const existing = peersRef.current.get(peerId);
       if (existing) return existing;
 
-      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      const pc = new RTCPeerConnection({ iceServers: iceRef.current });
       const entry = {
         pc,
         streams: new Map(),

@@ -122,6 +122,8 @@ export default function App() {
   const [removedNote, setRemovedNote] = useState(null);
   // Devices + mic/cam on/off picked in the pre-join lobby, used by the call.
   const [mediaPrefs, setMediaPrefs] = useState(null);
+  // STUN + TURN servers for the call, sent by the server in the join ack.
+  const [iceServers, setIceServers] = useState(null);
 
   // Drop every "is typing" indicator and its safety timer.
   const clearTypers = () => {
@@ -253,6 +255,7 @@ export default function App() {
 
     if (!socket.connected) socket.connect();
     socket.emit(EVENTS.JOIN_ROOM, { roomId: id, name: name.trim(), avatar }, (ack) => {
+      if (ack?.ok) setIceServers(ack.iceServers ?? null);
       if (ack?.ok && ack.waiting) {
         // Locked room — sit in the lobby until a moderator admits us.
         setSelfId(ack.selfId);
@@ -322,6 +325,7 @@ export default function App() {
       connected={connected}
       onLeave={handleLeave}
       media={mediaPrefs}
+      iceServers={iceServers}
     />
   );
 }
@@ -387,7 +391,7 @@ function useExitable() {
 }
 
 // --- the in-call screen ----------------------------------------------------
-function CallView({ state, chat, typers, selfId, connected, onLeave, media }) {
+function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceServers }) {
   const participants = state?.participants ?? [];
   // Side panel (chat, participants, moderation) — toggled by the chat button,
   // closed by it or by the panel's ✕. Slides out before it disappears.
@@ -460,6 +464,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media }) {
     isListener,
   } = useCall({
     selfId,
+    iceServers,
     participants,
     inCall: true,
     sharing,
@@ -874,6 +879,18 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media }) {
           {/* Presenting: everyone's camera (you included) in a column beside
               the share — the same in spotlight and grid view. */}
           {presenting && <SideStrip tiles={cameraTiles} sinkId={media?.speakerId} />}
+
+          {/* Whoever holds the floor gets "Pass the mic" right on the stage —
+              faded until hovered, so it never gets in the way of the video. */}
+          {canPassMic && (
+            <button
+              className="cs-pass-mic"
+              onClick={passMic}
+              title="Hand the floor to the next raised hand"
+            >
+              🎤 Pass the mic
+            </button>
+          )}
         </div>
 
         <footer className="cs-controls">
@@ -1098,11 +1115,6 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media }) {
                 className={`cp-people-pop${people.closing ? ' closing' : ''}`}
                 onAnimationEnd={people.onExitEnd}
               >
-                {canPassMic && (
-                  <button className="ghost small" onClick={passMic}>
-                    🎤 Pass the mic
-                  </button>
-                )}
                 {isListener && (
                   <p className="muted">
                     🎧 Listening only &mdash;{' '}

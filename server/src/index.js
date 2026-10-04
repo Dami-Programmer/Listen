@@ -59,6 +59,83 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 const PORT = process.env.PORT || 3001;
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
 
+// ICE servers every browser uses to connect its calls. STUN finds a direct
+// route between two people; on networks that block direct routes (mobile data,
+// strict office / school Wi-Fi) only a TURN relay gets audio and video through.
+// The relay comes from a provider, configured in the env — either:
+//
+//  Cloudflare (recommended): short-lived logins fetched from Cloudflare's API.
+//   CLOUDFLARE_TURN_KEY_ID     the TURN key's ID   (Cloudflare dashboard)
+//   CLOUDFLARE_TURN_API_TOKEN  the TURN key's API token
+//
+//  ...or any provider with a fixed login (e.g. Metered):
+//   TURN_URLS        comma-separated turn: / turns: URLs
+//   TURN_USERNAME    the provider's username
+//   TURN_CREDENTIAL  the provider's password
+//
+// Without either, calls work only where a direct route exists.
+const STUN_ONLY = [{ urls: 'stun:stun.l.google.com:19302' }];
+const CF_KEY_ID = process.env.CLOUDFLARE_TURN_KEY_ID;
+const CF_TOKEN = process.env.CLOUDFLARE_TURN_API_TOKEN;
+const CF_TTL_S = 24 * 60 * 60; // each Cloudflare login lasts a day...
+const CF_REFRESH_MS = 12 * 60 * 60 * 1000; // ...and is replaced every 12 hours
+
+// The list handed to every joiner (see the join ack). Starts with the fixed
+// config; Cloudflare replaces it once its login arrives.
+let iceServers = STUN_ONLY;
+const TURN_URLS = (process.env.TURN_URLS ?? '')
+  .split(',')
+  .map((u) => u.trim())
+  .filter(Boolean);
+if (TURN_URLS.length) {
+  iceServers = [
+    ...STUN_ONLY,
+    {
+      urls: TURN_URLS,
+      username: process.env.TURN_USERNAME ?? '',
+      credential: process.env.TURN_CREDENTIAL ?? '',
+    },
+  ];
+  console.log(`[server] TURN relay configured (${TURN_URLS.length} url(s))`);
+}
+
+async function refreshCloudflareTurn() {
+  try {
+    const res = await fetch(
+      `https://rtc.live.cloudflare.com/v1/turn/keys/${CF_KEY_ID}/credentials/generate-ice-servers`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${CF_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ttl: CF_TTL_S }),
+      },
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status} ${await res.text()}`);
+    const data = await res.json();
+    // Cloudflare also lists port 53, which browsers block — drop those URLs.
+    iceServers = (data.iceServers ?? [])
+      .map((server) => ({
+        ...server,
+        urls: [].concat(server.urls).filter((u) => !/:53(\?|$)/.test(u)),
+      }))
+      .filter((server) => server.urls.length);
+    console.log('[server] Cloudflare TURN relay ready');
+  } catch (err) {
+    console.error('[server] could not get Cloudflare TURN credentials:', err.message);
+  }
+}
+
+// Joins wait for this, so even the first person after a cold start gets the
+// relay. It always settles (errors are logged, not thrown).
+let iceReady = Promise.resolve();
+if (CF_KEY_ID && CF_TOKEN) {
+  iceReady = refreshCloudflareTurn();
+  setInterval(refreshCloudflareTurn, CF_REFRESH_MS).unref();
+} else if (!TURN_URLS.length) {
+  console.log(
+    '[server] no TURN relay configured — calls across strict networks will have no media',
+  );
+}
+
 const app = express();
 app.use(cors({ origin: CLIENT_ORIGIN }));
 app.use(express.json());
@@ -152,7 +229,13 @@ io.on('connection', (socket) => {
   // when the host leaves, we can tell the room who was promoted.
   let joinedRoomId = null;
 
-  socket.on(EVENTS.JOIN_ROOM, ({ roomId, name, avatar } = {}, ack) => {
+  // Wait for the TURN login (instant after the first few seconds of uptime).
+  socket.on(EVENTS.JOIN_ROOM, (payload, ack) => {
+    iceReady.then(() => handleJoin(payload, ack));
+  });
+
+  function handleJoin({ roomId, name, avatar } = {}, ack) {
+    if (socket.disconnected) return; // left while we waited
     const id = String(roomId || '').trim();
     if (!id) {
       socket.emit(EVENTS.ERROR, { message: 'roomId is required' });
@@ -173,7 +256,7 @@ io.on('connection', (socket) => {
       joinedRoomId = id;
       addWaiting(existing, socket.id, name, avatar);
       console.log(`[room ${id}] ~ ${socket.id} knocking (${existing.waiting[socket.id].name})`);
-      ack?.({ ok: true, waiting: true, selfId: socket.id });
+      ack?.({ ok: true, waiting: true, selfId: socket.id, iceServers });
       broadcastRoom(id); // moderators' waiting list updates
       return;
     }
@@ -186,9 +269,15 @@ io.on('connection', (socket) => {
         `${room.hostId === socket.id ? ' [host]' : ''} — ${Object.keys(room.participants).length} in room`,
     );
 
-    ack?.({ ok: true, selfId: socket.id, state: snapshot(id), chat: [...room.chat] });
+    ack?.({
+      ok: true,
+      selfId: socket.id,
+      state: snapshot(id),
+      chat: [...room.chat],
+      iceServers,
+    });
     broadcastRoom(id);
-  });
+  }
 
   // A moderator is the host OR the appointed co-host. Every Phase 4/5/7 control
   // is open to both; only appointing/dropping a co-host stays host-only.

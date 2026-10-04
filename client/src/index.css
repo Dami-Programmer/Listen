@@ -822,6 +822,7 @@ button.cs-mode-badge:hover {
 
 /* --- stage ----------------------------------------------------------- */
 .cs-body {
+  position: relative; /* anchors the Pass-the-mic button */
   flex: 1;
   min-height: 0;
   display: flex;
@@ -3305,4 +3306,40 @@ img.pj-initials {
   height: 16px;
   flex-shrink: 0;
   color: #27c4f3;
+}
+
+/* --- Pass the mic, on the stage for the current speaker -------------------- */
+/* White text on a dark, blurred, see-through pill with a white rounded
+   border. Faded at rest; fully visible on hover or keyboard focus. */
+.cs-pass-mic {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  z-index: 5;
+  transform: translateX(-50%);
+  padding: 10px 22px;
+  border-radius: 9999px;
+  border: 1.5px solid rgba(255, 255, 255, 0.9);
+  background: rgba(10, 14, 20, 0.45);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  color: #fff;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  opacity: 0.3;
+  transition:
+    opacity 0.25s ease,
+    background-color 0.25s ease;
+}
+.cs-pass-mic:hover,
+.cs-pass-mic:focus-visible {
+  opacity: 1;
+  outline: none;
+  background: rgba(10, 14, 20, 0.6);
+}
+.cs-pass-mic:active {
+  transform: translateX(-50%) scale(0.97);
 }
