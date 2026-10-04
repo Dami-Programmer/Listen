@@ -4,6 +4,24 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Listen</title>
+    <!-- Pick light or dark BEFORE the page paints, so a light-mode user never
+         sees a flash of dark while the app loads. Same rule as theme.js: the
+         saved choice ('light' / 'dark'), or else the device's own setting.
+         Keep the key 'listen.theme' in sync with theme.js. -->
+    <script>
+      (function () {
+        var choice = null;
+        try {
+          choice = localStorage.getItem('listen.theme');
+        } catch (e) {
+          /* storage blocked: follow the device */
+        }
+        if (choice !== 'light' && choice !== 'dark') {
+          choice = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        }
+        document.documentElement.dataset.theme = choice;
+      })();
+    </script>
     <!-- Tab icon: SVG where supported, the PNG export elsewhere. -->
     <link rel="icon" type="image/png" sizes="512x512" href="/logo.png" />
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />

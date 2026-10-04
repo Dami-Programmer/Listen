@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Cam, CamOff, Mic, MicOff, Speaker } from './icons.jsx';
 import AvatarPicker from './AvatarPicker.jsx';
 import Select from './Select.jsx';
+import ThemeToggle from './ThemeToggle.jsx';
 
 function friendlyMediaError(err) {
   switch (err?.name) {
@@ -192,6 +193,8 @@ export default function PreJoin({
     <main className="prejoin">
       <header className="pj-top">
         <img className="cs-logo" src="/logo.svg" alt="Listen" />
+        {/* light / dark switch, top-right of the lobby */}
+        <ThemeToggle />
       </header>
 
       <div className="pj-body">

@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
   font-family:
     system-ui,
     -apple-system,
@@ -8,14 +8,104 @@
     sans-serif;
 }
 
+/* ============================================================================
+   Light / dark theme
+   ----------------------------------------------------------------------------
+   HOW IT WORKS
+   Every themeable color in this file is written as a variable WITH the
+   original dark color as its fallback, e.g.
+
+       color: var(--text-muted, #8d98a5);
+
+   which reads "use --text-muted if it's set, otherwise #8d98a5". In dark mode
+   none of these variables are set, so every rule falls back to its original
+   dark color — dark mode is exactly what it always was.
+
+   Light mode sets the variables (the block below), and every rule that uses
+   one switches over at once.
+
+   WHO PICKS THE THEME
+   theme.js puts data-theme="light" or data-theme="dark" on <html>, from the
+   user's choice (the sun / moon / screen button) or, by default, the device's
+   own light/dark setting. A tiny script in index.html does the same before
+   the page first paints, so a light-mode user never sees a dark flash.
+
+   WHAT STAYS DARK
+   Video and anything drawn on top of video (tiles, the lobby preview, the
+   image viewer, the floating mini-call, "Pass the mic") keep their dark
+   colors in both themes — video looks washed out against a light page, the
+   same reason Google Meet keeps its stage dark. Those rules simply don't use
+   the variables.
+
+   THE TOKENS
+     --bg            page background (lobby, call screen, chat panel)
+     --surface       cards and solid panels
+     --surface-pop   things that float: menus, pickers, pop-ups, toasts
+     --ink           the r, g, b used for faint see-through borders and hover
+                     washes. Dark mode uses white (255, 255, 255) at low
+                     opacity; light mode uses near-black at the same opacity.
+     --text          main text
+     --text-soft     slightly quieter text (icons, chips, options)
+     --text-muted    labels, hints, timestamps
+     --text-faint    tiny decorations (the dot in "• Name 11:34")
+     --accent        brand cyan for icons, outlines, checkmarks
+     --accent-text   brand cyan used as TEXT (darker in light mode so it's
+                     readable on white)
+     --success-* / --warn-* / --danger-* / --cohost-*
+                     status colors: text, tinted background, border
+     --neutral-bg    the grey "listener" role pill
+     --border        solid hairline borders on the older card layouts
+     --ctl-*         the call control buttons' top/bottom gradient colors
+                     (normal, and the cyan "on" state)
+     --shadow-k      multiplies every drop shadow's darkness. Shadows tuned
+                     for a dark page look like smudges on a light one.
+   ========================================================================== */
+:root[data-theme='light'] {
+  color-scheme: light; /* native scrollbars, inputs, etc. go light too */
+
+  --bg: #f3f6f9; /* cool off-white — the light twin of #10161c */
+  --surface: #ffffff;
+  --surface-pop: #ffffff;
+  --ink: 15, 23, 32; /* near-black, as "r, g, b" so rgba() can add opacity */
+
+  --text: #16202a;
+  --text-soft: #3d4955;
+  --text-muted: #5d6b78;
+  --text-faint: #a3adb7;
+
+  --accent: #0b9fd0; /* #27c4f3 is too pale on white; same hue, deeper */
+  --accent-text: #0a7fa8;
+
+  --success-text: #138a43;
+  --success-bg: #e3f7ea;
+  --warn-text: #9a6700;
+  --warn-bg: #fff4d6;
+  --danger-text: #d1293d;
+  --danger-bg: #fdecee;
+  --danger-border: #f3b9c0;
+  --cohost-text: #3b4cc0;
+  --cohost-bg: #e6eaff;
+  --neutral-bg: #e8edf2;
+  --border: #d9e0e7;
+
+  /* Control buttons: white → pale grey, like the dark ones' grey → darker
+     grey. "On" (e.g. screen share running) is a pale cyan. */
+  --ctl-top: #ffffff;
+  --ctl-bottom: #eef2f6;
+  --ctl-on-top: #dff5fd;
+  --ctl-on-bottom: #c4ebfa;
+
+  --shadow-k: 0.25; /* a quarter of the dark theme's shadow darkness */
+}
+
 * {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  background: #0f1115;
-  color: #e8e8ea;
+  background: var(--bg, #0f1115);
+  color: var(--text, #e8e8ea);
 }
 
 .page {
@@ -31,16 +121,16 @@ h1 {
 }
 
 .tagline {
-  color: #9aa0a6;
+  color: var(--text-muted, #9aa0a6);
   margin-top: 4px;
 }
 
 .card {
   margin-top: 32px;
-  border: 1px solid #2a2e37;
+  border: 1px solid var(--border, #2a2e37);
   border-radius: 12px;
   padding: 8px 16px;
-  background: #161922;
+  background: var(--surface, #161922);
 }
 
 .row {
@@ -57,18 +147,18 @@ h1 {
 }
 
 .row span {
-  color: #9aa0a6;
+  color: var(--text-muted, #9aa0a6);
 }
 
 .row code {
-  color: #7ee787;
+  color: var(--success-text, #7ee787);
   text-align: right;
   word-break: break-all;
 }
 
 .next {
   margin-top: 32px;
-  color: #9aa0a6;
+  color: var(--text-muted, #9aa0a6);
   font-size: 0.9rem;
 }
 
@@ -138,7 +228,7 @@ h1 {
 /* Phase 5: the listener note carries a raise/lower-hand button alongside it. */
 .listener-note {
   margin-top: 20px;
-  color: #9aa0a6;
+  color: var(--text-muted, #9aa0a6);
   font-size: 0.9rem;
   display: flex;
   align-items: center;
@@ -163,20 +253,20 @@ h1 {
   white-space: nowrap;
 }
 .pill-host {
-  background: #3a2f00;
-  color: #ffd54a;
+  background: var(--warn-bg, #3a2f00);
+  color: var(--warn-text, #ffd54a);
 }
 .pill-cohost {
-  background: #1e2a52;
-  color: #a9b9ff;
+  background: var(--cohost-bg, #1e2a52);
+  color: var(--cohost-text, #a9b9ff);
 }
 .pill-speaker {
-  background: #10331a;
-  color: #7ee787;
+  background: var(--success-bg, #10331a);
+  color: var(--success-text, #7ee787);
 }
 .pill-listener {
-  background: #2a2e37;
-  color: #9aa0a6;
+  background: var(--neutral-bg, #2a2e37);
+  color: var(--text-muted, #9aa0a6);
 }
 
 /* Role pill pinned to the bottom-right of a video tile (name is bottom-left). */
@@ -191,8 +281,8 @@ h1 {
   margin-top: 16px;
   padding: 10px 14px;
   border-radius: 10px;
-  background: #3a2f00;
-  color: #ffd54a;
+  background: var(--warn-bg, #3a2f00);
+  color: var(--warn-text, #ffd54a);
   font-size: 0.9rem;
 }
 
@@ -212,7 +302,7 @@ h1 {
 .mode-toggle {
   margin-top: 16px;
   display: inline-flex;
-  border: 1px solid #2a2e37;
+  border: 1px solid var(--border, #2a2e37);
   border-radius: 999px;
   overflow: hidden;
 }
@@ -220,7 +310,7 @@ h1 {
   border: none;
   border-radius: 0;
   background: transparent;
-  color: #9aa0a6;
+  color: var(--text-muted, #9aa0a6);
   font-weight: 600;
   padding: 8px 18px;
 }
@@ -252,15 +342,15 @@ h1 {
   flex-direction: column;
   gap: 6px;
   font-size: 0.85rem;
-  color: #9aa0a6;
+  color: var(--text-muted, #9aa0a6);
 }
 
 .join input {
   padding: 10px 12px;
   border-radius: 8px;
-  border: 1px solid #2a2e37;
-  background: #0f1115;
-  color: #e8e8ea;
+  border: 1px solid var(--border, #2a2e37);
+  background: var(--bg, #0f1115);
+  color: var(--text, #e8e8ea);
   font-size: 1rem;
 }
 
@@ -287,18 +377,18 @@ button:disabled {
 
 button.ghost {
   background: transparent;
-  border-color: #2a2e37;
-  color: #e8e8ea;
+  border-color: var(--border, #2a2e37);
+  color: var(--text, #e8e8ea);
   font-weight: 500;
 }
 
 .row.header span {
-  color: #e8e8ea;
+  color: var(--text, #e8e8ea);
   font-weight: 600;
 }
 
 .err {
-  color: #ff7b72;
+  color: var(--danger-text, #ff7b72);
   font-size: 0.85rem;
   margin: 0;
 }
@@ -306,14 +396,14 @@ button.ghost {
 .raw summary {
   cursor: pointer;
   padding: 12px 0;
-  color: #9aa0a6;
+  color: var(--text-muted, #9aa0a6);
   font-size: 0.85rem;
 }
 
 .raw pre {
   margin: 0 0 12px;
   font-size: 0.8rem;
-  color: #7ee787;
+  color: var(--success-text, #7ee787);
   overflow-x: auto;
 }
 
@@ -321,7 +411,7 @@ button.ghost {
 
 /* The host's raised-hands dashboard reuses .card / .row. */
 .card.queue .muted {
-  color: #9aa0a6;
+  color: var(--text-muted, #9aa0a6);
   font-size: 0.85rem;
   padding: 12px 0;
   margin: 0;
@@ -356,11 +446,11 @@ button.small {
 
 /* Destructive action (Remove a participant) — reads red even as a ghost button. */
 button.ghost.danger {
-  border-color: #5c2a28;
-  color: #ff7b72;
+  border-color: var(--danger-border, #5c2a28);
+  color: var(--danger-text, #ff7b72);
 }
 button.ghost.danger:hover:not(:disabled) {
-  background: #2a1614;
+  background: var(--danger-bg, #2a1614);
 }
 
 /* Up / down arrows in the queue sit tight together. */
@@ -379,7 +469,7 @@ button.ghost.danger:hover:not(:disabled) {
   max-width: 260px;
   max-height: 240px;
   border-radius: 12px;
-  border: 1px solid #2a2e37;
+  border: 1px solid var(--border, #2a2e37);
   cursor: zoom-in;
 }
 /* The clickable wrapper around a chat image — a bare button with no styling
@@ -579,8 +669,8 @@ button.ghost.danger:hover:not(:disabled) {
    and — when it's open — the full-height chat panel on the right. */
 .callscreen {
   height: 100dvh;
-  background: #10161c;
-  color: #f5f7fa;
+  background: var(--bg, #10161c);
+  color: var(--text, #f5f7fa);
   display: flex;
   /* the chat panel slides in from past the right edge — clip it there */
   overflow-x: hidden;
@@ -633,14 +723,14 @@ button.ghost.danger:hover:not(:disabled) {
   font-weight: 600;
   line-height: 27px;
   letter-spacing: -0.18px;
-  color: #f5f7fa;
+  color: var(--text, #f5f7fa);
 }
 .cs-mode-badge {
   padding: 5px 20px;
   border-radius: 9999px;
   border: 1px solid rgba(39, 196, 243, 0.25);
   background: rgba(39, 196, 243, 0.2);
-  color: #f5f7fa;
+  color: var(--text, #f5f7fa);
   font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
   font-size: 20px;
   font-weight: 600;
@@ -700,7 +790,7 @@ button.cs-mode-badge:hover {
 }
 .cs-status {
   font-size: 13px;
-  color: #8d98a5;
+  color: var(--text-muted, #8d98a5);
 }
 
 /* join-request pill, top right */
@@ -711,8 +801,8 @@ button.cs-mode-badge:hover {
   gap: 20px;
   padding: 4px 4px 4px 20px;
   border-radius: 9999px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.16);
+  background: rgba(var(--ink, 255, 255, 255), 0.02);
   animation:
     cs-jr-in 1.5s cubic-bezier(0.22, 1, 0.36, 1) both,
     cs-jr-glow 2s ease-in-out 1.5s infinite;
@@ -740,7 +830,7 @@ button.cs-mode-badge:hover {
   0%,
   100% {
     box-shadow: 0 0 0 0 rgba(39, 196, 243, 0);
-    border-color: rgba(255, 255, 255, 0.16);
+    border-color: rgba(var(--ink, 255, 255, 255), 0.16);
   }
   50% {
     box-shadow: 0 0 0 6px rgba(39, 196, 243, 0.12);
@@ -782,13 +872,13 @@ button.cs-mode-badge:hover {
 .cs-join-req span {
   font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
   font-size: 16px;
-  color: #8d98a5;
+  color: var(--text-muted, #8d98a5);
   white-space: nowrap;
 }
 .cs-join-req strong {
   font-size: 20px;
   font-weight: 700;
-  color: #f5f7fa;
+  color: var(--text, #f5f7fa);
   margin-right: 4px;
 }
 .cs-jr-btn {
@@ -808,7 +898,7 @@ button.cs-mode-badge:hover {
 }
 .cs-jr-deny {
   margin-right: -12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.12);
   background: linear-gradient(180deg, #6a2536, #3e1520);
 }
 .cs-jr-admit {
@@ -1185,9 +1275,9 @@ button.cs-mode-badge:hover {
   display: grid;
   place-items: center;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #151b23;
-  color: #f5f7fa;
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.1);
+  background: var(--surface, #151b23);
+  color: var(--text, #f5f7fa);
   transition: opacity 0.2s ease;
 }
 .cs-side-more:hover {
@@ -1220,23 +1310,26 @@ button.cs-mode-badge:hover {
   display: grid;
   place-items: center;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: linear-gradient(180deg, #3a4048 0%, #22272e 100%);
-  color: #f5f7fa;
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.14);
+  background: linear-gradient(180deg, var(--ctl-top, #3a4048) 0%, var(--ctl-bottom, #22272e) 100%);
+  color: var(--text, #f5f7fa);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    0 8px 20px -8px rgba(0, 0, 0, 0.6);
+    0 8px 20px -8px rgba(0, 0, 0, calc(0.6 * var(--shadow-k, 1)));
 }
 .cs-controls button:hover:not(:disabled) {
   filter: brightness(1.2);
 }
 .cs-controls button.on {
-  background: linear-gradient(180deg, #1f5e76 0%, #123c4c 100%);
+  background: linear-gradient(180deg, var(--ctl-on-top, #1f5e76) 0%, var(--ctl-on-bottom, #123c4c) 100%);
   border-color: rgba(39, 196, 243, 0.4);
 }
 .cs-controls .cs-hangup {
   width: 88px;
-  border-color: rgba(255, 255, 255, 0.1);
+  /* Always white on the red: the other control buttons take the theme's text
+     color, which would make this icon dark-on-red in light mode. */
+  color: #fff;
+  border-color: rgba(var(--ink, 255, 255, 255), 0.1);
   background: linear-gradient(180deg, #6b2536 0%, #461622 100%);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
@@ -1272,7 +1365,7 @@ button.cs-mode-badge:hover {
   font-size: 12px;
   font-weight: 600;
   line-height: 1;
-  border: 2px solid #10161c;
+  border: 2px solid var(--bg, #10161c);
   box-shadow: 0 4px 10px -2px rgba(255, 45, 74, 0.55);
   animation:
     cs-badge-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both,
@@ -1301,7 +1394,7 @@ button.cs-mode-badge:hover {
   gap: 2px;
   background: #ffc440;
   color: #10161c;
-  border: 2px solid #10161c;
+  border: 2px solid var(--bg, #10161c);
   box-shadow: 0 4px 10px -2px rgba(255, 196, 64, 0.55);
   animation:
     cs-badge-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both,
@@ -1458,8 +1551,8 @@ button.cs-mode-badge:hover {
    ========================================================================== */
 .prejoin {
   min-height: 100dvh;
-  background: #10161c;
-  color: #f5f7fa;
+  background: var(--bg, #10161c);
+  color: var(--text, #f5f7fa);
   font-family: 'Inter', system-ui, sans-serif;
   padding: 16px 40px 32px;
   display: flex;
@@ -1467,6 +1560,10 @@ button.cs-mode-badge:hover {
 }
 .pj-top {
   flex-shrink: 0;
+  /* logo on the left, the theme button on the right */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 .pj-body {
   flex: 1;
@@ -1647,9 +1744,9 @@ button.cs-mode-badge:hover {
   padding: 0 6px 0 12px;
   height: 44px;
   border-radius: 9999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.03);
-  color: #b7c0ca;
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.14);
+  background: rgba(var(--ink, 255, 255, 255), 0.03);
+  color: var(--text-soft, #b7c0ca);
 }
 .pj-select:focus-within {
   border-color: rgba(39, 196, 243, 0.6);
@@ -1667,7 +1764,7 @@ button.cs-mode-badge:hover {
 .pj-select-text {
   flex: 1;
   font-size: 14px;
-  color: #f5f7fa;
+  color: var(--text, #f5f7fa);
 }
 .pj-test {
   flex-shrink: 0;
@@ -1675,7 +1772,7 @@ button.cs-mode-badge:hover {
   border-radius: 9999px;
   border: 1px solid rgba(39, 196, 243, 0.35);
   background: rgba(39, 196, 243, 0.14);
-  color: #7fdcf9;
+  color: var(--accent-text, #7fdcf9);
   font-size: 13px;
   font-weight: 600;
 }
@@ -1690,7 +1787,7 @@ button.cs-mode-badge:hover {
 }
 .pj-sub {
   margin: 8px 0 24px;
-  color: #8d98a5;
+  color: var(--text-muted, #8d98a5);
   font-size: 15px;
 }
 .pj-note {
@@ -1699,7 +1796,7 @@ button.cs-mode-badge:hover {
   border-radius: 12px;
   background: rgba(255, 196, 64, 0.12);
   border: 1px solid rgba(255, 196, 64, 0.3);
-  color: #ffd57a;
+  color: var(--warn-text, #ffd57a);
   font-size: 14px;
 }
 .pj-form {
@@ -1712,15 +1809,15 @@ button.cs-mode-badge:hover {
   flex-direction: column;
   gap: 6px;
   font-size: 13px;
-  color: #8d98a5;
+  color: var(--text-muted, #8d98a5);
 }
 .pj-form input {
   height: 48px;
   padding: 0 16px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.03);
-  color: #f5f7fa;
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.14);
+  background: rgba(var(--ink, 255, 255, 255), 0.03);
+  color: var(--text, #f5f7fa);
   font: inherit;
   font-size: 15px;
 }
@@ -1793,8 +1890,8 @@ button:active:not(:disabled) {
   transition-duration: 0.08s;
 }
 button.ghost:hover:not(:disabled) {
-  background-color: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.28);
+  background-color: rgba(var(--ink, 255, 255, 255), 0.06);
+  border-color: rgba(var(--ink, 255, 255, 255), 0.28);
 }
 
 /* call control bar: lift + deeper shadow */
@@ -1803,7 +1900,7 @@ button.ghost:hover:not(:disabled) {
   transform: translateY(-3px);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    0 14px 26px -8px rgba(0, 0, 0, 0.7);
+    0 14px 26px -8px rgba(0, 0, 0, calc(0.7 * var(--shadow-k, 1)));
 }
 .cs-controls .cs-hangup:hover:not(:disabled) {
   box-shadow:
@@ -1849,8 +1946,8 @@ button.cs-mode-badge.moderated:hover {
 
 /* chat composer tools + emoji/sticker picker */
 .cp-tool:hover:not(:disabled) {
-  color: #fff;
-  background-color: rgba(255, 255, 255, 0.07);
+  color: var(--text, #fff);
+  background-color: rgba(var(--ink, 255, 255, 255), 0.07);
 }
 .cp-picker-grid button:hover {
   transform: scale(1.18);
@@ -1881,8 +1978,8 @@ button.cs-mode-badge.moderated:hover {
   flex-direction: column;
   padding: 28px 28px 24px;
   /* the thin divider between the stage and the panel */
-  border-left: 1px solid rgba(255, 255, 255, 0.07);
-  background: #10161c;
+  border-left: 1px solid rgba(var(--ink, 255, 255, 255), 0.07);
+  background: var(--bg, #10161c);
   /* glides in from the right when the chat button opens it */
   animation: cp-slide-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -1931,7 +2028,7 @@ button.cs-mode-badge.moderated:hover {
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  border: 2px solid #10161c;
+  border: 2px solid var(--bg, #10161c);
   transition: background-color 0.25s ease;
 }
 .avatar-dot.on {
@@ -1954,9 +2051,9 @@ button.cs-mode-badge.moderated:hover {
   display: grid;
   place-items: center;
   border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.75);
-  background: rgba(255, 255, 255, 0.04);
-  color: #fff;
+  border: 1.5px solid rgba(var(--ink, 255, 255, 255), 0.75);
+  background: rgba(var(--ink, 255, 255, 255), 0.04);
+  color: var(--text, #fff);
 }
 .cp-close svg {
   width: 20px;
@@ -1980,14 +2077,14 @@ button.cs-mode-badge.moderated:hover {
   gap: 6px;
   border: none;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.07);
-  color: #fff;
+  background: rgba(var(--ink, 255, 255, 255), 0.07);
+  color: var(--text, #fff);
 }
 .cp-people-btn.on {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(var(--ink, 255, 255, 255), 0.12);
 }
 .cp-people-icon {
-  color: #2fd36b;
+  color: var(--success-text, #2fd36b);
 }
 .cp-chevron {
   width: 16px;
@@ -2005,7 +2102,7 @@ button.cs-mode-badge.moderated:hover {
 }
 .cp-more {
   font-size: 14px;
-  color: #c9d1d9;
+  color: var(--text-soft, #c9d1d9);
 }
 
 /* The dropdown: floats over the messages (so the chat doesn't jump) and
@@ -2023,9 +2120,9 @@ button.cs-mode-badge.moderated:hover {
   gap: 10px;
   padding: 12px;
   border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #151c24;
-  box-shadow: 0 24px 48px -16px rgba(0, 0, 0, 0.75);
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.1);
+  background: var(--surface-pop, #151c24);
+  box-shadow: 0 24px 48px -16px rgba(0, 0, 0, calc(0.75 * var(--shadow-k, 1)));
   transform-origin: top left;
   animation: cp-drop-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -2047,8 +2144,8 @@ button.cs-mode-badge.moderated:hover {
 }
 .cp-people-pop .card {
   margin-top: 0;
-  background: rgba(255, 255, 255, 0.03);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(var(--ink, 255, 255, 255), 0.03);
+  border-color: rgba(var(--ink, 255, 255, 255), 0.08);
 }
 .cp-people-pop .mod-bar {
   margin-top: 0;
@@ -2056,7 +2153,7 @@ button.cs-mode-badge.moderated:hover {
 .cp-people-pop .muted {
   margin: 0;
   font-size: 0.85rem;
-  color: #8d98a5;
+  color: var(--text-muted, #8d98a5);
 }
 
 /* --- messages ------------------------------------------------------------- */
@@ -2076,12 +2173,12 @@ button.cs-mode-badge.moderated:hover {
   gap: 22px;
   padding: 24px 2px 12px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+  scrollbar-color: rgba(var(--ink, 255, 255, 255), 0.15) transparent;
 }
 .cp-empty {
   margin: auto;
   font-size: 14px;
-  color: #8d98a5;
+  color: var(--text-muted, #8d98a5);
 }
 
 /* One run of messages from the same person: [avatar] [bubbles], then the
@@ -2148,24 +2245,24 @@ button.cs-mode-badge.moderated:hover {
   place-items: center;
   border: none;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.06);
-  color: #c3cbd3;
+  background: rgba(var(--ink, 255, 255, 255), 0.06);
+  color: var(--text-soft, #c3cbd3);
 }
 .cp-action svg {
   width: 15px;
   height: 15px;
 }
 .cp-action:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.12);
+  color: var(--text, #fff);
+  background: rgba(var(--ink, 255, 255, 255), 0.12);
 }
 .cp-action.danger:hover {
-  color: #ff5a6e;
+  color: var(--danger-text, #ff5a6e);
 }
 
 /* "(edited)" after an edited message's text — small and quiet */
 .cp-edited {
-  color: #8d98a5;
+  color: var(--text-muted, #8d98a5);
   font-size: 12px;
 }
 
@@ -2176,7 +2273,7 @@ button.cs-mode-badge.moderated:hover {
   padding: 8px 10px;
   border-radius: 12px;
   border: 1px solid rgba(47, 211, 107, 0.45);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(var(--ink, 255, 255, 255), 0.04);
 }
 .cp-edit textarea {
   display: block;
@@ -2186,7 +2283,7 @@ button.cs-mode-badge.moderated:hover {
   outline: none;
   resize: none;
   background: transparent;
-  color: #f1f4f7;
+  color: var(--text, #f1f4f7);
   font: inherit;
   font-size: 14px;
   line-height: 1.45;
@@ -2200,15 +2297,15 @@ button.cs-mode-badge.moderated:hover {
 .cp-edit-hint {
   flex: 1;
   font-size: 11px;
-  color: #8d98a5;
+  color: var(--text-muted, #8d98a5);
   white-space: nowrap;
 }
 .cp-edit-btn {
   padding: 4px 10px;
   border: none;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  background: rgba(var(--ink, 255, 255, 255), 0.08);
+  color: var(--text, #fff);
   font-size: 12px;
   font-weight: 600;
 }
@@ -2242,8 +2339,8 @@ button.cs-mode-badge.moderated:hover {
   max-width: 100%;
   padding: 10px 14px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  color: #f1f4f7;
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.16);
+  color: var(--text, #f1f4f7);
   font-size: 14px;
   line-height: 1.45;
   white-space: pre-wrap;
@@ -2258,7 +2355,7 @@ button.cs-mode-badge.moderated:hover {
   transition: border-color 0.2s ease;
 }
 .cp-file:hover {
-  border-color: rgba(255, 255, 255, 0.35);
+  border-color: rgba(var(--ink, 255, 255, 255), 0.35);
 }
 .cp-file-icon {
   flex-shrink: 0;
@@ -2290,11 +2387,11 @@ button.cs-mode-badge.moderated:hover {
   width: 16px;
   height: 16px;
   flex-shrink: 0;
-  color: #9aa4ae;
+  color: var(--text-muted, #9aa4ae);
   transition: color 0.2s ease;
 }
 .cp-file:hover .cp-file-dl {
-  color: #fff;
+  color: var(--text, #fff);
 }
 
 /* An image thumbnail + its corner download button. The wrapper is the
@@ -2348,7 +2445,7 @@ button.cs-mode-badge.moderated:hover {
 .cp-item .chat-image {
   max-width: 230px;
   max-height: 220px;
-  border-color: rgba(255, 255, 255, 0.14);
+  border-color: rgba(var(--ink, 255, 255, 255), 0.14);
 }
 
 /* "• Christiana Jona 11:34 AM" */
@@ -2357,13 +2454,13 @@ button.cs-mode-badge.moderated:hover {
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #aab3bd;
+  color: var(--text-muted, #aab3bd);
 }
 .cp-meta-dot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #5b6570;
+  background: var(--text-faint, #5b6570);
 }
 
 .cp-attach-err {
@@ -2377,17 +2474,17 @@ button.cs-mode-badge.moderated:hover {
   gap: 6px;
   margin: 6px 0 10px;
   font-size: 13px;
-  color: #9aa4ae;
+  color: var(--text-muted, #9aa4ae);
   animation: cp-fade-up 0.3s ease-out both;
 }
 .cp-typing b {
-  color: #fff;
+  color: var(--text, #fff);
   font-weight: 600;
 }
 .cp-typing-icon {
   width: 16px;
   height: 16px;
-  color: #fff;
+  color: var(--text, #fff);
 }
 @keyframes cp-fade-up {
   from {
@@ -2405,14 +2502,14 @@ button.cs-mode-badge.moderated:hover {
   margin-left: 4px;
   padding: 6px 9px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.16);
 }
 .typing-dots i {
   display: block;
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #c3cbd3;
+  background: var(--text-soft, #c3cbd3);
   animation: typing-bounce 1.25s infinite ease-in-out;
 }
 .typing-dots i:nth-child(2) {
@@ -2439,8 +2536,8 @@ button.cs-mode-badge.moderated:hover {
   margin-bottom: 10px;
   padding: 10px;
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #151c24;
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.1);
+  background: var(--surface-pop, #151c24);
   transform-origin: bottom right;
   animation: cp-pop-up 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -2460,13 +2557,13 @@ button.cs-mode-badge.moderated:hover {
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: #9aa4ae;
+  color: var(--text-muted, #9aa4ae);
   font-size: 13px;
   font-weight: 600;
 }
 .cp-picker-tabs button.on {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  background: rgba(var(--ink, 255, 255, 255), 0.08);
+  color: var(--text, #fff);
 }
 .cp-picker-grid {
   display: grid;
@@ -2499,8 +2596,8 @@ button.cs-mode-badge.moderated:hover {
 .cp-compose {
   padding: 14px 14px 8px 16px;
   border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.06);
+  background: rgba(var(--ink, 255, 255, 255), 0.05);
   transition: border-color 0.2s ease;
 }
 /* a soft green edge while you're typing in it */
@@ -2515,13 +2612,13 @@ button.cs-mode-badge.moderated:hover {
   outline: none;
   resize: none;
   background: transparent;
-  color: #f1f4f7;
+  color: var(--text, #f1f4f7);
   font: inherit;
   font-size: 15px;
   line-height: 1.45;
 }
 .cp-compose textarea::placeholder {
-  color: #8d98a5;
+  color: var(--text-muted, #8d98a5);
 }
 .cp-compose-tools {
   display: flex;
@@ -2544,18 +2641,18 @@ button.cs-mode-badge.moderated:hover {
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: #c3cbd3;
+  color: var(--text-soft, #c3cbd3);
 }
 .cp-tool svg {
   width: 21px;
   height: 21px;
 }
 .cp-tool.on {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--text, #fff);
+  background: rgba(var(--ink, 255, 255, 255), 0.08);
 }
 .cp-send {
-  color: #2fd36b;
+  color: var(--success-text, #2fd36b);
 }
 .cp-send:disabled {
   opacity: 0.45;
@@ -2586,7 +2683,7 @@ button.cs-mode-badge.moderated:hover {
     width: auto;
     padding: 20px 16px;
     border-left: none;
-    border-top: 1px solid rgba(255, 255, 255, 0.07);
+    border-top: 1px solid rgba(var(--ink, 255, 255, 255), 0.07);
     /* stacked under the video, a sideways slide makes no sense — fade */
     animation-name: img-viewer-fade-in-only;
   }
@@ -2623,7 +2720,7 @@ img.pj-initials {
 }
 .ap-label {
   font-size: 13px;
-  color: #8d98a5;
+  color: var(--text-muted, #8d98a5);
 }
 .ap-row {
   display: flex;
@@ -2639,9 +2736,9 @@ img.pj-initials {
   height: 34px;
   padding: 0 14px;
   border-radius: 9999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.03);
-  color: #f5f7fa;
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.14);
+  background: rgba(var(--ink, 255, 255, 255), 0.03);
+  color: var(--text, #f5f7fa);
   font: inherit;
   font-size: 13px;
   cursor: pointer;
@@ -2654,7 +2751,7 @@ img.pj-initials {
   background: rgba(39, 196, 243, 0.12);
 }
 .ap-remove {
-  color: #ff8a9a;
+  color: var(--danger-text, #ff8a9a);
 }
 .ap-search {
   display: flex;
@@ -2665,7 +2762,7 @@ img.pj-initials {
 .ap-hint {
   margin: 0;
   font-size: 13px;
-  color: #8d98a5;
+  color: var(--text-muted, #8d98a5);
 }
 .ap-results {
   display: grid;
@@ -2683,8 +2780,8 @@ img.pj-initials {
   padding: 6px 4px;
   border-radius: 12px;
   border: 1px solid transparent;
-  background: rgba(255, 255, 255, 0.03);
-  color: #c9d1d9;
+  background: rgba(var(--ink, 255, 255, 255), 0.03);
+  color: var(--text-soft, #c9d1d9);
   font: inherit;
   font-size: 11px;
   cursor: pointer;
@@ -2699,7 +2796,7 @@ img.pj-initials {
   height: 56px;
   border-radius: 50%;
   object-fit: cover;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--ink, 255, 255, 255), 0.06);
 }
 .ap-result span {
   width: 100%;
@@ -2732,13 +2829,13 @@ img.pj-initials {
   width: min(340px, calc(100vw - 48px));
   padding: 10px 16px 10px 10px;
   border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(24, 30, 38, 0.96);
-  color: #f5f7fa;
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.14);
+  background: var(--surface-pop, rgba(24, 30, 38, 0.96));
+  color: var(--text, #f5f7fa);
   font: inherit;
   text-align: left;
   cursor: pointer;
-  box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.7);
+  box-shadow: 0 16px 40px -12px rgba(0, 0, 0, calc(0.7 * var(--shadow-k, 1)));
   animation:
     toast-rise 8s linear both,
     toast-fade 8s linear both;
@@ -2751,7 +2848,7 @@ img.pj-initials {
   cursor: default;
 }
 .toast-static:hover {
-  border-color: rgba(255, 255, 255, 0.14);
+  border-color: rgba(var(--ink, 255, 255, 255), 0.14);
 }
 .toast-hand {
   display: inline-flex;
@@ -2761,7 +2858,7 @@ img.pj-initials {
 .toast-hand svg {
   width: 18px;
   height: 18px;
-  color: #ffc940;
+  color: var(--warn-text, #ffc940);
 }
 .toast-body {
   display: flex;
@@ -2771,7 +2868,7 @@ img.pj-initials {
 }
 .toast-body strong {
   font-size: 13px;
-  color: #8d98a5;
+  color: var(--text-muted, #8d98a5);
   font-weight: 600;
 }
 .toast-text {
@@ -2822,9 +2919,9 @@ img.pj-initials {
   height: 32px;
   padding: 0 12px;
   border-radius: 9999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.03);
-  color: #f5f7fa;
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.14);
+  background: rgba(var(--ink, 255, 255, 255), 0.03);
+  color: var(--text, #f5f7fa);
   font: inherit;
   font-size: 13px;
   cursor: pointer;
@@ -2853,10 +2950,10 @@ img.pj-initials {
   gap: 8px;
   padding: 18px 18px 16px;
   border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(24, 30, 38, 0.97);
-  color: #f5f7fa;
-  box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.14);
+  background: var(--surface-pop, rgba(24, 30, 38, 0.97));
+  color: var(--text, #f5f7fa);
+  box-shadow: 0 16px 40px -12px rgba(0, 0, 0, calc(0.7 * var(--shadow-k, 1)));
   animation: invite-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .invite strong {
@@ -2866,7 +2963,7 @@ img.pj-initials {
 .invite p {
   margin: 0;
   font-size: 13px;
-  color: #8d98a5;
+  color: var(--text-muted, #8d98a5);
 }
 .invite-close {
   position: absolute;
@@ -2879,12 +2976,12 @@ img.pj-initials {
   border-radius: 50%;
   border: none;
   background: transparent;
-  color: #8d98a5;
+  color: var(--text-muted, #8d98a5);
   cursor: pointer;
 }
 .invite-close:hover {
-  color: #f5f7fa;
-  background: rgba(255, 255, 255, 0.06);
+  color: var(--text, #f5f7fa);
+  background: rgba(var(--ink, 255, 255, 255), 0.06);
 }
 .invite-link {
   display: flex;
@@ -2897,9 +2994,9 @@ img.pj-initials {
   height: 40px;
   padding: 0 12px;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.03);
-  color: #f5f7fa;
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.14);
+  background: rgba(var(--ink, 255, 255, 255), 0.03);
+  color: var(--text, #f5f7fa);
   font: inherit;
   font-size: 13px;
 }
@@ -2947,7 +3044,7 @@ img.pj-initials {
   padding: 0 8px 0 2px;
   border: none;
   background: transparent;
-  color: #f5f7fa;
+  color: var(--text, #f5f7fa);
   font: inherit;
   font-size: 14px;
   text-align: left;
@@ -2958,7 +3055,7 @@ img.pj-initials {
 }
 .sel-trigger:disabled {
   cursor: default;
-  color: #8d98a5;
+  color: var(--text-muted, #8d98a5);
 }
 .sel-value {
   flex: 1;
@@ -2971,7 +3068,7 @@ img.pj-initials {
   width: 16px;
   height: 16px;
   flex-shrink: 0;
-  color: #8d98a5;
+  color: var(--text-muted, #8d98a5);
   transition: transform 0.2s ease;
 }
 .sel.open .sel-chevron {
@@ -2993,11 +3090,11 @@ img.pj-initials {
   padding: 6px;
   list-style: none;
   border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: #1a212a;
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.12);
+  background: var(--surface-pop, #1a212a);
   box-shadow:
-    0 20px 44px -12px rgba(0, 0, 0, 0.75),
-    0 0 0 1px rgba(0, 0, 0, 0.2);
+    0 20px 44px -12px rgba(0, 0, 0, calc(0.75 * var(--shadow-k, 1))),
+    0 0 0 1px rgba(0, 0, 0, calc(0.2 * var(--shadow-k, 1)));
   animation: sel-in 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .sel-list.up {
@@ -3011,7 +3108,7 @@ img.pj-initials {
   gap: 10px;
   padding: 10px 12px;
   border-radius: 12px;
-  color: #d5dbe2;
+  color: var(--text-soft, #d5dbe2);
   font-size: 14px;
   cursor: pointer;
 }
@@ -3023,18 +3120,18 @@ img.pj-initials {
   white-space: nowrap;
 }
 .sel-option.active {
-  background: rgba(255, 255, 255, 0.06);
-  color: #fff;
+  background: rgba(var(--ink, 255, 255, 255), 0.06);
+  color: var(--text, #fff);
 }
 .sel-option.selected {
-  color: #7fdcf9;
+  color: var(--accent-text, #7fdcf9);
   font-weight: 600;
 }
 .sel .sel-check {
   width: 16px;
   height: 16px;
   flex-shrink: 0;
-  color: #27c4f3;
+  color: var(--accent, #27c4f3);
 }
 @keyframes sel-in {
   from {
@@ -3205,8 +3302,8 @@ img.pj-initials {
   display: flex;
   align-items: center;
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.08);
+  background: rgba(var(--ink, 255, 255, 255), 0.05);
 }
 .cs-controls .dp-caret {
   width: 30px;
@@ -3215,11 +3312,11 @@ img.pj-initials {
   border-radius: 14px 0 0 14px;
   background: transparent;
   box-shadow: none;
-  color: #b7c0ca;
+  color: var(--text-soft, #b7c0ca);
 }
 .cs-controls .dp-caret:hover:not(:disabled) {
   filter: none;
-  color: #fff;
+  color: var(--text, #fff);
 }
 .dp-caret svg {
   width: 16px;
@@ -3231,7 +3328,7 @@ img.pj-initials {
   transform: rotate(0deg);
 }
 .dp.open .dp-caret {
-  color: #7fdcf9;
+  color: var(--accent-text, #7fdcf9);
 }
 
 .dp-pop {
@@ -3246,11 +3343,11 @@ img.pj-initials {
   overflow-y: auto;
   padding: 8px;
   border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: #1a212a;
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.12);
+  background: var(--surface-pop, #1a212a);
   box-shadow:
-    0 20px 44px -12px rgba(0, 0, 0, 0.75),
-    0 0 0 1px rgba(0, 0, 0, 0.2);
+    0 20px 44px -12px rgba(0, 0, 0, calc(0.75 * var(--shadow-k, 1))),
+    0 0 0 1px rgba(0, 0, 0, calc(0.2 * var(--shadow-k, 1)));
   animation: sel-in-up 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .dp-title {
@@ -3259,12 +3356,12 @@ img.pj-initials {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #8d98a5;
+  color: var(--text-muted, #8d98a5);
 }
 .dp-empty {
   margin: 6px 10px 8px;
   font-size: 13px;
-  color: #8d98a5;
+  color: var(--text-muted, #8d98a5);
 }
 .cs-controls .dp-option {
   width: 100%;
@@ -3277,7 +3374,7 @@ img.pj-initials {
   border-radius: 12px;
   background: transparent;
   box-shadow: none;
-  color: #d5dbe2;
+  color: var(--text-soft, #d5dbe2);
   font: inherit;
   font-size: 14px;
   text-align: left;
@@ -3287,8 +3384,8 @@ img.pj-initials {
 .cs-controls .dp-option:focus-visible {
   filter: none;
   outline: none;
-  background: rgba(255, 255, 255, 0.06);
-  color: #fff;
+  background: rgba(var(--ink, 255, 255, 255), 0.06);
+  color: var(--text, #fff);
 }
 .dp-option span {
   flex: 1;
@@ -3298,14 +3395,14 @@ img.pj-initials {
   white-space: nowrap;
 }
 .cs-controls .dp-option.selected {
-  color: #7fdcf9;
+  color: var(--accent-text, #7fdcf9);
   font-weight: 600;
 }
 .dp-option svg {
   width: 16px;
   height: 16px;
   flex-shrink: 0;
-  color: #27c4f3;
+  color: var(--accent, #27c4f3);
 }
 
 /* --- Pass the mic, on the stage for the current speaker -------------------- */
@@ -3342,4 +3439,43 @@ img.pj-initials {
 }
 .cs-pass-mic:active {
   transform: translateX(-50%) scale(0.97);
+}
+
+/* --- theme button (ThemeToggle.jsx) ---------------------------------------- */
+/* One round button that cycles Match device → Light → Dark. Same see-through
+   outline look as the Invite pill beside it, so it blends into either theme. */
+.theme-btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.14);
+  background: rgba(var(--ink, 255, 255, 255), 0.03);
+  color: var(--text, #f5f7fa);
+  cursor: pointer;
+}
+.theme-btn:hover {
+  border-color: var(--accent, rgba(39, 196, 243, 0.6));
+}
+.theme-btn svg {
+  width: 18px;
+  height: 18px;
+}
+/* The icon spins in each time it changes (the key prop remounts it). */
+.theme-btn svg {
+  animation: theme-icon-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes theme-icon-in {
+  from {
+    opacity: 0;
+    transform: rotate(-90deg) scale(0.6);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .theme-btn svg {
+    animation: none;
+  }
 }

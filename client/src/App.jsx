@@ -22,6 +22,7 @@ import Avatar from './Avatar.jsx';
 import Toasts from './Toasts.jsx';
 import InviteCard from './InviteCard.jsx';
 import DevicePicker from './DevicePicker.jsx';
+import ThemeToggle from './ThemeToggle.jsx';
 import { PipView } from './Pip.jsx';
 import { usePip } from './usePip.js';
 import { newMeetingCode } from './meeting.js';
@@ -757,6 +758,8 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
             >
               <LinkIcon /> Invite
             </button>
+            {/* light / dark switch, right next to Invite */}
+            <ThemeToggle />
             {isHost && (
               <ModeSwitch
                 moderated={moderated}
