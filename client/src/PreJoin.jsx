@@ -8,6 +8,14 @@ import { Cam, CamOff, Mic, MicOff, Speaker } from './icons.jsx';
 import AvatarPicker from './AvatarPicker.jsx';
 import Select from './Select.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
+import ProfileCard, { PROFILE } from './ProfileCard.jsx';
+
+// A link with ?profile in it (https://your-site/?profile) opens the creator card.
+const wantsProfile = () => new URLSearchParams(window.location.search).has('profile');
+// The card also pops up by itself on every page load (so every refresh), but
+// not again when you come back to the lobby after a call. This flag lives in
+// memory, so a refresh resets it.
+let profileShown = false;
 
 function friendlyMediaError(err) {
   switch (err?.name) {
@@ -188,14 +196,44 @@ export default function PreJoin({
   }
 
   const showVideo = stream && camOn;
+  const [profileOpen, setProfileOpen] = useState(wantsProfile);
+  // Auto pop-up: a short beat after the lobby appears, so the card rises in
+  // over the page rather than flashing up with it.
+  useEffect(() => {
+    if (profileShown) return undefined;
+    const t = setTimeout(() => setProfileOpen(true), 700);
+    return () => clearTimeout(t);
+  }, []);
+  useEffect(() => {
+    if (profileOpen) profileShown = true;
+  }, [profileOpen]);
+  function closeProfile() {
+    setProfileOpen(false);
+    // Drop ?profile so a reload doesn't pop the card open again.
+    if (wantsProfile()) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('profile');
+      window.history.replaceState(null, '', url);
+    }
+  }
 
   return (
     <main className="prejoin">
       <header className="pj-top">
         <img className="cs-logo" src="/logo.svg" alt="Listen" />
-        {/* light / dark switch, top-right of the lobby */}
-        <ThemeToggle />
+        <div className="pj-top-right">
+          {/* the creator credit — opens the profile card */}
+          <button type="button" className="pj-credit" onClick={() => setProfileOpen(true)}>
+            <img src={PROFILE.photo} alt="" />
+            <span>
+              Made by <strong>{PROFILE.name}</strong>
+            </span>
+          </button>
+          {/* light / dark switch, top-right of the lobby */}
+          <ThemeToggle />
+        </div>
       </header>
+      {profileOpen && <ProfileCard onClose={closeProfile} />}
 
       <div className="pj-body">
         <section className="pj-left">

@@ -20,6 +20,7 @@ import ChatPanel from './ChatPanel.jsx';
 import PreJoin from './PreJoin.jsx';
 import Avatar from './Avatar.jsx';
 import Toasts from './Toasts.jsx';
+import { ConfirmHost, confirmDialog } from './ConfirmDialog.jsx';
 import InviteCard from './InviteCard.jsx';
 import DevicePicker from './DevicePicker.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
@@ -556,10 +557,16 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
   // has the floor, starting your own share interrupts theirs — so confirm
   // first rather than silently cutting them off.
   const otherPresenterId = Object.keys(sharing).find((id) => id !== selfId) ?? null;
-  function handleStartShare() {
+  async function handleStartShare() {
     if (otherPresenterId) {
-      const name = peerOf(otherPresenterId)?.name ?? 'Someone';
-      if (!window.confirm(`${name} is presenting. Stop their share and present instead?`)) return;
+      const presenter = peerOf(otherPresenterId);
+      const ok = await confirmDialog({
+        title: `${presenter?.name ?? 'Someone'} is presenting`,
+        message: 'Stop their share and present instead?',
+        confirmLabel: 'Present instead',
+        person: presenter,
+      });
+      if (!ok) return;
     }
     startShare();
   }
@@ -598,21 +605,37 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
 
   // Phase 7 — moderation. Destructive actions confirm first.
   const forceMute = (targetId) => emit(EVENTS.FORCE_MUTE, { targetId });
-  function removeParticipant(p) {
-    if (window.confirm(`Remove ${p.name} from the call?`)) {
-      emit(EVENTS.REMOVE_PARTICIPANT, { targetId: p.id });
-    }
+  async function removeParticipant(p) {
+    const ok = await confirmDialog({
+      title: `Remove ${p.name} from the call?`,
+      message: 'They’ll be taken out of the meeting right away.',
+      confirmLabel: 'Remove',
+      danger: true,
+      person: p,
+    });
+    if (ok) emit(EVENTS.REMOVE_PARTICIPANT, { targetId: p.id });
   }
-  function clearFloor() {
-    if (window.confirm('Send every speaker back to listening?')) emit(EVENTS.CLEAR_FLOOR);
+  async function clearFloor() {
+    const ok = await confirmDialog({
+      title: 'Clear the floor?',
+      message: 'Every speaker goes back to listening.',
+      confirmLabel: 'Clear floor',
+      danger: true,
+    });
+    if (ok) emit(EVENTS.CLEAR_FLOOR);
   }
 
   // Co-host — host-only.
   const makeCohost = (p) => emit(EVENTS.PROMOTE_COHOST, { targetId: p.id });
-  function dropCohost(p) {
-    if (window.confirm(`Remove ${p.name} as co-host? They stay in the call.`)) {
-      emit(EVENTS.DEMOTE_COHOST, { targetId: p.id });
-    }
+  async function dropCohost(p) {
+    const ok = await confirmDialog({
+      title: `Remove ${p.name} as co-host?`,
+      message: 'They stay in the call.',
+      confirmLabel: 'Remove co-host',
+      danger: true,
+      person: p,
+    });
+    if (ok) emit(EVENTS.DEMOTE_COHOST, { targetId: p.id });
   }
 
   // Waiting room — moderator-only.
@@ -1054,6 +1077,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
           panelOpen={panelOpen}
           onOpen={panel.show}
         />
+        <ConfirmHost />
       </div>
 
       {/* Right column: the chat panel (design: "Design Sprint Meeting" chat).

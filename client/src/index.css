@@ -1321,7 +1321,11 @@ button.cs-mode-badge:hover {
   filter: brightness(1.2);
 }
 .cs-controls button.on {
-  background: linear-gradient(180deg, var(--ctl-on-top, #1f5e76) 0%, var(--ctl-on-bottom, #123c4c) 100%);
+  background: linear-gradient(
+    180deg,
+    var(--ctl-on-top, #1f5e76) 0%,
+    var(--ctl-on-bottom, #123c4c) 100%
+  );
   border-color: rgba(39, 196, 243, 0.4);
 }
 .cs-controls .cs-hangup {
@@ -3476,6 +3480,404 @@ img.pj-initials {
 }
 @media (prefers-reduced-motion: reduce) {
   .theme-btn svg {
+    animation: none;
+  }
+}
+
+/* --- confirm dialog (ConfirmDialog.jsx): replaces window.confirm() ---------
+   A centered card over a dimmed, blurred backdrop. The card springs up in;
+   closing plays both animations in reverse, then React removes it. */
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(5, 8, 12, calc(0.55 * var(--shadow-k, 1) + 0.15));
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: confirm-fade-in 0.2s ease-out both;
+}
+.confirm-backdrop.closing {
+  animation: confirm-fade-out 0.16s ease-in both;
+}
+.confirm-card {
+  width: min(380px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 28px 24px 20px;
+  border-radius: 20px;
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.12);
+  background: var(--surface-pop, rgba(24, 30, 38, 0.98));
+  color: var(--text, #f5f7fa);
+  box-shadow: 0 24px 60px -16px rgba(0, 0, 0, calc(0.75 * var(--shadow-k, 1)));
+  animation: confirm-pop-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.confirm-backdrop.closing .confirm-card {
+  animation: confirm-pop-out 0.16s ease-in both;
+}
+.confirm-avatar {
+  margin-bottom: 14px;
+  box-shadow: 0 0 0 4px rgba(var(--ink, 255, 255, 255), 0.06);
+}
+.confirm-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.confirm-msg {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--text-muted, #8d98a5);
+}
+.confirm-actions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  margin-top: 22px;
+}
+.confirm-btn {
+  flex: 1;
+  height: 42px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.confirm-btn.cancel {
+  background: rgba(var(--ink, 255, 255, 255), 0.06);
+  border-color: rgba(var(--ink, 255, 255, 255), 0.12);
+  color: var(--text, #f5f7fa);
+}
+.confirm-btn.cancel:hover {
+  background: rgba(var(--ink, 255, 255, 255), 0.1);
+}
+.confirm-btn.primary {
+  background: linear-gradient(180deg, #33cdf7, #1698c4);
+  color: #06131a;
+}
+.confirm-btn.danger {
+  background: linear-gradient(180deg, #f0566a, #d1293d);
+  color: #fff;
+}
+.confirm-btn:focus-visible {
+  outline: 2px solid var(--accent, #27c4f3);
+  outline-offset: 2px;
+}
+@keyframes confirm-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes confirm-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes confirm-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.94);
+  }
+}
+@keyframes confirm-pop-out {
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .confirm-card {
+    animation-name: confirm-fade-in;
+  }
+  .confirm-backdrop.closing .confirm-card {
+    animation-name: confirm-fade-out;
+  }
+}
+
+/* --- creator credit in the lobby header (opens the profile card) ---------- */
+.pj-top-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pj-credit {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 14px 0 4px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.12);
+  background: rgba(var(--ink, 255, 255, 255), 0.04);
+  color: var(--text-muted, #8d98a5);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.pj-credit:hover {
+  border-color: rgba(var(--ink, 255, 255, 255), 0.24);
+}
+.pj-credit img {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: 38% 38%;
+}
+.pj-credit strong {
+  color: var(--text, #f5f7fa);
+  font-weight: 600;
+}
+@media (max-width: 560px) {
+  .pj-credit span {
+    display: none; /* just the photo on phones */
+  }
+  .pj-credit {
+    padding: 0 4px;
+  }
+}
+
+/* --- creator profile card (ProfileCard.jsx) --------------------------------
+   Stays dark in both themes: it's a photo card, like the video stage. */
+.profile-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 210;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(4, 6, 10, 0.62);
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  animation: profile-backdrop-in 0.6s ease-out both;
+}
+.profile-backdrop.closing {
+  animation: profile-backdrop-out 0.3s ease-in both;
+}
+.profile-card {
+  position: relative;
+  width: min(340px, 100%);
+  aspect-ratio: 5 / 8.4;
+  max-height: calc(100dvh - 32px);
+  border-radius: 34px;
+  overflow: hidden;
+  isolation: isolate;
+  background: #1a1f26;
+  /* the frosted outer rim from the reference */
+  box-shadow:
+    0 0 0 8px rgba(255, 255, 255, 0.14),
+    0 0 0 9px rgba(255, 255, 255, 0.22),
+    0 40px 90px -20px rgba(0, 0, 0, 0.8);
+  animation: profile-in 0.85s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
+}
+.profile-backdrop.closing .profile-card {
+  animation: profile-out 0.3s cubic-bezier(0.64, 0, 0.78, 0) both;
+}
+.profile-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 22% 30%;
+  transform: scale(1.25);
+  transform-origin: 40% 100%; /* anchored low: shows down to the waist */
+  z-index: -2;
+}
+/* Progressive blur + darkening over the bottom, so the text sits on a soft
+   frosted area instead of directly on the photo. */
+.profile-blur {
+  position: absolute;
+  inset: 52% 0 0;
+  z-index: -1;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  background: linear-gradient(
+    180deg,
+    rgba(10, 13, 18, 0) 0%,
+    rgba(10, 13, 18, 0.55) 45%,
+    rgba(10, 13, 18, 0.85) 100%
+  );
+  mask-image: linear-gradient(180deg, transparent 0%, #000 40%);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 40%);
+}
+.profile-card:focus {
+  outline: none;
+}
+.profile-social:focus-visible {
+  outline: 2px solid #27c4f3;
+  outline-offset: 2px;
+}
+.profile-info {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0 24px 24px;
+  color: #fff;
+}
+.profile-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 26px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+}
+.profile-verified {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  color: #f2f4f6;
+}
+.profile-bio {
+  margin: 10px 0 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.78);
+}
+.profile-socials {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 20px;
+}
+.profile-social {
+  flex: 1;
+  max-width: 52px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.94);
+  color: #12171d;
+  box-shadow: 0 6px 18px -6px rgba(0, 0, 0, 0.5);
+  transition:
+    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+.profile-social svg {
+  width: 20px;
+  height: 20px;
+}
+/* each icon takes its brand color on hover */
+.profile-social:hover {
+  transform: translateY(-3px);
+  color: #fff;
+}
+.profile-social.instagram:hover {
+  background: radial-gradient(
+    circle at 30% 107%,
+    #fdf497 0%,
+    #fd5949 45%,
+    #d6249f 60%,
+    #285aeb 90%
+  );
+}
+.profile-social.linkedin:hover {
+  background: #0a66c2;
+}
+.profile-social.github:hover {
+  background: #24292f;
+}
+.profile-social.whatsapp:hover {
+  background: #25d366;
+}
+.profile-social.tiktok:hover {
+  background: #000;
+}
+/* Entrance: the backdrop darkens and blurs in, the card rises out of a blur,
+   then the photo settles and name / bio / icons follow one after another. */
+.profile-photo {
+  animation: profile-photo-in 1.4s cubic-bezier(0.16, 1, 0.3, 1) 0.1s backwards;
+}
+.profile-name,
+.profile-bio,
+.profile-social {
+  animation: profile-rise 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+.profile-name {
+  animation-delay: 0.45s;
+}
+.profile-bio {
+  animation-delay: 0.55s;
+}
+.profile-social:nth-child(1) {
+  animation-delay: 0.65s;
+}
+.profile-social:nth-child(2) {
+  animation-delay: 0.71s;
+}
+.profile-social:nth-child(3) {
+  animation-delay: 0.77s;
+}
+.profile-social:nth-child(4) {
+  animation-delay: 0.83s;
+}
+.profile-social:nth-child(5) {
+  animation-delay: 0.89s;
+}
+@keyframes profile-backdrop-in {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0);
+    -webkit-backdrop-filter: blur(0);
+  }
+}
+@keyframes profile-backdrop-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes profile-in {
+  from {
+    opacity: 0;
+    transform: translateY(48px) scale(0.9);
+    filter: blur(10px);
+  }
+}
+@keyframes profile-out {
+  to {
+    opacity: 0;
+    transform: translateY(16px) scale(0.95);
+  }
+}
+@keyframes profile-photo-in {
+  from {
+    transform: scale(1.5);
+  }
+}
+@keyframes profile-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .profile-card {
+    animation-name: confirm-fade-in;
+  }
+  .profile-backdrop.closing .profile-card {
+    animation-name: confirm-fade-out;
+  }
+  .profile-photo,
+  .profile-name,
+  .profile-bio,
+  .profile-social {
     animation: none;
   }
 }

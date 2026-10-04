@@ -26,6 +26,7 @@ import { CHAT_FILE_MAX_BYTES, EVENTS, STICKERS } from '@listen/shared';
 import { socket } from './socket.js';
 import ImageViewer from './ImageViewer.jsx';
 import Avatar from './Avatar.jsx';
+import { confirmDialog } from './ConfirmDialog.jsx';
 import {
   Download,
   FileDoc,
@@ -399,9 +400,15 @@ export default function ChatPanel({ messages, typers, selfId, mics = {}, partici
   }
 
   // Unsend = delete for everyone. Confirm first — there's no undo.
-  function unsend(m) {
+  async function unsend(m) {
     setActionsFor(null);
-    if (!window.confirm('Unsend this message? It will be removed for everyone.')) return;
+    const ok = await confirmDialog({
+      title: 'Unsend this message?',
+      message: 'It will be removed for everyone.',
+      confirmLabel: 'Unsend',
+      danger: true,
+    });
+    if (!ok) return;
     socket.emit(EVENTS.CHAT_UNSEND, { id: m.id }, (ack) => {
       if (!ack?.ok) setAttachError(ack?.error ?? 'Could not unsend the message.');
     });
