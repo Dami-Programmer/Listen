@@ -3672,172 +3672,6 @@ img.pj-initials {
 .profile-backdrop.closing {
   animation: profile-backdrop-out 0.3s ease-in both;
 }
-.profile-card {
-  position: relative;
-  width: min(300px, 100%);
-  aspect-ratio: 5 / 8.4;
-  max-height: calc(100dvh - 32px);
-  border-radius: 34px;
-  overflow: hidden;
-  isolation: isolate;
-  background: #1a1f26;
-  /* the frosted outer rim from the reference */
-  box-shadow:
-    0 0 0 8px rgba(255, 255, 255, 0.14),
-    0 0 0 9px rgba(255, 255, 255, 0.22),
-    0 40px 90px -20px rgba(0, 0, 0, 0.8);
-  animation: profile-in 0.85s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
-}
-.profile-backdrop.closing .profile-card {
-  animation: profile-out 0.3s cubic-bezier(0.64, 0, 0.78, 0) both;
-}
-.profile-photo {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: 22% 30%;
-  transform: scale(1.25);
-  transform-origin: 40% 100%; /* anchored low: shows down to the waist */
-  z-index: -2;
-}
-/* Progressive blur + darkening over the bottom, so the text sits on a soft
-   frosted area instead of directly on the photo. */
-.profile-blur {
-  position: absolute;
-  inset: 52% 0 0;
-  z-index: -1;
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  background: linear-gradient(
-    180deg,
-    rgba(10, 13, 18, 0) 0%,
-    rgba(10, 13, 18, 0.55) 45%,
-    rgba(10, 13, 18, 0.85) 100%
-  );
-  mask-image: linear-gradient(180deg, transparent 0%, #000 40%);
-  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 40%);
-}
-.profile-card:focus {
-  outline: none;
-}
-.profile-social:focus-visible {
-  outline: 2px solid #27c4f3;
-  outline-offset: 2px;
-}
-.profile-info {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 0 24px 24px;
-  color: #fff;
-}
-.profile-name {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  font-size: 26px;
-  font-weight: 500;
-  letter-spacing: -0.015em;
-  line-height: 1.15;
-}
-.profile-verified {
-  flex-shrink: 0;
-  width: 24px;
-  height: 24px;
-  color: #f2f4f6;
-}
-.profile-bio {
-  margin: 10px 0 0;
-  font-size: 15px;
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.78);
-}
-.profile-socials {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 20px;
-}
-.profile-social {
-  flex: 1;
-  max-width: 52px;
-  aspect-ratio: 1;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.94);
-  color: #12171d;
-  box-shadow: 0 6px 18px -6px rgba(0, 0, 0, 0.5);
-  transition:
-    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
-    background-color 0.2s ease,
-    color 0.2s ease;
-}
-.profile-social svg {
-  width: 20px;
-  height: 20px;
-}
-/* each icon takes its brand color on hover */
-.profile-social:hover {
-  transform: translateY(-3px);
-  color: #fff;
-}
-.profile-social.instagram:hover {
-  background: radial-gradient(
-    circle at 30% 107%,
-    #fdf497 0%,
-    #fd5949 45%,
-    #d6249f 60%,
-    #285aeb 90%
-  );
-}
-.profile-social.linkedin:hover {
-  background: #0a66c2;
-}
-.profile-social.github:hover {
-  background: #24292f;
-}
-.profile-social.whatsapp:hover {
-  background: #25d366;
-}
-.profile-social.tiktok:hover {
-  background: #000;
-}
-/* Entrance: the backdrop darkens and blurs in, the card rises out of a blur,
-   then the photo settles and name / bio / icons follow one after another. */
-.profile-photo {
-  animation: profile-photo-in 1.4s cubic-bezier(0.16, 1, 0.3, 1) 0.1s backwards;
-}
-.profile-name,
-.profile-bio,
-.profile-social {
-  animation: profile-rise 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards;
-}
-.profile-name {
-  animation-delay: 0.45s;
-}
-.profile-bio {
-  animation-delay: 0.55s;
-}
-.profile-social:nth-child(1) {
-  animation-delay: 0.65s;
-}
-.profile-social:nth-child(2) {
-  animation-delay: 0.71s;
-}
-.profile-social:nth-child(3) {
-  animation-delay: 0.77s;
-}
-.profile-social:nth-child(4) {
-  animation-delay: 0.83s;
-}
-.profile-social:nth-child(5) {
-  animation-delay: 0.89s;
-}
 @keyframes profile-backdrop-in {
   from {
     opacity: 0;
@@ -3863,28 +3697,9 @@ img.pj-initials {
     transform: translateY(16px) scale(0.95);
   }
 }
-@keyframes profile-photo-in {
-  from {
-    transform: scale(1.5);
-  }
-}
-@keyframes profile-rise {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-  }
-}
 @media (prefers-reduced-motion: reduce) {
-  .profile-card {
-    animation-name: confirm-fade-in;
-  }
-  .profile-backdrop.closing .profile-card {
-    animation-name: confirm-fade-out;
-  }
-  .profile-photo,
-  .profile-name,
-  .profile-bio,
-  .profile-social {
+  .pcard,
+  .profile-backdrop.closing .pcard {
     animation: none;
   }
 }
@@ -5545,4 +5360,217 @@ img.pj-initials {
 /* more room between accept (green) and decline (red) on the join request */
 .mc .mc-knock-no {
   margin-left: 14px;
+}
+
+/* --- creator profile card (ProfileCard.jsx) --------------------------------
+   Dark card in both themes: picture + name + role, what Listen is about,
+   then Portfolio and Contact. */
+.pcard {
+  position: relative;
+  width: min(440px, 100%);
+  padding: 24px;
+  border-radius: 28px;
+  background: linear-gradient(160deg, #2a2a2a 0%, #1c1c1c 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 0 0 6px rgba(255, 255, 255, 0.06),
+    0 40px 90px -20px rgba(0, 0, 0, 0.8);
+  color: #f2f2f2;
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  outline: none;
+  animation: profile-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both;
+}
+.profile-backdrop.closing .pcard {
+  animation: profile-out 0.3s cubic-bezier(0.64, 0, 0.78, 0) both;
+}
+.pcard .pcard-close {
+  top: 14px;
+  right: 14px;
+  width: 32px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.pcard .pcard-close:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+.pcard-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.6);
+}
+.pcard-status i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.18);
+}
+.pcard-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.pcard-photo {
+  flex-shrink: 0;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #000;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+}
+.pcard-name {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: #fff;
+}
+.pcard-role {
+  margin: 4px 0 0;
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.6);
+}
+.pcard-about {
+  margin: 16px 0 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.72);
+}
+.pcard-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 18px;
+}
+.pcard-btn {
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #3a3a3a, #2e2e2e);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.15s ease;
+}
+.pcard-btn:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: linear-gradient(180deg, #444, #343434);
+}
+.pcard-btn:active {
+  transform: scale(0.97);
+}
+.pcard-btn:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+/* the new picture is a centred signature: show the whole circle */
+.pj-credit img {
+  object-position: center;
+  background: #000;
+}
+.pcard-wa {
+  color: #25d366;
+}
+
+/* profile card on phones: tighter, smaller type, still two buttons side by
+   side; scrolls instead of clipping on short (landscape) screens */
+.pcard {
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+@media (max-width: 480px) {
+  .pcard {
+    padding: 18px;
+    border-radius: 24px;
+  }
+  .pcard .pcard-close {
+    top: 12px;
+    right: 12px;
+  }
+  .pcard-status {
+    margin-bottom: 14px;
+    font-size: 13px;
+  }
+  .pcard-head {
+    gap: 14px;
+  }
+  .pcard-photo {
+    width: 68px;
+    height: 68px;
+  }
+  .pcard-name {
+    font-size: 24px;
+  }
+  .pcard-role {
+    font-size: 14px;
+  }
+  .pcard-about {
+    margin-top: 14px;
+    font-size: 13.5px;
+    line-height: 1.5;
+  }
+  .pcard-actions {
+    gap: 10px;
+    margin-top: 16px;
+  }
+  .pcard-btn {
+    height: 46px;
+    font-size: 14px;
+    border-radius: 12px;
+  }
+}
+/* very narrow phones: stack the two buttons */
+@media (max-width: 340px) {
+  .pcard-actions {
+    grid-template-columns: 1fr;
+  }
+}
+/* very narrow phones: the two picture buttons can't fit side by side, so let
+   them wrap instead of pushing the whole lobby wider than the screen */
+@media (max-width: 359px) {
+  .pjm-fields .ap-actions {
+    flex-wrap: wrap;
+  }
+}
+
+/* Never let anything widen the page sideways on phones — that shifts every
+   pop-up (like the profile card) off the edge of the screen. */
+.prejoin.pjm {
+  overflow-x: hidden;
+}
+@media (max-width: 300px) {
+  .pjm-row {
+    gap: 10px;
+  }
+  .pjm .pjm-round {
+    width: 46px;
+    height: 46px;
+  }
+  .pjm .pjm-join {
+    width: 96px;
+    height: 46px;
+  }
+}
+/* the card always fits the screen, whatever is behind it */
+.profile-backdrop {
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+}
+.pcard {
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
 }
