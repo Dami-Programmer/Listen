@@ -35,6 +35,7 @@ import {
 } from './icons.jsx';
 import { sendChatFile } from './chatFiles.js';
 import { loadDeck, startPainter } from './presenter.js';
+import { useVideoPip } from './useVideoPip.js';
 import { inviteLink } from './meeting.js';
 import { confirmDialog } from './ConfirmDialog.jsx';
 
@@ -110,6 +111,10 @@ export default function MobileCall({ call }) {
   const pinned = tiles.find((t) => t.key === pinnedKey);
   const spotlight = presenting ? screenTiles[0] : (pinned ?? others[0] ?? selfTile);
   const strip = presenting ? tiles : tiles.filter((t) => t !== spotlight);
+
+  // Floating video when you leave the browser (or tap pop-out): whoever is on
+  // your big screen, or the screen being presented.
+  const pip = useVideoPip(spotlight?.stream ?? null);
 
   const [sheet, setSheet] = useState(false); // people sheet
   const [deviceMenu, setDeviceMenu] = useState(null); // 'video' | 'audio' | null
@@ -265,6 +270,16 @@ export default function MobileCall({ call }) {
               >
                 <SwapScreens />
               </button>
+              {pip.supported && (
+                <button
+                  type="button"
+                  className={`mc-popout${pip.active ? ' on' : ''}`}
+                  onClick={pip.active ? pip.exit : pip.enter}
+                  aria-label={pip.active ? 'Bring the video back' : 'Pop out a floating video'}
+                >
+                  <PopOutIcon />
+                </button>
+              )}
             </>
           )}
           {isModerator && (
@@ -292,6 +307,16 @@ export default function MobileCall({ call }) {
             >
               <SwapScreens />
             </button>
+            {pip.supported && (
+              <button
+                type="button"
+                className={`mc-popout${pip.active ? ' on' : ''}`}
+                onClick={pip.active ? pip.exit : pip.enter}
+                aria-label={pip.active ? 'Bring the video back' : 'Pop out a floating video'}
+              >
+                <PopOutIcon />
+              </button>
+            )}
             {knocker && (
               <div className="mc-knock" role="status">
                 <span className="mc-knock-text">
@@ -651,6 +676,17 @@ export default function MobileCall({ call }) {
           }}
         />
       )}
+      {/* Source for the floating window (useVideoPip). Muted: everyone's
+          audio already plays from their tiles. */}
+      <video
+        ref={pip.videoRef}
+        className="mc-pip-src"
+        muted
+        playsInline
+        autoPlay
+        aria-hidden="true"
+      />
+
       {viewing && (
         <ImageViewer src={viewing.src} alt={viewing.name} onClose={() => setViewing(null)} />
       )}
@@ -1464,6 +1500,25 @@ function SwapScreens() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+function PopOutIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="20"
+      height="20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="2.5" y="4.5" width="19" height="15" rx="2.5" />
+      <rect x="12" y="11.5" width="7" height="5.5" rx="1" fill="currentColor" stroke="none" />
     </svg>
   );
 }

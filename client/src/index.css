@@ -5574,3 +5574,36 @@ img.pj-initials {
   max-width: calc(100vw - 32px);
   box-sizing: border-box;
 }
+
+/* floating video on phones (useVideoPip) */
+.mc-pip-src {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  width: 2px;
+  height: 2px;
+  opacity: 0.01;
+  pointer-events: none;
+}
+.mc .mc-popout {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(70, 66, 82, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #fff;
+  transition: background-color 0.2s ease;
+}
+.mc .mc-popout.on {
+  background: #7b5cff;
+}
+.mc-title .mc-popout {
+  margin-left: 10px;
+}
+.mc-row2 .mc-popout {
+  margin-left: 4px;
+}
