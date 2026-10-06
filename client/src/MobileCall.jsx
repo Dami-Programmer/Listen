@@ -112,10 +112,6 @@ export default function MobileCall({ call }) {
   const spotlight = presenting ? screenTiles[0] : (pinned ?? others[0] ?? selfTile);
   const strip = presenting ? tiles : tiles.filter((t) => t !== spotlight);
 
-  // Floating video when you leave the browser (or tap pop-out): whoever is on
-  // your big screen, or the screen being presented.
-  const pip = useVideoPip(spotlight?.stream ?? null);
-
   const [sheet, setSheet] = useState(false); // people sheet
   const [deviceMenu, setDeviceMenu] = useState(null); // 'video' | 'audio' | null
   const [picked, setPicked] = useState(null); // grid tile showing mute / remove
@@ -128,6 +124,15 @@ export default function MobileCall({ call }) {
 
   const knocker = isModerator ? waiting[0] : null;
   const grid = layout === 'grid';
+
+  // Floating video when you leave the browser (or tap pop-out): whoever is on
+  // your big screen, or the screen being presented.
+  const pip = useVideoPip(() => {
+    if (!grid) return document.querySelector('.mc-stage video');
+    if (presenting) return document.querySelector('.mc-screen video');
+    const key = CSS.escape(String(spotlight?.key ?? ''));
+    return document.querySelector(`.mc-gtile[data-key="${key}"] video`);
+  }, `${grid}|${presenting}|${spotlight?.key}`);
   const badge = isModerator ? waiting.length + (moderated ? queue.length : 0) : 0;
   // Share button: phones can't capture the screen (no getDisplayMedia), so it
   // opens "Present to everyone" — photos or a PDF, streamed like a screen
@@ -362,6 +367,7 @@ export default function MobileCall({ call }) {
               return (
                 <div
                   key={t.key}
+                  data-key={t.key}
                   className={`mc-gtile${t.speaking ? ' speaking' : ''}`}
                   onClick={canMod ? () => setPicked(open ? null : t.key) : undefined}
                 >
@@ -676,17 +682,6 @@ export default function MobileCall({ call }) {
           }}
         />
       )}
-      {/* Source for the floating window (useVideoPip). Muted: everyone's
-          audio already plays from their tiles. */}
-      <video
-        ref={pip.videoRef}
-        className="mc-pip-src"
-        muted
-        playsInline
-        autoPlay
-        aria-hidden="true"
-      />
-
       {viewing && (
         <ImageViewer src={viewing.src} alt={viewing.name} onClose={() => setViewing(null)} />
       )}

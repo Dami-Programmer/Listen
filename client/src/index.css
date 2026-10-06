@@ -5575,16 +5575,7 @@ img.pj-initials {
   box-sizing: border-box;
 }
 
-/* floating video on phones (useVideoPip) */
-.mc-pip-src {
-  position: fixed;
-  left: 0;
-  bottom: 0;
-  width: 2px;
-  height: 2px;
-  opacity: 0.01;
-  pointer-events: none;
-}
+/* floating video on phones (useVideoPip): the pop-out button */
 .mc .mc-popout {
   flex-shrink: 0;
   width: 40px;
