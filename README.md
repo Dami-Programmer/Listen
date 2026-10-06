@@ -74,13 +74,13 @@ top of the Phase 2 call:
   speaker row. `grant-floor` never touches other speakers, so granting a second
   person is just "add a co-speaker". All floor changes route through `setRole`,
   and the client re-enables/silences its tracks purely off the new role.
-- **Phase 6 (active speaker & silence rule):** every client watches its own mic
+- **Phase 6 (active speaker):** every client watches its own mic
   with a Web Audio `AnalyserNode` and sends `speaking: true/false` only when it
   flips. The server elects `activeSpeakerId` (most recent talker) and the room
-  draws a green glow on that tile. In a moderated room, a non-host speaker who
-  goes quiet for 10 s is auto-revoked and `queue[0]` takes the floor. The host is
-  never on that timer. A speaker can also **🎤 Pass the mic** on demand — the
-  first raised hand takes over, or they just drop to listener if no hand is up.
+  draws a green glow on that tile. A speaker keeps the floor until they
+  **🎤 Pass the mic** (the first raised hand takes over, or they just drop to
+  listener if no hand is up) or a moderator revokes it. (The old 10-second
+  silence rule that auto-revoked quiet speakers has been removed.)
 
 - **Phase 7 (full host controls):** the participants list gives the host, for
   every other person, **Grant** (hand the floor to one specific listener),
@@ -124,8 +124,8 @@ top of the Phase 2 call:
 
 Test: open 3–4 tabs at http://localhost:5173/?room=demo, allow camera in each.
 Talking in one tab glows that tile everywhere. As the host, flip to Moderated,
-**Grant** a raised hand, then have that speaker stay silent — after ~10 s the
-floor auto-passes to the next raised hand. **Mute** or **Remove** anyone from
+**Grant** a raised hand, then have that speaker **Pass the mic** — the floor
+goes to the next raised hand. **Mute** or **Remove** anyone from
 the participants list. Type in the chat, drop an emoji or a sticker, and open a
 fresh tab to confirm the last 100 messages replay on join. Hit **Share screen**
 in two tabs at once. STUN only (localhost / same Wi-Fi); TURN is Phase 8.

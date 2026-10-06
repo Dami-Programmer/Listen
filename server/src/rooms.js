@@ -327,7 +327,7 @@ export function reorderQueue(room, order) {
 /**
  * Hand the floor on: `socketId` (a speaker in a moderated room) drops to
  * listener, and the first raised hand — if any — is promoted in their place.
- * Shared by the "pass the mic" button and the silence rule.
+ * Used by the "pass the mic" button.
  *
  * Returns { passed, next } — `passed` is false when the caller wasn't a
  * speaker; `next` is the promoted socketId, or null when no hand was up.

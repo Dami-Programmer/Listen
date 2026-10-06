@@ -132,8 +132,7 @@ line; a moderator gets a "Raised hands" dashboard (Grant / Dismiss per person,
 Clear floor) plus a Revoke button on each speaker row. `webrtc.js` needed no
 change — effect D already re-enables/silences tracks off the role. `grant-floor`
 never touches other speakers, so it doubles as "add co-speaker" — **two or more
-speakers can hold the floor at once** (in moderated mode the silence rule below
-still cycles out whichever one goes quiet for 10 s).
+speakers can hold the floor at once**.
 
 ## Phase 6 — Active-speaker & automated silence detection
 
@@ -153,16 +152,16 @@ still cycles out whichever one goes quiet for 10 s).
 only on the transition (rising edge immediately, falling edge after a 600 ms
 hangover). `rooms.js` keeps `room.speaking` (socketIds in start order);
 `snapshot` exposes `activeSpeakerId` = the last entry, and the client draws a
-green glow on that one tile. Silence rule (`server/src/index.js`): a
-`speaking: false` from a non-host speaker in a moderated room arms a 10 s timer
-(`SILENCE_MS`); firing it calls `revokeFloor` + `grantFloor(queue[0])`. The timer is cleared on
-`speaking: true`, grant, revoke, clear-floor, mode flip, disconnect, and
-host-promotion. `armSilence` bails on any non-`speaker` role, so the host **and
-the co-host** are exempt. Active-speaker glow works in open mode too; only the
-silence enforcement is moderated-only.
+green glow on that one tile. Active-speaker glow works in open and moderated
+mode.
+
+**Silence rule removed (later).** It used to auto-revoke a moderated-room
+speaker after 10 s of quiet and promote `queue[0]`. It was dropped as no longer
+needed: a speaker now keeps the floor until they pass the mic or a moderator
+revokes it.
 
 > **Known gap:** the `speaking` event isn't role-checked server-side, so a
-> hand-rolled client could fake the glow / dodge the silence timer. Cosmetic
+> hand-rolled client could fake the glow. Cosmetic
 > today; worth folding into Phase 8 hardening.
 
 ## Phase 7 — Full moderation controls
@@ -316,14 +315,13 @@ power, and can drop them back to a listener at any time.
 ### Pass the mic
 
 **Goal:** a speaker can hand the floor on themselves, not just wait for a
-moderator or the silence timer.
+moderator.
 
 - `pass-mic` (no payload) — for a plain **speaker** in a **moderated** room
   (host / co-host hold the room, not "the mic", so they don't get it, and it's a
   no-op in open mode). Drops the caller to listener and promotes `room.queue[0]`
   if a hand is up; otherwise they just step down.
-- `passFloor(room, socketId)` in `rooms.js` is the shared implementation — the
-  Phase 6 silence rule now calls it too (so both paths behave identically).
+- `passFloor(room, socketId)` in `rooms.js` is the implementation.
 - Client: a **🎤 Pass the mic** button in a speaker's controls row.
 
 ### Open-call UI redesign
@@ -348,8 +346,6 @@ Jakarta Sans), a floating white shell:
 
 ### Deferred / not built
 
-- **Per-speaker "pin"** — exempt a chosen speaker from the silence timer without
-  giving them moderator powers (a lighter version of what the co-host does).
 - **Chat moderation** — delete a message, mute someone's chat. Not built; would
   follow the Phase 7 pattern.
 - Everything in Phase 8 below (reconnect handling especially).

@@ -22,7 +22,7 @@ import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import { Server } from 'socket.io';
-import { CHAT_FILE_MAX_BYTES, EVENTS, MODES, ROLES, STICKERS } from '@listen/shared';
+import { CHAT_FILE_MAX_BYTES, EVENTS, MODES, STICKERS } from '@listen/shared';
 import {
   addChatMessage,
   addParticipant,
@@ -158,70 +158,6 @@ function broadcastRoom(roomId) {
   if (state) io.to(roomId).emit(EVENTS.ROOM_STATE, state);
 }
 
-// --- Phase 6: the silence rule ---------------------------------------------
-// In a MODERATED room, a non-host speaker who goes quiet for SILENCE_MS loses
-// the floor and queue[0] (if anyone is waiting) is promoted in their place.
-//
-// The timer is per (room, socket). It is armed the moment we hear
-// "speaking: false" and cleared the instant they speak again — or leave, or are
-// revoked, or the room re-opens. A freshly granted speaker has NO timer until
-// their first word, because the client only ever sends "speaking: false" after
-// a "speaking: true". The host is exempt: armSilence bails on any non-speaker
-// role, and the host's role is 'host'.
-const SILENCE_MS = 10000;
-const silenceTimers = new Map(); // `${roomId}::${socketId}` -> Timeout
-
-const silenceKey = (roomId, socketId) => `${roomId}::${socketId}`;
-
-function clearSilence(roomId, socketId) {
-  const key = silenceKey(roomId, socketId);
-  const timer = silenceTimers.get(key);
-  if (timer) {
-    clearTimeout(timer);
-    silenceTimers.delete(key);
-  }
-}
-
-// Drop every silence timer in a room (clear-floor, or the room going open).
-function clearRoomSilence(roomId) {
-  for (const key of [...silenceTimers.keys()]) {
-    if (key.startsWith(`${roomId}::`)) {
-      clearTimeout(silenceTimers.get(key));
-      silenceTimers.delete(key);
-    }
-  }
-}
-
-function armSilence(roomId, socketId) {
-  clearSilence(roomId, socketId);
-  const room = getRoom(roomId);
-  if (!room || room.mode !== MODES.MODERATED) return;
-  const participant = room.participants[socketId];
-  if (!participant || participant.role !== ROLES.SPEAKER) return; // host exempt
-  silenceTimers.set(
-    silenceKey(roomId, socketId),
-    setTimeout(() => enforceSilence(roomId, socketId), SILENCE_MS),
-  );
-}
-
-// The timer fired: this speaker has been quiet too long. Hand the floor on —
-// same as the "pass the mic" button, just automatic.
-function enforceSilence(roomId, socketId) {
-  silenceTimers.delete(silenceKey(roomId, socketId));
-
-  const room = getRoom(roomId);
-  if (!room) return;
-  const { passed, next } = passFloor(room, socketId);
-  if (!passed) return;
-
-  if (next) clearSilence(roomId, next); // fresh — timer waits for their first word
-  console.log(
-    `[room ${roomId}] silence timeout: ${socketId} lost the floor` +
-      (next ? `, ${next} promoted` : ' (queue empty)'),
-  );
-  broadcastRoom(roomId);
-}
-
 io.on('connection', (socket) => {
   console.log(`[socket] connected ${socket.id}`);
 
@@ -315,9 +251,6 @@ io.on('connection', (socket) => {
     }
 
     setMode(room, mode); // recomputes every non-moderator role
-    // Any flip retires every silence timer: open has no rule, and moderated
-    // just made everyone a listener so there's nothing to time yet.
-    clearRoomSilence(joinedRoomId);
     console.log(`[room ${joinedRoomId}] mode -> ${mode} (by ${socket.id})`);
     ack?.({ ok: true });
     broadcastRoom(joinedRoomId);
@@ -364,7 +297,6 @@ io.on('connection', (socket) => {
     const room = requireModeratorRoom(ack);
     if (!room) return;
     grantFloor(room, targetId); // listener -> speaker, off the queue
-    clearSilence(joinedRoomId, targetId); // fresh start; timer waits for word one
     console.log(`[room ${joinedRoomId}] grant floor -> ${targetId}`);
     ack?.({ ok: true });
     broadcastRoom(joinedRoomId);
@@ -374,7 +306,6 @@ io.on('connection', (socket) => {
     const room = requireModeratorRoom(ack);
     if (!room) return;
     revokeFloor(room, targetId); // speaker -> listener
-    clearSilence(joinedRoomId, targetId);
     console.log(`[room ${joinedRoomId}] revoke floor -> ${targetId}`);
     ack?.({ ok: true });
     broadcastRoom(joinedRoomId);
@@ -384,7 +315,6 @@ io.on('connection', (socket) => {
     const room = requireModeratorRoom(ack);
     if (!room) return;
     clearFloor(room); // every non-moderator speaker -> listener
-    clearRoomSilence(joinedRoomId);
     console.log(`[room ${joinedRoomId}] floor cleared by ${socket.id}`);
     ack?.({ ok: true });
     broadcastRoom(joinedRoomId);
@@ -397,8 +327,6 @@ io.on('connection', (socket) => {
     if (!room) return ack?.({ ok: false, error: 'not in a room' });
     const { passed, next } = passFloor(room, socket.id);
     if (!passed) return ack?.({ ok: false, error: 'you are not a speaker' });
-    clearSilence(joinedRoomId, socket.id);
-    if (next) clearSilence(joinedRoomId, next);
     console.log(
       `[room ${joinedRoomId}] ${socket.id} passed the mic` +
         (next ? ` -> ${next}` : ' (queue empty)'),
@@ -508,7 +436,6 @@ io.on('connection', (socket) => {
       return ack?.({ ok: false, error: 'not the co-host' });
     }
     demoteCohost(room, subject);
-    clearSilence(joinedRoomId, subject); // no silence timer for a fresh listener
     console.log(`[room ${joinedRoomId}] host ${socket.id} dropped co-host ${subject}`);
     ack?.({ ok: true });
     broadcastRoom(joinedRoomId);
@@ -724,22 +651,15 @@ io.on('connection', (socket) => {
 
   // --- Phase 6: active-speaker pings -------------------------------------
   // The client sends this only when its own mic level crosses the talk
-  // threshold (rising) or has been quiet for a beat (falling). We record it,
-  // start or cancel the silence timer, and re-broadcast so every client can
-  // move the "active speaker" glow. Fire-and-forget — no ack.
+  // threshold (rising) or has been quiet for a beat (falling). We record it
+  // and re-broadcast so every client can move the "active speaker" glow.
+  // Fire-and-forget — no ack.
   socket.on(EVENTS.SPEAKING, ({ speaking } = {}) => {
     const room = getRoom(joinedRoomId);
     if (!room) return;
 
     const on = speaking === true;
     const changed = setSpeaking(room, socket.id, on);
-
-    if (on) {
-      clearSilence(joinedRoomId, socket.id); // talking -> stop any quiet clock
-    } else if (changed) {
-      armSilence(joinedRoomId, socket.id); // just went quiet -> start it
-    }
-
     if (changed) broadcastRoom(joinedRoomId);
   });
 
@@ -768,7 +688,6 @@ io.on('connection', (socket) => {
   socket.on('disconnect', (reason) => {
     console.log(`[socket] disconnected ${socket.id} (${reason})`);
     if (joinedRoomId) {
-      clearSilence(joinedRoomId, socket.id);
       // Clear any lingering "typing" indicator for this socket right away.
       socket.to(joinedRoomId).emit(EVENTS.CHAT_TYPING, { id: socket.id, typing: false });
     }
@@ -804,9 +723,6 @@ io.on('connection', (socket) => {
       console.log(`[room ${roomId}] host left; ${admitted} let in from the waiting room as host`);
     }
 
-    // If the host just left, the promoted participant must be exempt from the
-    // silence rule — retire any timer they were carrying as a speaker.
-    clearSilence(roomId, room.hostId);
     console.log(
       `[room ${roomId}] - ${socket.id} — ${Object.keys(room.participants).length} left,` +
         ` host is ${room.hostId}`,

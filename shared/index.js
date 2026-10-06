@@ -22,8 +22,7 @@ export const EVENTS = {
 
   // PASS_MIC : a speaker (moderated mode) voluntarily gives up the floor — the
   //   first raised hand becomes the next speaker, or, if no hand is up, the
-  //   passer simply drops to listener. Same effect as the silence rule, on
-  //   demand. No payload.
+  //   passer simply drops to listener. No payload.
   PASS_MIC: 'pass-mic',
 
   // MIC_STATE { on } : each client reports whether its own mic is live, so
