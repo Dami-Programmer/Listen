@@ -24,6 +24,8 @@ import {
   Copy,
   FileDoc,
   Hand,
+  Lock,
+  Unlock,
   ImageIcon,
   MicOff,
   Paperclip,
@@ -32,6 +34,7 @@ import {
   X,
 } from './icons.jsx';
 import { sendChatFile } from './chatFiles.js';
+import { loadDeck, startPainter } from './presenter.js';
 import { inviteLink } from './meeting.js';
 import { confirmDialog } from './ConfirmDialog.jsx';
 
@@ -71,6 +74,7 @@ export default function MobileCall({ call }) {
     devices,
     switchDevice,
     startShare,
+    presentStream,
     stopShare,
     mediaError,
     layout,
@@ -120,17 +124,91 @@ export default function MobileCall({ call }) {
   const knocker = isModerator ? waiting[0] : null;
   const grid = layout === 'grid';
   const badge = isModerator ? waiting.length + (moderated ? queue.length : 0) : 0;
-  // Phone browsers can't capture the screen at all (no getDisplayMedia), so
-  // the button is always there for speakers but explains that on phones.
+  // Share button: phones can't capture the screen (no getDisplayMedia), so it
+  // opens "Present to everyone" — photos or a PDF, streamed like a screen
+  // share (presenter.js). Where the browser can, "Share my screen" is there too.
   const showShare = !isListener;
   const shareSupported = Boolean(navigator.mediaDevices?.getDisplayMedia);
-  const [shareNotice, setShareNotice] = useState(false);
+  const [presentMenu, setPresentMenu] = useState(false);
+  const [presentation, setPresentation] = useState(null); // { deck, painter, index }
+  const [presentBusy, setPresentBusy] = useState(false);
+  const [presentError, setPresentError] = useState(null);
+  const photosRef = useRef(null);
+  const pdfRef = useRef(null);
+
+  function flashError(msg) {
+    setPresentError(msg);
+    setTimeout(() => setPresentError(null), 4000);
+  }
+
+  async function startPresenting(files) {
+    if (!files?.length) return;
+    setPresentBusy(true);
+    let deck = null;
+    let painter = null;
+    try {
+      deck = await loadDeck(files);
+      painter = startPainter();
+      painter.show(await deck.page(0));
+      if (!(await presentStream(painter.stream))) throw new Error('cancelled');
+      setPresentation({ deck, painter, index: 0 });
+    } catch (err) {
+      painter?.stop();
+      deck?.close();
+      if (err?.message !== 'cancelled') flashError(err?.message || 'Could not open that file.');
+    } finally {
+      setPresentBusy(false);
+    }
+  }
+
+  async function goToPage(i) {
+    if (!presentation) return;
+    const { deck, painter } = presentation;
+    if (i < 0 || i >= deck.count) return;
+    setPresentation((p) => p && { ...p, index: i });
+    painter.show(await deck.page(i));
+  }
+
+  // The share ended — Stop, someone else took over, or I lost the floor —
+  // so tidy up the canvas and the file.
+  const presentationRef = useRef(null);
+  presentationRef.current = presentation;
+  useEffect(() => {
+    if (!sharingScreen && presentationRef.current) {
+      const { deck, painter } = presentationRef.current;
+      painter.stop();
+      deck.close();
+      setPresentation(null);
+    }
+  }, [sharingScreen]);
+  // ...and when leaving the call mid-presentation.
+  useEffect(
+    () => () => {
+      presentationRef.current?.painter.stop();
+      presentationRef.current?.deck.close();
+    },
+    [],
+  );
+
+  // Swipe the big screen left / right to flip pages while presenting.
+  const swipe = useRef(null);
+  const swipeHandlers = presentation
+    ? {
+        onPointerDown: (e) => (swipe.current = e.clientX),
+        onPointerUp: (e) => {
+          if (swipe.current === null) return;
+          const dx = e.clientX - swipe.current;
+          swipe.current = null;
+          if (Math.abs(dx) > 50) goToPage(presentation.index + (dx < 0 ? 1 : -1));
+        },
+      }
+    : {};
 
   return (
     <main className={`mc${grid ? ' mc-grid' : ''}${isModerator ? '' : ' mc-member'}`}>
       {/* Spotlight: the big video behind everything. */}
       {!grid && spotlight && (
-        <div className="mc-stage">
+        <div className="mc-stage" {...swipeHandlers}>
           <Tile tile={spotlight} sinkId={media?.speakerId} screen={presenting} />
         </div>
       )}
@@ -151,11 +229,11 @@ export default function MobileCall({ call }) {
           {isModerator ? (
             <button
               type="button"
-              className="mc-mode"
+              className={`mc-mode${moderated ? ' is-mod' : ''}`}
               onClick={() => act.changeMode(moderated ? MODES.OPEN : MODES.MODERATED)}
               aria-label={moderated ? 'Moderated — tap to open the room' : 'Open — tap to moderate'}
             >
-              {moderated ? 'Moderated' : 'Open'}
+              <SwapLabel on={moderated} off="Open" onLabel="Moderated" />
             </button>
           ) : (
             // Members: raise hand (moderated rooms, while listening) and the
@@ -192,11 +270,14 @@ export default function MobileCall({ call }) {
           {isModerator && (
             <button
               type="button"
-              className="mc-lock"
+              className={`mc-lock${locked ? '' : ' is-open'}`}
               onClick={act.toggleLock}
               aria-label={locked ? 'Door locked — tap to open' : 'Door open — tap to lock'}
             >
-              {locked ? 'locked' : 'unlocked'}
+              <span className="mc-lock-icon" aria-hidden="true">
+                {locked ? <Lock /> : <Unlock />}
+              </span>
+              <SwapLabel on={!locked} off="locked" onLabel="unlocked" />
             </button>
           )}
         </div>
@@ -329,8 +410,40 @@ export default function MobileCall({ call }) {
         onView={setViewing}
       />
 
+      {presentation && (
+        <div className="mc-present-bar" role="toolbar" aria-label="Presentation">
+          <button
+            type="button"
+            onClick={() => goToPage(presentation.index - 1)}
+            disabled={presentation.index === 0}
+            aria-label="Previous page"
+          >
+            ‹
+          </button>
+          <span>
+            {presentation.index + 1} / {presentation.deck.count}
+          </span>
+          <button
+            type="button"
+            onClick={() => goToPage(presentation.index + 1)}
+            disabled={presentation.index >= presentation.deck.count - 1}
+            aria-label="Next page"
+          >
+            ›
+          </button>
+          <button type="button" className="mc-present-stop" onClick={stopShare}>
+            Stop
+          </button>
+        </div>
+      )}
+      {presentError && <p className="mc-toast">{presentError}</p>}
+
       {canPassMic && (
-        <button type="button" className="mc-pass" onClick={act.passMic}>
+        <button
+          type="button"
+          className={`mc-pass${presentation ? ' raised' : ''}`}
+          onClick={act.passMic}
+        >
           🎤 Pass the mic
         </button>
       )}
@@ -376,11 +489,10 @@ export default function MobileCall({ call }) {
         {showShare && (
           <button
             type="button"
-            className={`mc-btn mc-cast${sharingScreen ? ' on' : ''}`}
-            onClick={
-              !shareSupported ? () => setShareNotice(true) : sharingScreen ? stopShare : startShare
-            }
-            aria-label={sharingScreen ? 'Stop sharing' : 'Share screen'}
+            className={`mc-btn mc-cast${sharingScreen ? ' on' : ''}${presentBusy ? ' busy' : ''}`}
+            onClick={sharingScreen ? stopShare : () => setPresentMenu(true)}
+            disabled={presentBusy}
+            aria-label={sharingScreen ? 'Stop presenting' : 'Present to everyone'}
           >
             <CastIcon />
           </button>
@@ -391,24 +503,76 @@ export default function MobileCall({ call }) {
         </button>
       </footer>
 
-      {shareNotice && (
-        <div className="mc-backdrop" onClick={() => setShareNotice(false)}>
-          <div
-            className="mc-menu mc-notice"
-            role="alertdialog"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2>Screen sharing needs a computer</h2>
-            <p className="mc-note">
-              Phone browsers don&rsquo;t let websites share your screen. To present, join this
-              meeting from a laptop or desktop &mdash; everyone on phones will still see it.
-            </p>
-            <button type="button" className="mc-notice-ok" onClick={() => setShareNotice(false)}>
-              Got it
+      {presentMenu && (
+        <div className="mc-backdrop" onClick={() => setPresentMenu(false)}>
+          <div className="mc-menu" role="menu" onClick={(e) => e.stopPropagation()}>
+            <p className="mc-menu-title">Present to everyone</p>
+            {shareSupported && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setPresentMenu(false);
+                  startShare();
+                }}
+              >
+                <span>Share my screen</span>
+                <CastIcon />
+              </button>
+            )}
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                photosRef.current?.click();
+                setPresentMenu(false);
+              }}
+            >
+              <span>Photos</span>
+              <ImageIcon />
             </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                pdfRef.current?.click();
+                setPresentMenu(false);
+              }}
+            >
+              <span>PDF document</span>
+              <FileDoc />
+            </button>
+            <p className="mc-menu-note">
+              {shareSupported
+                ? 'Slides or Word files? Save them as a PDF first.'
+                : 'Phones can’t share the whole screen, but you can show photos or a PDF — swipe the big screen to flip pages. Slides or Word files? Save them as a PDF first.'}
+            </p>
           </div>
         </div>
       )}
+      <input
+        ref={photosRef}
+        type="file"
+        accept="image/*"
+        multiple
+        hidden
+        onChange={(e) => {
+          const files = [...(e.target.files ?? [])];
+          e.target.value = '';
+          startPresenting(files);
+        }}
+      />
+      <input
+        ref={pdfRef}
+        type="file"
+        accept="application/pdf,.pdf"
+        hidden
+        onChange={(e) => {
+          const files = [...(e.target.files ?? [])];
+          e.target.value = '';
+          startPresenting(files);
+        }}
+      />
 
       {msgMenu && (
         <div className="mc-backdrop" onClick={() => setMsgMenu(null)}>
@@ -591,6 +755,34 @@ function ShareIcon() {
     >
       <path d="M12 3v12M7.5 7.5 12 3l4.5 4.5M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" />
     </svg>
+  );
+}
+
+// Two words in one spot: the current one slides in while the other slides
+// out, and the box glides to the new word's width (the pill's colour change
+// is CSS on the button around it).
+function SwapLabel({ on, off, onLabel }) {
+  const offRef = useRef(null);
+  const onRef = useRef(null);
+  const [width, setWidth] = useState(null);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = on ? onRef.current : offRef.current;
+      if (el) setWidth(el.offsetWidth);
+    };
+    measure();
+    // The web font can land after the first measure and widen the word.
+    document.fonts?.ready.then(measure);
+  }, [on, off, onLabel]);
+  return (
+    <span className="mc-swap" style={width ? { width } : undefined}>
+      <span ref={offRef} className={on ? 'out' : 'in'} aria-hidden={on}>
+        {off}
+      </span>
+      <span ref={onRef} className={on ? 'in' : 'out'} aria-hidden={!on}>
+        {onLabel}
+      </span>
+    </span>
   );
 }
 

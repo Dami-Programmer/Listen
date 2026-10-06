@@ -246,21 +246,25 @@ export default function App() {
     window.history.replaceState({}, '', url);
 
     if (!socket.connected) socket.connect();
-    socket.emit(EVENTS.JOIN_ROOM, { roomId: id, name: name.trim(), avatar, title: title.trim() }, (ack) => {
-      if (ack?.ok) setIceServers(ack.iceServers ?? null);
-      if (ack?.ok && ack.waiting) {
-        // Locked room — sit in the lobby until a moderator admits us.
-        setSelfId(ack.selfId);
-        setWaiting(true);
-      } else if (ack?.ok) {
-        setSelfId(ack.selfId);
-        setState(ack.state);
-        setChat(ack.chat ?? []);
-        setJoined(true);
-      } else {
-        setError(ack?.error ?? 'join failed');
-      }
-    });
+    socket.emit(
+      EVENTS.JOIN_ROOM,
+      { roomId: id, name: name.trim(), avatar, title: title.trim() },
+      (ack) => {
+        if (ack?.ok) setIceServers(ack.iceServers ?? null);
+        if (ack?.ok && ack.waiting) {
+          // Locked room — sit in the lobby until a moderator admits us.
+          setSelfId(ack.selfId);
+          setWaiting(true);
+        } else if (ack?.ok) {
+          setSelfId(ack.selfId);
+          setState(ack.state);
+          setChat(ack.chat ?? []);
+          setJoined(true);
+        } else {
+          setError(ack?.error ?? 'join failed');
+        }
+      },
+    );
   }
 
   function handleLeave() {
@@ -492,6 +496,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
     devices,
     switchDevice,
     startShare,
+    presentStream,
     stopShare,
     mediaError,
     isListener,
@@ -600,6 +605,21 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
       if (!ok) return;
     }
     startShare();
+  }
+  // Same confirm, for presenting photos / a PDF (phones). Returns whether it
+  // went live; on "no" the caller drops its prepared stream.
+  async function handlePresent(stream) {
+    if (otherPresenterId) {
+      const presenter = peerOf(otherPresenterId);
+      const ok = await confirmDialog({
+        title: `${presenter?.name ?? 'Someone'} is presenting`,
+        message: 'Stop their share and present instead?',
+        confirmLabel: 'Present instead',
+        person: presenter,
+      });
+      if (!ok) return false;
+    }
+    return presentStream(stream);
   }
 
   // Participant list sorted host-first, then co-host, speakers, listeners, A-Z.
@@ -866,6 +886,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
             devices,
             switchDevice,
             startShare: handleStartShare,
+            presentStream: handlePresent,
             stopShare,
             mediaError,
             layout,

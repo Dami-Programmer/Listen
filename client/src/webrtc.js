@@ -610,6 +610,21 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode, medi
     if (socket.connected) socket.emit(EVENTS.SCREEN_SHARE, { on: false });
   }, []);
 
+  // Send a screen (or presentation) stream to every peer and tell the room.
+  const publishShare = useCallback(
+    (stream) => {
+      screenStreamRef.current = stream;
+      setScreenStream(stream);
+      // The browser's own "Stop sharing" bar ends the video track.
+      stream.getVideoTracks()[0]?.addEventListener('ended', () => stopShare());
+      for (const { pc } of peersRef.current.values()) {
+        for (const track of stream.getTracks()) pc.addTrack(track, stream);
+      }
+      if (socket.connected) socket.emit(EVENTS.SCREEN_SHARE, { on: true, streamId: stream.id });
+    },
+    [stopShare],
+  );
+
   const startShare = useCallback(async () => {
     if (screenStreamRef.current || !navigator.mediaDevices?.getDisplayMedia) return;
     let stream;
@@ -621,15 +636,20 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode, medi
       }
       return;
     }
-    screenStreamRef.current = stream;
-    setScreenStream(stream);
-    // The browser's own "Stop sharing" bar ends the video track.
-    stream.getVideoTracks()[0]?.addEventListener('ended', () => stopShare());
-    for (const { pc } of peersRef.current.values()) {
-      for (const track of stream.getTracks()) pc.addTrack(track, stream);
-    }
-    if (socket.connected) socket.emit(EVENTS.SCREEN_SHARE, { on: true, streamId: stream.id });
-  }, [stopShare]);
+    publishShare(stream);
+  }, [publishShare]);
+
+  // Present something other than the screen — e.g. photos or a PDF drawn onto
+  // a canvas (canvas.captureStream) on phones, which can't capture the screen.
+  // It travels exactly like a screen share, so every viewer shows it the same.
+  const presentStream = useCallback(
+    (stream) => {
+      if (screenStreamRef.current || !stream) return false;
+      publishShare(stream);
+      return true;
+    },
+    [publishShare],
+  );
 
   // Stop sharing when the call unmounts.
   useEffect(() => () => stopShare(), [stopShare]);
@@ -752,6 +772,7 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode, medi
     devices,
     switchDevice,
     startShare,
+    presentStream,
     stopShare,
     mediaError,
     isListener,
