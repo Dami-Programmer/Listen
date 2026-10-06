@@ -5345,3 +5345,17 @@ img.pj-initials {
     right: 16px;
   }
 }
+
+/* "screen sharing needs a computer" notice on phones */
+.mc-notice h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.mc .mc-menu .mc-notice-ok {
+  margin-top: 16px;
+  justify-content: center;
+  min-height: 44px;
+  border-radius: 12px;
+  background: #7b5cff;
+  font-weight: 600;
+}

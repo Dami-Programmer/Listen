@@ -120,7 +120,11 @@ export default function MobileCall({ call }) {
   const knocker = isModerator ? waiting[0] : null;
   const grid = layout === 'grid';
   const badge = isModerator ? waiting.length + (moderated ? queue.length : 0) : 0;
-  const canShare = !isListener && Boolean(navigator.mediaDevices?.getDisplayMedia);
+  // Phone browsers can't capture the screen at all (no getDisplayMedia), so
+  // the button is always there for speakers but explains that on phones.
+  const showShare = !isListener;
+  const shareSupported = Boolean(navigator.mediaDevices?.getDisplayMedia);
+  const [shareNotice, setShareNotice] = useState(false);
 
   return (
     <main className={`mc${grid ? ' mc-grid' : ''}${isModerator ? '' : ' mc-member'}`}>
@@ -142,7 +146,6 @@ export default function MobileCall({ call }) {
             {host && <Avatar name={host.name} src={host.avatar} size={40} />}
             <span className="mc-title-text">
               <h1>{state?.title || state?.roomId}</h1>
-              <span>{host?.name}</span>
             </span>
           </button>
           {isModerator ? (
@@ -370,11 +373,13 @@ export default function MobileCall({ call }) {
           <MicFilled off={!micOn || isListener} />
         </HoldButton>
 
-        {canShare && (
+        {showShare && (
           <button
             type="button"
             className={`mc-btn mc-cast${sharingScreen ? ' on' : ''}`}
-            onClick={sharingScreen ? stopShare : startShare}
+            onClick={
+              !shareSupported ? () => setShareNotice(true) : sharingScreen ? stopShare : startShare
+            }
             aria-label={sharingScreen ? 'Stop sharing' : 'Share screen'}
           >
             <CastIcon />
@@ -385,6 +390,25 @@ export default function MobileCall({ call }) {
           <PowerIcon />
         </button>
       </footer>
+
+      {shareNotice && (
+        <div className="mc-backdrop" onClick={() => setShareNotice(false)}>
+          <div
+            className="mc-menu mc-notice"
+            role="alertdialog"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2>Screen sharing needs a computer</h2>
+            <p className="mc-note">
+              Phone browsers don&rsquo;t let websites share your screen. To present, join this
+              meeting from a laptop or desktop &mdash; everyone on phones will still see it.
+            </p>
+            <button type="button" className="mc-notice-ok" onClick={() => setShareNotice(false)}>
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
 
       {msgMenu && (
         <div className="mc-backdrop" onClick={() => setMsgMenu(null)}>
