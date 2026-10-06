@@ -1292,6 +1292,10 @@ button.cs-mode-badge:hover {
 
 /* --- control bar ----------------------------------------------------- */
 .cs-controls {
+  /* Its own layer above the stage, so the video tile's drop shadow falls
+     behind the buttons instead of over them. */
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
@@ -1334,10 +1338,11 @@ button.cs-mode-badge:hover {
      color, which would make this icon dark-on-red in light mode. */
   color: #fff;
   border-color: rgba(var(--ink, 255, 255, 255), 0.1);
-  background: linear-gradient(180deg, #6b2536 0%, #461622 100%);
+  /* Dark red at rest, plain red on hover — solid colors so the change fades. */
+  background: #b3261e;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    0 14px 26px -6px rgba(255, 45, 74, 0.45);
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 14px 26px -6px rgba(229, 57, 53, 0.45);
 }
 .cs-controls .cs-hangup svg {
   width: 26px;
@@ -1907,9 +1912,11 @@ button.ghost:hover:not(:disabled) {
     0 14px 26px -8px rgba(0, 0, 0, calc(0.7 * var(--shadow-k, 1)));
 }
 .cs-controls .cs-hangup:hover:not(:disabled) {
+  background: #e53935;
+  filter: none;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    0 18px 32px -6px rgba(255, 45, 74, 0.65);
+    0 18px 32px -6px rgba(229, 57, 53, 0.65);
 }
 .cs-controls button:active:not(:disabled) {
   transform: translateY(-1px) scale(0.95);
@@ -3667,7 +3674,7 @@ img.pj-initials {
 }
 .profile-card {
   position: relative;
-  width: min(340px, 100%);
+  width: min(300px, 100%);
   aspect-ratio: 5 / 8.4;
   max-height: calc(100dvh - 32px);
   border-radius: 34px;
@@ -3879,5 +3886,1462 @@ img.pj-initials {
   .profile-bio,
   .profile-social {
     animation: none;
+  }
+}
+
+/* ============================================================================
+   Light mode contrast pass
+   ----------------------------------------------------------------------------
+   Most outlines and washes above are near-black at 3–14% opacity — enough on
+   the dark page, but they fade into the off-white one. These rules give the
+   logo, buttons and pills real edges in light mode only.
+   ========================================================================== */
+.logo-light {
+  display: none;
+}
+:root[data-theme='light'] .logo-dark {
+  display: none;
+}
+:root[data-theme='light'] .logo-light {
+  display: block;
+}
+
+/* Call controls: solid white tiles with a visible edge and a lift shadow. */
+:root[data-theme='light'] .cs-controls button:not(.cs-hangup):not(.dp-caret) {
+  border-color: rgba(15, 23, 32, 0.16);
+  color: #16202a;
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 1px 2px rgba(15, 23, 32, 0.1),
+    0 8px 18px -8px rgba(15, 23, 32, 0.3);
+}
+:root[data-theme='light'] .cs-controls button.on:not(.cs-hangup) {
+  border-color: rgba(11, 127, 168, 0.45);
+  color: #0a6f94;
+}
+:root[data-theme='light'] .cs-controls button:hover:not(:disabled):not(.cs-hangup) {
+  filter: brightness(0.97);
+}
+/* The mic / camera pill and its ^ arrow. */
+:root[data-theme='light'] .dp {
+  border-color: rgba(15, 23, 32, 0.14);
+  background: #e4e9ee;
+}
+:root[data-theme='light'] .cs-controls .dp-caret {
+  color: #2b3742;
+}
+
+/* Small outlined buttons and pills: invite, theme switch, avatar picker,
+   "Made by", people dropdown. */
+:root[data-theme='light'] .cs-invite-btn,
+:root[data-theme='light'] .theme-btn,
+:root[data-theme='light'] .ap-btn,
+:root[data-theme='light'] .pj-credit,
+:root[data-theme='light'] .cp-people-btn {
+  border: 1px solid rgba(15, 23, 32, 0.18);
+  background: #fff;
+  color: #16202a;
+  box-shadow: 0 1px 2px rgba(15, 23, 32, 0.08);
+}
+:root[data-theme='light'] .cs-invite-btn.on,
+:root[data-theme='light'] .ap-btn.on,
+:root[data-theme='light'] .cp-people-btn.on {
+  border-color: rgba(11, 127, 168, 0.5);
+  background: #e3f5fc;
+}
+:root[data-theme='light'] .pj-credit {
+  color: #3d4955;
+}
+
+/* Room mode badge ("Open" / "Moderated"): deeper tint and a real edge. */
+:root[data-theme='light'] .cs-mode-badge {
+  border-color: rgba(11, 127, 168, 0.35);
+  background: #d5f0fa;
+  color: #0b4f68;
+}
+:root[data-theme='light'] .cs-mode-badge.moderated {
+  border-color: rgba(176, 120, 0, 0.4);
+  background: #fff0c7;
+  color: #6b4a00;
+}
+
+/* Join button while disabled: a clear grey, not a ghostly cyan. */
+:root[data-theme='light'] .pj-join:disabled {
+  opacity: 1;
+  background: #dde3e9;
+  color: #7a8794;
+  box-shadow: none;
+}
+
+/* Chat composer icons and send arrow. */
+:root[data-theme='light'] .cp-tool:not(.cp-send):not(.on) {
+  color: #3d4955;
+}
+:root[data-theme='light'] .cp-send:disabled {
+  opacity: 0.55;
+}
+
+/* --- floating avatar-picker pills ("Upload photo" / "Find a character") ----
+   Layered soft shadows — a tight contact shadow plus a wide, faint ambient
+   one — so the pills look like they hover just above the page. On hover they
+   rise a little higher and the shadow spreads to match. */
+.ap-btn {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, calc(0.35 * var(--shadow-k, 1))),
+    0 6px 16px -4px rgba(0, 0, 0, calc(0.45 * var(--shadow-k, 1))),
+    0 14px 28px -10px rgba(0, 0, 0, calc(0.4 * var(--shadow-k, 1)));
+  transition:
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.2s ease,
+    background-color 0.2s ease;
+}
+.ap-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  filter: none;
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, calc(0.3 * var(--shadow-k, 1))),
+    0 10px 22px -4px rgba(0, 0, 0, calc(0.5 * var(--shadow-k, 1))),
+    0 22px 40px -12px rgba(0, 0, 0, calc(0.45 * var(--shadow-k, 1)));
+}
+.ap-btn:active:not(:disabled) {
+  transform: translateY(0) scale(0.97);
+}
+/* Light mode: the shadow color is a cool slate, not black, so it reads as a
+   soft lift rather than a grey smudge. */
+:root[data-theme='light'] .ap-btn {
+  box-shadow:
+    0 1px 2px rgba(15, 23, 32, 0.1),
+    0 6px 14px -4px rgba(15, 23, 32, 0.2),
+    0 16px 30px -10px rgba(15, 23, 32, 0.24);
+}
+:root[data-theme='light'] .ap-btn:hover:not(:disabled) {
+  box-shadow:
+    0 2px 4px rgba(15, 23, 32, 0.1),
+    0 12px 22px -4px rgba(15, 23, 32, 0.22),
+    0 26px 44px -12px rgba(15, 23, 32, 0.28);
+}
+
+/* --- full screen for screen-share viewers (App.jsx, .cs-fullscreen-btn) ----
+   A glass button in the stage's top-right corner. Like "Pass the mic" it sits
+   faded until you hover the stage, so it never covers the shared screen. */
+.cs-fullscreen-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 5;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(10, 14, 20, 0.5);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0.55;
+  box-shadow: 0 6px 18px -6px rgba(0, 0, 0, 0.6);
+}
+.cs-main-tile:hover .cs-fullscreen-btn,
+.cs-fullscreen-btn:focus-visible {
+  opacity: 1;
+}
+.cs-fullscreen-btn:hover {
+  background: rgba(10, 14, 20, 0.72);
+}
+.cs-fullscreen-btn svg {
+  width: 22px;
+  height: 22px;
+}
+.cs-fullscreen-btn:focus-visible {
+  outline: 2px solid #27c4f3;
+  outline-offset: 2px;
+}
+
+/* In full screen the tile fills the display edge to edge on black. */
+.cs-main-tile.is-full {
+  border-radius: 0;
+  border: none;
+  background: #000;
+}
+.cs-main-tile.is-full > .tile {
+  background: #000;
+}
+.cs-main-tile.is-full .cs-fullscreen-btn {
+  top: 24px;
+  right: 24px;
+}
+
+/* --- Mobile lobby (PreJoin.jsx, phones ≤560px) ------------------------------
+   Single column from the mobile design: back arrow, a portrait camera card,
+   camera / mic / Join in one row, then meeting name + your name. White page
+   in light mode; follows the dark theme otherwise. */
+.prejoin.pjm {
+  padding: 12px 16px 0;
+  background: var(--surface, #10161c);
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+.pjm-back {
+  align-self: flex-start;
+  width: 44px;
+  height: 44px;
+  margin-left: -6px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-muted, #8d98a5);
+  cursor: pointer;
+}
+.pjm-back svg {
+  width: 24px;
+  height: 24px;
+}
+.pjm-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 56px 0 24px;
+}
+.pjm-preview {
+  position: relative;
+  width: min(214px, 58vw);
+  aspect-ratio: 416 / 568;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #151b23;
+}
+.pjm-preview video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: opacity 0.25s ease;
+}
+.pjm-preview video.mirror {
+  transform: scaleX(-1);
+}
+.pjm-preview video.pj-hidden {
+  opacity: 0;
+}
+.pjm-preview .pj-placeholder {
+  padding: 12px;
+  text-align: center;
+  font-size: 13px;
+}
+.pjm-preview .pj-initials {
+  width: 72px;
+  height: 72px;
+  font-size: 26px;
+}
+/* three white bars, top-right — they bounce with your voice */
+.pjm-meter {
+  --level: 0;
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.pjm-meter i {
+  width: 3px;
+  border-radius: 2px;
+  background: #fff;
+  height: calc(6px + var(--level) * 4px);
+  transition: height 0.08s linear;
+}
+.pjm-meter i:nth-child(2) {
+  height: calc(10px + var(--level) * 4px);
+}
+.pjm-meter.off {
+  opacity: 0.45;
+}
+.pjm-row {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-top: 19px;
+}
+.pjm-round {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.16);
+  background: none;
+  color: var(--text-muted, #8d98a5);
+  cursor: pointer;
+}
+.pjm-round svg {
+  width: 22px;
+  height: 22px;
+}
+.pjm-round.off {
+  border-color: transparent;
+  background: #ea4335;
+  color: #fff;
+}
+.pjm-round:disabled {
+  opacity: 0.5;
+}
+.pjm-join {
+  width: 120px;
+  height: 52px;
+  border: 0;
+  border-radius: 999px;
+  background: #1a73e8;
+  color: #fff;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.pjm-join:disabled {
+  background: rgba(26, 115, 232, 0.45);
+  cursor: default;
+}
+.pjm-fields {
+  width: min(320px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 32px;
+}
+.pjm-fields input {
+  height: 48px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.16);
+  background: none;
+  color: var(--text, #f5f7fa);
+  font: inherit;
+  font-size: 16px; /* 16px stops iOS zooming in on focus */
+}
+.pjm-fields input::placeholder {
+  color: var(--text-muted, #8d98a5);
+}
+.pjm-fields input:focus {
+  outline: none;
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 1px #1a73e8;
+}
+.pjm-body .pj-note,
+.pjm-body .err {
+  width: min(320px, 100%);
+  margin: 12px 0 0;
+  text-align: center;
+}
+/* the hairline footer from the design; holds the creator credit */
+.pjm-foot {
+  margin: 0 -16px;
+  padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+  border-top: 1px solid rgba(var(--ink, 255, 255, 255), 0.1);
+  display: flex;
+  justify-content: center;
+}
+.pjm-foot .pj-credit {
+  padding: 0 14px 0 4px;
+}
+.pjm-foot .pj-credit span {
+  display: inline;
+}
+
+/* the ✕ on the creator card — the only way to close it besides Esc */
+.profile-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 2;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(10, 14, 20, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #fff;
+  cursor: pointer;
+}
+.profile-close:hover {
+  background: rgba(10, 14, 20, 0.65);
+}
+.profile-close svg {
+  width: 18px;
+  height: 18px;
+}
+/* Upload photo + Find a character side by side in the mobile lobby */
+.pjm-fields .ap-actions {
+  flex-wrap: nowrap;
+}
+.pjm-fields .ap-btn {
+  white-space: nowrap;
+}
+/* undo the global button padding so icons sit dead-centre */
+.profile-close,
+.pjm-back,
+.pjm-round,
+.pjm-join {
+  padding: 0;
+}
+
+/* --- Mobile call screen (MobileCall.jsx, phones ≤560px) ---------------------
+   Dark in both themes, like the desktop stage: it's video. */
+.mc {
+  position: fixed;
+  inset: 0;
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #000;
+  color: #fff;
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+.mc.mc-grid {
+  background: linear-gradient(180deg, #170b1f 0%, #1f0f2e 55%, #2a1342 100%);
+}
+.mc button {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.mc button:disabled {
+  opacity: 0.35;
+}
+
+/* the big spotlight video, behind everything, with scrims top + bottom so
+   the white text stays readable over any picture */
+.mc-stage {
+  position: absolute;
+  inset: 0;
+}
+.mc-stage::before,
+.mc-stage::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+.mc-stage::before {
+  top: 0;
+  height: 190px;
+  background: linear-gradient(rgba(0, 0, 0, 0.55), transparent);
+}
+.mc-stage::after {
+  bottom: 0;
+  height: 45%;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
+}
+
+/* one video surface: fills its box, avatar on top while the camera's off */
+.mc-tile {
+  position: absolute;
+  inset: 0;
+  background: #14101a;
+}
+.mc-tile .tile {
+  position: absolute;
+  inset: 0;
+  aspect-ratio: auto;
+  border: 0;
+  border-radius: 0;
+  background: #14101a;
+}
+.mc-tile .tile-label,
+.mc-tile .tile-role,
+.mc-tile .tile-mic-off {
+  display: none;
+}
+.mc-tile .tile.tile-screen video {
+  object-fit: contain;
+}
+.mc-camoff {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #1d1626;
+}
+
+/* top bar */
+.mc-top {
+  position: relative;
+  z-index: 3;
+  flex-shrink: 0;
+  padding: calc(14px + env(safe-area-inset-top)) 16px 0;
+}
+.mc-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mc-title-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.mc-title h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 42vw;
+}
+.mc-title-text span {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+}
+.mc .mc-mode {
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: #fff;
+  color: #e5133a;
+  font-size: 14px;
+  font-weight: 700;
+}
+.mc .mc-lock {
+  flex-shrink: 0;
+  margin-left: auto;
+  height: 30px;
+  padding: 0 11px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-size: 14px;
+  font-weight: 600;
+}
+.mc-row2 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  min-height: 46px;
+}
+.mc .mc-layout {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.mc-knock {
+  margin-left: auto;
+  min-width: 0;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px 0 16px;
+  border-radius: 999px;
+  background: rgba(70, 66, 82, 0.62);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: mc-pop 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.mc-knock-text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.65);
+  margin-right: 6px;
+}
+.mc-knock-text b {
+  font-size: 17px;
+  font-weight: 500;
+  color: #fff;
+}
+.mc-knock-text em {
+  font-style: normal;
+  color: #fff;
+}
+.mc .mc-knock-yes {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+}
+.mc .mc-knock-no {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #f0453a;
+  color: #fff;
+}
+.mc-status {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.75);
+}
+.mc-status.err {
+  color: #ff9aa6;
+}
+@keyframes mc-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.96);
+  }
+}
+
+.mc-spacer {
+  flex: 1;
+}
+
+/* grid view */
+.mc-gridwrap {
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
+  margin-top: 24px;
+  max-height: 52%;
+  overflow-y: auto;
+}
+.mc-screen {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  margin-bottom: 2px;
+}
+.mc-gridtiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+}
+.mc-gtile {
+  position: relative;
+  aspect-ratio: 247 / 335;
+  overflow: hidden;
+}
+.mc-gtile.speaking::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 0 2px #7ee787;
+  pointer-events: none;
+}
+.mc-gname {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  right: 50px;
+  z-index: 1;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+.mc-gmuted,
+.mc-gactions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  display: flex;
+  gap: 6px;
+}
+.mc-gmuted svg,
+.mc-gactions svg {
+  width: 18px;
+  height: 18px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
+}
+.mc .mc-gactions button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.35);
+}
+.mc-gactions {
+  animation: mc-pop 0.2s ease-out both;
+}
+
+/* spotlight: thumbnails stacked on the right, above the bottom bar */
+.mc-strip {
+  position: absolute;
+  z-index: 3;
+  right: 8px;
+  bottom: calc(76px + env(safe-area-inset-bottom));
+  max-height: 46%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  scrollbar-width: none;
+}
+.mc .mc-thumb {
+  position: relative;
+  flex-shrink: 0;
+  width: 70px;
+  height: 80px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.mc-thumb.speaking {
+  box-shadow: 0 0 0 2px #7ee787;
+}
+.mc-thumb .mc-camoff .avatar {
+  width: 36px !important;
+  height: 36px !important;
+  font-size: 13px !important;
+}
+
+/* TikTok-Live-style chat feed: newest lines solid at the bottom, older ones
+   fading up into nothing through the mask. Still a normal scroller. */
+/* tall enough for about four messages: the newest at full strength, the
+   4th already fading into the top */
+.mc-feedwrap {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  height: 196px; /* 4 × (38px message + 8px gap) + padding */
+  max-height: 40%;
+  display: flex;
+}
+.mc-grid .mc-feedwrap {
+  margin-top: auto;
+}
+.mc-feed {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 16px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  scrollbar-width: none;
+  /* 4 slots, bottom up: 100% -> ~85% -> ~55% -> ~20%, then gone */
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 0, 0, 0.2) 12%,
+    rgba(0, 0, 0, 0.55) 37%,
+    rgba(0, 0, 0, 0.88) 62%,
+    #000 80%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 0, 0, 0.2) 12%,
+    rgba(0, 0, 0, 0.55) 37%,
+    rgba(0, 0, 0, 0.88) 62%,
+    #000 80%
+  );
+}
+.mc-feed::-webkit-scrollbar {
+  display: none;
+}
+/* reading back through history: keep only a soft fade at the very top */
+.mc-feed.browsing {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 18%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 18%);
+}
+.mc-feed > :first-child {
+  margin-top: auto; /* few messages: they still sit at the bottom */
+}
+.mc-feedwrap.narrow .mc-feed {
+  padding-right: 92px; /* leave room for the thumbnail column */
+}
+.mc-in {
+  animation: mc-msg-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes mc-msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+.mc .mc-newmsgs {
+  position: absolute;
+  left: 16px;
+  bottom: 6px;
+  z-index: 1;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #1b1324;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  animation: mc-pop 0.25s ease-out both;
+}
+.mc-msg {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+.mc-msg > div {
+  min-width: 0;
+}
+.mc-msg b {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
+}
+.mc-msg p {
+  margin: 1px 0 0;
+  font-size: 15px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.mc-msg .mc-sticker {
+  font-size: 36px;
+  line-height: 1.1;
+}
+.mc-img {
+  display: block;
+  max-width: 160px;
+  max-height: 160px;
+  margin-top: 4px;
+  border-radius: 10px;
+}
+.mc-file {
+  color: #9ecbff;
+  font-size: 14px;
+}
+.mc-join,
+.mc-typing {
+  margin: 0;
+  padding-left: 42px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+.mc-join b {
+  font-weight: 500;
+  margin-right: 10px;
+}
+.mc-typing {
+  color: rgba(255, 255, 255, 0.6);
+  font-style: italic;
+}
+
+.mc .mc-pass {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(78px + env(safe-area-inset-bottom));
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #1b1324;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* bottom bar */
+.mc-bar {
+  position: relative;
+  z-index: 4;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px calc(12px + env(safe-area-inset-bottom));
+}
+.mc .mc-people {
+  position: relative;
+  width: 32px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.mc-badge {
+  position: absolute;
+  top: -3px;
+  right: -4px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #ff3b5c;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 17px;
+  text-align: center;
+}
+.mc-comment {
+  flex: 1;
+  min-width: 0;
+}
+.mc-comment input {
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.13);
+  color: #fff;
+  font: inherit;
+  font-size: 16px; /* no iOS zoom on focus */
+}
+.mc-comment input::placeholder {
+  color: rgba(255, 255, 255, 0.7);
+}
+.mc-comment input:focus {
+  outline: none;
+  background: rgba(255, 255, 255, 0.2);
+}
+.mc .mc-btn {
+  position: relative;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+  transition: transform 0.15s ease;
+}
+.mc .mc-btn:active {
+  transform: scale(0.9);
+}
+.mc .mc-cam {
+  border-radius: 10px;
+  background: linear-gradient(135deg, #c77dff, #7b5cff);
+}
+.mc .mc-mic {
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 30%, #fff, #cfe3ff);
+  color: #2d7cf0;
+}
+.mc .mc-cam.off,
+.mc .mc-mic.off {
+  background: #5a5463;
+  color: #fff;
+}
+.mc .mc-hand {
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+}
+.mc .mc-hand.on {
+  background: #ffc531;
+  color: #1b1324;
+}
+.mc .mc-cast.on {
+  border-radius: 10px;
+  background: rgba(58, 160, 255, 0.25);
+}
+.mc .mc-leave {
+  border-radius: 10px;
+  background: #f0453a;
+  box-shadow:
+    0 0 0 2px #fff inset,
+    0 0 0 4px #f0453a inset;
+}
+
+/* long-press device menu + people sheet */
+.mc-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(0, 0, 0, 0.45);
+  animation: mc-fade 0.2s ease-out both;
+}
+@keyframes mc-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes mc-rise {
+  from {
+    transform: translateY(100%);
+  }
+}
+.mc-menu,
+.mc-sheet {
+  width: 100%;
+  background: #1f1a27;
+  border-radius: 20px 20px 0 0;
+  padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
+  animation: mc-rise 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.mc-menu-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+}
+.mc .mc-menu button {
+  width: 100%;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px;
+  border-radius: 12px;
+  font-size: 16px;
+  text-align: left;
+}
+.mc .mc-menu button.on {
+  background: rgba(123, 92, 255, 0.22);
+}
+.mc-menu button svg {
+  color: #a98bff;
+  flex-shrink: 0;
+}
+.mc-menu-note {
+  margin: 8px 12px 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+}
+.mc-sheet {
+  max-height: 80dvh;
+  overflow-y: auto;
+}
+.mc-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.mc-sheet h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.mc .mc-sheet-x {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+}
+.mc .mc-invite {
+  width: 100%;
+  height: 44px;
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 12px;
+  background: #7b5cff;
+  font-weight: 600;
+}
+.mc-sheet h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 20px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mc .mc-link {
+  color: #ff8a9a;
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.mc-note {
+  margin: 10px 0 0;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+}
+.mc-person {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.mc-pname {
+  flex: 1;
+  min-width: 120px;
+  font-size: 15px;
+  display: flex;
+  flex-direction: column;
+}
+.mc-role {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+}
+.mc-role.host {
+  color: #ffd54a;
+}
+.mc-role.cohost {
+  color: #a9b9ff;
+}
+.mc-role.speaker {
+  color: #7ee787;
+}
+.mc-qpos {
+  width: 24px;
+  text-align: center;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.6);
+}
+.mc-pacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mc .mc-pacts button {
+  height: 30px;
+  min-width: 30px;
+  padding: 0 11px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 13px;
+}
+.mc .mc-pacts button.go {
+  background: #7b5cff;
+}
+.mc .mc-pacts button.bad {
+  color: #ff8a9a;
+}
+
+/* hold one of your own messages: edit / delete */
+.mc-msg {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  border-radius: 12px;
+  transition: background-color 0.2s ease;
+}
+.mc-msg.held {
+  background: rgba(255, 255, 255, 0.14);
+}
+.mc-edited {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+}
+.mc .mc-menu button.danger {
+  color: #ff8a9a;
+}
+.mc .mc-menu button.danger svg {
+  color: #ff8a9a;
+}
+.mc-edit textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font: inherit;
+  font-size: 16px;
+  resize: none;
+}
+.mc-edit textarea:focus {
+  outline: none;
+  border-color: #7b5cff;
+}
+.mc-edit-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.mc .mc-edit-row button {
+  flex: 1;
+  justify-content: center;
+  min-height: 44px;
+  background: rgba(255, 255, 255, 0.1);
+  font-weight: 600;
+}
+.mc .mc-edit-row button.go {
+  background: #7b5cff;
+}
+.mc-menu-quote {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  padding: 0 12px 8px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+/* 📎 inside the "Add comment…" pill: photos + files */
+.mc-comment {
+  position: relative;
+}
+.mc-comment input:not([type='file']) {
+  padding-left: 11px;
+  padding-right: 29px;
+}
+.mc .mc-attach {
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.85);
+}
+.mc .mc-attach svg {
+  width: 19px;
+  height: 19px;
+}
+.mc .mc-attach.busy {
+  opacity: 1;
+  animation: mc-pulse 0.9s ease-in-out infinite alternate;
+}
+@keyframes mc-pulse {
+  to {
+    opacity: 0.3;
+  }
+}
+.mc-attach-err {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(240, 69, 58, 0.92);
+  font-size: 13px;
+  animation: mc-pop 0.25s ease-out both;
+}
+.mc-menu button svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* invite pop-up (MobileCall InviteSheet) */
+.mc .mc-title-btn {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+.mc-invite-sheet h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.mc-invite-link {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.mc-invite-link input {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+}
+.mc .mc-invite-link button {
+  flex-shrink: 0;
+  min-height: 44px;
+  width: auto;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.12);
+  font-weight: 600;
+}
+.mc .mc-invite-link button.on {
+  background: #2fbf71;
+}
+.mc .mc-invite-sheet .mc-invite {
+  justify-content: center;
+}
+.mc .mc-menu .mc-sheet-x {
+  width: 36px;
+  min-height: 36px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 50%;
+}
+.mc .mc-invite-sheet .mc-invite {
+  min-height: 44px;
+  border-radius: 12px;
+  background: #7b5cff;
+}
+.mc .mc-invite-sheet button svg {
+  color: currentColor;
+}
+
+/* mobile waiting room (WaitingScreen on phones) */
+.pjm-wait-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  padding-bottom: 60px;
+}
+.pjm-wait h1 {
+  margin: 18px 0 0;
+  font-size: 24px;
+  color: var(--text, #f5f7fa);
+}
+.pjm-wait p {
+  margin: 0;
+  color: var(--text-muted, #8d98a5);
+  font-size: 16px;
+}
+.pjm-wait code {
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(var(--ink, 255, 255, 255), 0.06);
+  color: var(--text-soft, #c9d1d9);
+  font-size: 14px;
+}
+.pjm-wait-dots {
+  display: flex;
+  gap: 8px;
+}
+.pjm-wait-dots i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #1a73e8;
+  animation: pjm-wait-bounce 1.2s ease-in-out infinite;
+}
+.pjm-wait-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.pjm-wait-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes pjm-wait-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  30% {
+    transform: translateY(-10px);
+    opacity: 1;
+  }
+}
+.pjm .pjm-wait-cancel {
+  margin-top: 22px;
+  width: 160px;
+  height: 48px;
+  padding: 0;
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.16);
+  border-radius: 999px;
+  background: none;
+  color: var(--text, #f5f7fa);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+/* members' top row: ✋ raise hand + layout swap (MobileCall) */
+.mc .mc-tophand {
+  position: relative;
+  flex-shrink: 0;
+  margin-left: auto;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(70, 66, 82, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #fff;
+  transition:
+    background-color 0.2s ease,
+    transform 0.15s ease;
+}
+.mc .mc-tophand:active {
+  transform: scale(0.9);
+}
+.mc .mc-tophand:disabled {
+  opacity: 0.55;
+}
+.mc .mc-tophand.on {
+  background: #ffc531;
+  color: #1b1324;
+}
+.mc .mc-tophand svg {
+  width: 20px;
+  height: 20px;
+}
+.mc-title .mc-layout {
+  margin-left: 18px;
+}
+.mc .mc-mic.locked {
+  opacity: 0.6;
+}
+/* members have no second header row — start the grid where the host's does */
+.mc-member .mc-gridwrap {
+  margin-top: 82px;
+}
+
+/* chat photo -> full-screen viewer on phones */
+.mc .mc-imgbtn {
+  display: block;
+  margin-top: 4px;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.mc-imgbtn .mc-img {
+  margin-top: 0;
+}
+@media (max-width: 560px) {
+  .img-viewer {
+    padding: 16px;
+  }
+  .img-viewer-dl {
+    top: calc(16px + env(safe-area-inset-top));
+    right: 16px;
   }
 }

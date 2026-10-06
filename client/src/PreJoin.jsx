@@ -4,10 +4,12 @@
 // handed to the call via onSubmit so the call opens exactly as previewed.
 
 import { useEffect, useRef, useState } from 'react';
-import { Cam, CamOff, Mic, MicOff, Speaker } from './icons.jsx';
+import { ArrowLeft, Cam, CamOff, Mic, MicOff, Speaker } from './icons.jsx';
 import AvatarPicker from './AvatarPicker.jsx';
 import Select from './Select.jsx';
+import useIsMobile from './useIsMobile.js';
 import ThemeToggle from './ThemeToggle.jsx';
+import Logo from './Logo.jsx';
 import ProfileCard, { PROFILE } from './ProfileCard.jsx';
 
 // A link with ?profile in it (https://your-site/?profile) opens the creator card.
@@ -48,15 +50,19 @@ const canPickSpeaker =
 
 export default function PreJoin({
   roomId,
+  invited = false,
   name,
+  title = '',
   avatar,
   error,
   note,
   onRoomId,
   onName,
+  onTitle,
   onAvatar,
   onSubmit,
 }) {
+  const isMobile = useIsMobile();
   const videoRef = useRef(null);
   const meterRef = useRef(null);
   const [stream, setStream] = useState(null);
@@ -107,7 +113,7 @@ export default function PreJoin({
 
   useEffect(() => {
     if (videoRef.current) videoRef.current.srcObject = stream;
-  }, [stream]);
+  }, [stream, isMobile]);
 
   // Device labels only show up once permission is granted, so list them after
   // the preview opens — and again whenever something is plugged in / out.
@@ -156,7 +162,7 @@ export default function PreJoin({
       cancelAnimationFrame(raf);
       ctx.close();
     };
-  }, [stream, micOn]);
+  }, [stream, micOn, isMobile]);
 
   // Play a short two-note chime through the chosen speaker.
   async function testSpeaker() {
@@ -217,10 +223,118 @@ export default function PreJoin({
     }
   }
 
+  if (isMobile) {
+    return (
+      <main className="prejoin pjm">
+        <button
+          type="button"
+          className="pjm-back"
+          onClick={() => window.history.back()}
+          aria-label="Back"
+        >
+          <ArrowLeft />
+        </button>
+        {profileOpen && <ProfileCard onClose={closeProfile} />}
+
+        <form className="pjm-body" onSubmit={handleSubmit}>
+          <div className="pjm-preview">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className={`mirror${showVideo ? '' : ' pj-hidden'}`}
+            />
+            {!showVideo && (
+              <div className="pj-placeholder">
+                {mediaError ? (
+                  <p className="pj-media-err">{mediaError}</p>
+                ) : !stream ? (
+                  <p>Starting camera…</p>
+                ) : avatar ? (
+                  <img className="pj-initials" src={avatar} alt="" />
+                ) : (
+                  <span className="pj-initials">{initials(name)}</span>
+                )}
+              </div>
+            )}
+            <div className={`pjm-meter${micOn ? '' : ' off'}`} ref={meterRef} aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </div>
+          </div>
+
+          <div className="pjm-row">
+            <button
+              type="button"
+              className={`pjm-round${camOn ? '' : ' off'}`}
+              onClick={() => setCamOn((v) => !v)}
+              disabled={!stream}
+              aria-label={camOn ? 'Turn camera off' : 'Turn camera on'}
+            >
+              {camOn ? <Cam /> : <CamOff />}
+            </button>
+            <button
+              type="button"
+              className={`pjm-round${micOn ? '' : ' off'}`}
+              onClick={() => setMicOn((v) => !v)}
+              disabled={!stream}
+              aria-label={micOn ? 'Turn microphone off' : 'Turn microphone on'}
+            >
+              {micOn ? <Mic /> : <MicOff />}
+            </button>
+            <button
+              type="submit"
+              className="pjm-join"
+              // Whoever starts the meeting has to name it; invitees only need their name.
+              disabled={!name.trim() || (!invited && !title.trim())}
+            >
+              Join
+            </button>
+          </div>
+
+          <div className="pjm-fields">
+            {/* An invite link already names the meeting — only the creator sets it. */}
+            {!invited && (
+              <input
+                value={title}
+                onChange={(e) => onTitle(e.target.value)}
+                placeholder="Meeting name"
+                aria-label="Meeting name"
+                maxLength={80}
+                autoComplete="off"
+              />
+            )}
+            <input
+              value={name}
+              onChange={(e) => onName(e.target.value)}
+              placeholder="Your name"
+              aria-label="Your name"
+              autoComplete="off"
+            />
+            <AvatarPicker name={name} avatar={avatar} onChange={onAvatar} />
+          </div>
+          {note && <p className="pj-note">{note}</p>}
+          {error && <p className="err">{error}</p>}
+        </form>
+
+        <footer className="pjm-foot">
+          <button type="button" className="pj-credit" onClick={() => setProfileOpen(true)}>
+            <img src={PROFILE.photo} alt="" />
+            <span>
+              Made by <strong>{PROFILE.name}</strong>
+            </span>
+          </button>
+        </footer>
+      </main>
+    );
+  }
+
   return (
     <main className="prejoin">
       <header className="pj-top">
-        <img className="cs-logo" src="/logo.svg" alt="Listen" />
+        <Logo />
         <div className="pj-top-right">
           {/* the creator credit — opens the profile card */}
           <button type="button" className="pj-credit" onClick={() => setProfileOpen(true)}>
@@ -353,20 +467,27 @@ export default function PreJoin({
 
         <section className="pj-right">
           <h1>Ready to join?</h1>
-          <p className="pj-sub">Check your camera and mic, then hop in.</p>
+          <p className="pj-sub">
+            {invited
+              ? 'You’ve been invited to a meeting. Check your camera and mic, then hop in.'
+              : 'Check your camera and mic, then hop in.'}
+          </p>
 
           {note && <p className="pj-note">{note}</p>}
 
           <form className="pj-form" onSubmit={handleSubmit}>
-            <label>
-              <span>Meeting code</span>
-              <input
-                value={roomId}
-                onChange={(e) => onRoomId(e.target.value)}
-                placeholder="Leave empty to start a new meeting"
-                autoComplete="off"
-              />
-            </label>
+            {/* From an invite link the meeting is already chosen — no code box. */}
+            {!invited && (
+              <label>
+                <span>Meeting code</span>
+                <input
+                  value={roomId}
+                  onChange={(e) => onRoomId(e.target.value)}
+                  placeholder="Leave empty to start a new meeting"
+                  autoComplete="off"
+                />
+              </label>
+            )}
             <label>
               <span>Your name</span>
               <input

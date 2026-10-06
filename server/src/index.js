@@ -234,7 +234,7 @@ io.on('connection', (socket) => {
     iceReady.then(() => handleJoin(payload, ack));
   });
 
-  function handleJoin({ roomId, name, avatar } = {}, ack) {
+  function handleJoin({ roomId, name, avatar, title } = {}, ack) {
     if (socket.disconnected) return; // left while we waited
     const id = String(roomId || '').trim();
     if (!id) {
@@ -263,7 +263,7 @@ io.on('connection', (socket) => {
 
     joinedRoomId = id;
     socket.join(id);
-    const room = addParticipant(id, socket.id, name, avatar);
+    const room = addParticipant(id, socket.id, name, avatar, title);
     console.log(
       `[room ${id}] + ${socket.id} (${room.participants[socket.id].name})` +
         `${room.hostId === socket.id ? ' [host]' : ''} — ${Object.keys(room.participants).length} in room`,

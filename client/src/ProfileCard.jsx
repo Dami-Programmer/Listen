@@ -4,12 +4,12 @@
 //
 // Opens from the "Made by …" credit in the lobby, or straight away when
 // someone visits a link with ?profile in it (e.g. https://your-site/?profile).
-// A click anywhere closes it (except on a social icon, which opens that link),
-// and so does Esc — animating out the same way the image viewer and confirm
+// The ✕ in the top-right corner closes it, and so does Esc — animating out the same way the image viewer and confirm
 // dialog do.
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { X } from './icons.jsx';
 
 // ---- edit your details here -------------------------------------------------
 export const PROFILE = {
@@ -62,9 +62,6 @@ export default function ProfileCard({ onClose }) {
   return createPortal(
     <div
       className={`profile-backdrop${closing ? ' closing' : ''}`}
-      onClick={(e) => {
-        if (!e.target.closest('a')) setClosing(true);
-      }}
       onAnimationEnd={(e) => {
         if (closing && e.target === e.currentTarget) onClose();
       }}
@@ -78,6 +75,14 @@ export default function ProfileCard({ onClose }) {
         ref={(el) => el?.focus()}
       >
         <img className="profile-photo" src={PROFILE.photo} alt="" />
+        <button
+          type="button"
+          className="profile-close"
+          onClick={() => setClosing(true)}
+          aria-label="Close"
+        >
+          <X />
+        </button>
         <div className="profile-blur" aria-hidden="true" />
 
         <div className="profile-info">

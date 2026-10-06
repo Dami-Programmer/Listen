@@ -24,9 +24,12 @@ import { ConfirmHost, confirmDialog } from './ConfirmDialog.jsx';
 import InviteCard from './InviteCard.jsx';
 import DevicePicker from './DevicePicker.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
+import Logo from './Logo.jsx';
 import { PipView } from './Pip.jsx';
 import { usePip } from './usePip.js';
 import { newMeetingCode } from './meeting.js';
+import MobileCall from './MobileCall.jsx';
+import useIsMobile from './useIsMobile.js';
 import {
   Cam,
   CamOff,
@@ -37,8 +40,10 @@ import {
   Hand,
   LinkIcon,
   Lock,
+  Maximize,
   Mic,
   MicOff,
+  Minimize,
   People,
   Phone,
   Screen,
@@ -77,27 +82,6 @@ function RolePill({ role }) {
   return <span className={`pill pill-${role}`}>{ROLE_LABEL[role] ?? role}</span>;
 }
 
-// The profile picture is remembered for this browser TAB (sessionStorage),
-// so leaving and rejoining keeps it — but an invite link opened in another tab
-// starts clean instead of showing whoever used this browser last. Storage can
-// be unavailable (private mode, blocked site data), so it's best-effort.
-const AVATAR_KEY = 'listen.avatar';
-function readSavedAvatar() {
-  try {
-    return sessionStorage.getItem(AVATAR_KEY);
-  } catch {
-    return null;
-  }
-}
-function saveAvatar(avatar) {
-  try {
-    if (avatar) sessionStorage.setItem(AVATAR_KEY, avatar);
-    else sessionStorage.removeItem(AVATAR_KEY);
-  } catch {
-    // not remembered — still used for this join
-  }
-}
-
 // Room id lives in the URL (?room=…). No accounts, no persistence.
 function readRoomFromUrl() {
   return new URLSearchParams(window.location.search).get('room') ?? '';
@@ -105,8 +89,14 @@ function readRoomFromUrl() {
 
 export default function App() {
   const [roomId, setRoomId] = useState(readRoomFromUrl);
+  // Opened from an invite link (?room=… already in the address bar): the
+  // meeting is fixed, so the lobby hides the code box entirely. Leaving the
+  // call clears it, back to a normal lobby.
+  const [invited, setInvited] = useState(() => Boolean(readRoomFromUrl()));
   const [name, setName] = useState('');
-  const [avatar, setAvatar] = useState(readSavedAvatar);
+  // Meeting name — typed by whoever starts a new meeting (mobile lobby).
+  const [title, setTitle] = useState('');
+  const [avatar, setAvatar] = useState(null);
   const [joined, setJoined] = useState(false);
   const [selfId, setSelfId] = useState(null);
   const [state, setState] = useState(null); // latest room-state snapshot
@@ -256,7 +246,7 @@ export default function App() {
     window.history.replaceState({}, '', url);
 
     if (!socket.connected) socket.connect();
-    socket.emit(EVENTS.JOIN_ROOM, { roomId: id, name: name.trim(), avatar }, (ack) => {
+    socket.emit(EVENTS.JOIN_ROOM, { roomId: id, name: name.trim(), avatar, title: title.trim() }, (ack) => {
       if (ack?.ok) setIceServers(ack.iceServers ?? null);
       if (ack?.ok && ack.waiting) {
         // Locked room — sit in the lobby until a moderator admits us.
@@ -287,9 +277,10 @@ export default function App() {
     // meeting code, plus the ?room= in the address bar, so the next person at
     // this screen starts from scratch.
     setName('');
+    setTitle('');
     setAvatar(null);
-    saveAvatar(null);
     setRoomId('');
+    setInvited(false);
     const url = new URL(window.location.href);
     url.searchParams.delete('room');
     window.history.replaceState({}, '', url);
@@ -303,16 +294,16 @@ export default function App() {
     return (
       <PreJoin
         roomId={roomId}
+        invited={invited}
         name={name}
+        title={title}
         avatar={avatar}
         error={error}
         note={removedNote}
         onRoomId={setRoomId}
         onName={setName}
-        onAvatar={(a) => {
-          setAvatar(a);
-          saveAvatar(a);
-        }}
+        onTitle={setTitle}
+        onAvatar={setAvatar}
         onSubmit={handleJoin}
       />
     );
@@ -334,9 +325,30 @@ export default function App() {
 
 // --- the locked-room lobby -----------------------------------------------
 function WaitingScreen({ roomId, onCancel }) {
+  const isMobile = useIsMobile();
+  // Phones: same white page as the mobile lobby.
+  if (isMobile) {
+    return (
+      <main className="prejoin pjm pjm-wait" aria-live="polite">
+        <div className="pjm-wait-body">
+          <div className="pjm-wait-dots" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </div>
+          <h1>Knock knock 👋</h1>
+          <p>Waiting for the host to let you in.</p>
+          <code>{roomId}</code>
+          <button type="button" className="pjm-wait-cancel" onClick={onCancel}>
+            Cancel
+          </button>
+        </div>
+      </main>
+    );
+  }
   return (
     <main className="page">
-      <img className="cs-logo" src="/logo.svg" alt="Listen" />
+      <Logo />
       <p className="tagline">Moderated group calls.</p>
 
       <div className="card join" aria-live="polite">
@@ -395,6 +407,7 @@ function useExitable() {
 // --- the in-call screen ----------------------------------------------------
 function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceServers }) {
   const participants = state?.participants ?? [];
+  const isMobile = useIsMobile();
   // Side panel (chat, participants, moderation) — toggled by the chat button,
   // closed by it or by the panel's ✕. Slides out before it disappears.
   const panel = useExitable();
@@ -425,6 +438,24 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
       document.removeEventListener('keydown', onKey);
     };
   }, [peopleOpen, setPeopleClosing]);
+  // Tablet / desktop: a tap or click anywhere outside the chat panel closes
+  // it. Not the chat button (it toggles the panel itself), and not things
+  // drawn over the page on the panel's behalf — chat toasts (they open it),
+  // the photo viewer and confirm dialogs.
+  const panelRef = useRef(null);
+  const chatBtnRef = useRef(null);
+  const { setClosing: setPanelClosing } = panel; // stable setter
+  useEffect(() => {
+    if (!panelOpen) return undefined;
+    function onDown(e) {
+      const t = e.target;
+      if (panelRef.current?.contains(t) || chatBtnRef.current?.contains(t)) return;
+      if (t.closest?.('.toasts, .img-viewer, .confirm-backdrop')) return;
+      setPanelClosing(true);
+    }
+    document.addEventListener('pointerdown', onDown);
+    return () => document.removeEventListener('pointerdown', onDown);
+  }, [panelOpen, setPanelClosing]);
   // Unread badge on the chat button: other people's messages you haven't seen
   // yet. Opening the panel marks them all read.
   //
@@ -688,6 +719,43 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
     : spotlightName;
   const pillMuted = presenting ? Boolean(presenterCam?.micOff) : spotlightMuted;
 
+  // Full screen for people WATCHING someone else's screen share (the
+  // presenter doesn't need to see their own screen bigger). The button blows
+  // up the whole stage tile — share + presenter's name pill — and Esc or the
+  // button again brings it back. Double-clicking the share does the same.
+  const stageRef = useRef(null);
+  const [stageFull, setStageFull] = useState(false);
+  const viewingShare = presenting && spotlight?.key !== 'me';
+  useEffect(() => {
+    const sync = () =>
+      setStageFull(
+        Boolean(stageRef.current) &&
+          (document.fullscreenElement ?? document.webkitFullscreenElement) === stageRef.current,
+      );
+    document.addEventListener('fullscreenchange', sync);
+    document.addEventListener('webkitfullscreenchange', sync);
+    return () => {
+      document.removeEventListener('fullscreenchange', sync);
+      document.removeEventListener('webkitfullscreenchange', sync);
+    };
+  }, []);
+  const exitFullscreen = () =>
+    (document.exitFullscreen ?? document.webkitExitFullscreen)?.call(document);
+  // The presenter stopped sharing while we were full screen: step back out
+  // rather than leave a full-screen camera tile behind.
+  useEffect(() => {
+    if (!viewingShare && stageFull) exitFullscreen();
+  }, [viewingShare, stageFull]);
+  function toggleStageFull() {
+    const el = stageRef.current;
+    if (!el) return;
+    if (stageFull) exitFullscreen();
+    else if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    // iPhone Safari can only full-screen a <video> itself.
+    else el.querySelector('video')?.webkitEnterFullscreen?.();
+  }
+
   // Who the floating mini-call (Pip.jsx) shows: the presenter's screen, or the
   // spotlight person — as their avatar on a card while their camera is off.
   const pipPerson = !spotlight
@@ -761,6 +829,75 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
   // shown separately, top-right).
   const otherPeople = participants.filter((p) => p.id !== selfId);
 
+  // Phones get their own call screen (MobileCall.jsx) over the same call state.
+  if (isMobile) {
+    return (
+      <>
+        <MobileCall
+          call={{
+            state,
+            chat,
+            typers,
+            selfId,
+            connected,
+            onLeave,
+            media,
+            participants,
+            self,
+            isHost,
+            isModerator,
+            moderated,
+            locked,
+            waiting,
+            queue,
+            queued,
+            handRaised,
+            myQueuePos,
+            isListener,
+            canPassMic,
+            cameraTiles,
+            screenTiles,
+            presenting,
+            micOn,
+            camOn,
+            sharingScreen,
+            toggleMic,
+            toggleCam,
+            devices,
+            switchDevice,
+            startShare: handleStartShare,
+            stopShare,
+            mediaError,
+            layout,
+            toggleLayout,
+            micOf,
+            camOf,
+            cohostId,
+            act: {
+              changeMode,
+              toggleLock,
+              admit,
+              deny,
+              grantFloor,
+              revokeFloor,
+              dismissHand,
+              moveInQueue,
+              forceMute,
+              removeParticipant,
+              clearFloor,
+              makeCohost,
+              dropCohost,
+              raiseHand,
+              lowerHand,
+              passMic,
+            },
+          }}
+        />
+        <ConfirmHost />
+      </>
+    );
+  }
+
   return (
     <main className="callscreen">
       {/* Left column: everything that was already on screen — topbar, video,
@@ -769,10 +906,10 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
       <div className="cs-stage-col">
         <header className="cs-topbar">
           <div className="cs-brand-col">
-            <img className="cs-logo" src="/logo.svg" alt="Listen" />
+            <Logo />
           </div>
           <div className="cs-title-row">
-            <h1>{state?.roomId}</h1>
+            <h1>{state?.title || state?.roomId}</h1>
             <button
               className={`cs-invite-btn${inviteOpen ? ' on' : ''}`}
               onClick={() => setInviteOpen((v) => !v)}
@@ -851,7 +988,11 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
               {!selfInLastTile && selfView}
             </div>
           ) : (
-            <div className="cs-main-tile">
+            <div
+              className={`cs-main-tile${stageFull ? ' is-full' : ''}`}
+              ref={stageRef}
+              onDoubleClick={viewingShare ? toggleStageFull : undefined}
+            >
               {spotlight && (
                 <VideoTile
                   sinkId={media?.speakerId}
@@ -868,6 +1009,17 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
                   <span className="cs-name-icon">{pillMuted ? <MicOff /> : <Mic />}</span>
                   {pillMuted ? `${pillName} is muted` : pillName}
                 </div>
+              )}
+              {viewingShare && (
+                <button
+                  type="button"
+                  className="cs-fullscreen-btn"
+                  onClick={toggleStageFull}
+                  aria-label={stageFull ? 'Exit full screen' : 'Full screen'}
+                  title={stageFull ? 'Exit full screen (Esc)' : 'Full screen'}
+                >
+                  {stageFull ? <Minimize /> : <Maximize />}
+                </button>
               )}
               {!presenting && stripTiles.length > 0 && (
                 <div className="cs-strip">
@@ -1015,6 +1167,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
             </button>
           </div>
           <button
+            ref={chatBtnRef}
             className={`cs-chat-btn${panelOpen ? ' on' : ''}`}
             onClick={panel.toggle}
             aria-label={[
@@ -1085,6 +1238,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
           the messages and composer (ChatPanel). */}
       {panel.open && (
         <aside
+          ref={panelRef}
           // `.closing` swaps the slide-in for the slide-out; when that ends,
           // onExitEnd removes the panel for real.
           className={`cs-panel${panel.closing ? ' closing' : ''}`}

@@ -42,6 +42,7 @@ const CHAT_HISTORY = 100;
 
 function createRoom() {
   return {
+    title: '', // meeting name typed by whoever created the room
     hostId: null,
     cohostId: null,
     locked: true, // a moderator admits newcomers (the first joiner bypasses)
@@ -104,10 +105,12 @@ export function setCam(room, socketId, on) {
  * through `addWaiting` / `admitWaiting` instead.
  * Returns the room.
  */
-export function addParticipant(roomId, socketId, name, avatar) {
+export function addParticipant(roomId, socketId, name, avatar, title) {
   let room = rooms.get(roomId);
   if (!room) {
     room = createRoom();
+    // Only the creator names the meeting; later joiners can't rename it.
+    room.title = String(title ?? '').trim().slice(0, 80);
     rooms.set(roomId, room);
   }
   attach(room, socketId, name, avatar);
@@ -516,6 +519,7 @@ export function snapshot(roomId) {
   if (!room) return null;
   return {
     roomId,
+    title: room.title,
     hostId: room.hostId,
     cohostId: room.cohostId,
     locked: room.locked,

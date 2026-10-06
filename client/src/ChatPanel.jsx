@@ -24,6 +24,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CHAT_FILE_MAX_BYTES, EVENTS, STICKERS } from '@listen/shared';
 import { socket } from './socket.js';
+import { formatBytes, prepareFile } from './chatFiles.js';
 import ImageViewer from './ImageViewer.jsx';
 import Avatar from './Avatar.jsx';
 import { confirmDialog } from './ConfirmDialog.jsx';
@@ -91,17 +92,8 @@ const EMOJIS = [
   '⚡',
 ];
 
-const MAX_IMAGE_DIM = 1600;
-
 function timeOf(ts) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-function formatBytes(n) {
-  if (!n) return '';
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
 // Who's typing, split into the bold part (names) and the plain part, so the
@@ -131,56 +123,6 @@ function groupMessages(messages) {
     }
   }
   return groups;
-}
-
-// Read a File into { name, type, size, url } — downscaling raster images to a
-// reasonable JPEG so a phone photo doesn't blow the size cap.
-function prepareFile(file) {
-  const readAsDataUrl = () =>
-    new Promise((resolve, reject) => {
-      const r = new FileReader();
-      r.onload = () => resolve(r.result);
-      r.onerror = () => reject(r.error);
-      r.readAsDataURL(file);
-    });
-
-  const canDownscale = ['image/jpeg', 'image/png', 'image/webp'].includes(file.type);
-  if (!canDownscale) {
-    return readAsDataUrl().then((url) => ({
-      name: file.name,
-      type: file.type || 'application/octet-stream',
-      size: file.size,
-      url,
-    }));
-  }
-
-  return readAsDataUrl().then(
-    (src) =>
-      new Promise((resolve) => {
-        const img = new Image();
-        img.onload = () => {
-          const scale = Math.min(1, MAX_IMAGE_DIM / Math.max(img.width, img.height));
-          if (scale === 1 && file.size <= 400 * 1024) {
-            resolve({ name: file.name, type: file.type, size: file.size, url: src });
-            return;
-          }
-          const canvas = document.createElement('canvas');
-          canvas.width = Math.round(img.width * scale);
-          canvas.height = Math.round(img.height * scale);
-          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-          const url = canvas.toDataURL('image/jpeg', 0.82);
-          resolve({
-            name: file.name.replace(/\.(png|webp)$/i, '.jpg'),
-            type: 'image/jpeg',
-            size: Math.round(url.length * 0.75),
-            url,
-          });
-        };
-        img.onerror = () =>
-          resolve({ name: file.name, type: file.type, size: file.size, url: src });
-        img.src = src;
-      }),
-  );
 }
 
 /**
