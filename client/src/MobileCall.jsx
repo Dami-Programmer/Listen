@@ -98,13 +98,13 @@ export default function MobileCall({ call }) {
   const selfTile = tiles.find((t) => t.key === 'me');
   const others = tiles.filter((t) => t.key !== 'me');
 
-  // Spotlight: a screen share, else whoever you tapped, else whoever's talking,
-  // else the first other person, else you.
+  // Spotlight: a screen share, else whoever YOU picked (tap a thumbnail), else
+  // the first other person, else you. It never jumps to whoever's talking —
+  // each viewer chooses their own big screen; the green ring on a thumbnail
+  // shows who's speaking. If your pick leaves, it falls back to the default.
   const [pinnedKey, setPinnedKey] = useState(null);
   const pinned = tiles.find((t) => t.key === pinnedKey);
-  const spotlight = presenting
-    ? screenTiles[0]
-    : (pinned ?? others.find((t) => t.speaking) ?? others[0] ?? selfTile);
+  const spotlight = presenting ? screenTiles[0] : (pinned ?? others[0] ?? selfTile);
   const strip = presenting ? tiles : tiles.filter((t) => t !== spotlight);
 
   const [sheet, setSheet] = useState(false); // people sheet
