@@ -185,17 +185,26 @@ export default function MobileCall({ call }) {
       )
     : null;
 
-  // iPhone Safari's floating toolbar can cover the bottom of the page; size
-  // the call screen to the part that's actually visible.
+  // iPhone Safari's floating toolbar and the keyboard both change what's
+  // visible; keep the call screen exactly over the visible part.
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return undefined;
-    const set = () => document.documentElement.style.setProperty('--mc-vh', `${vv.height}px`);
+    // When the keyboard opens, iPhone Safari shrinks the visible area AND
+    // scrolls the page up — so follow both its height and where it starts.
+    const root = document.documentElement;
+    const set = () => {
+      root.style.setProperty('--mc-vh', `${vv.height}px`);
+      root.style.setProperty('--mc-vtop', `${vv.offsetTop}px`);
+    };
     set();
     vv.addEventListener('resize', set);
+    vv.addEventListener('scroll', set);
     return () => {
       vv.removeEventListener('resize', set);
-      document.documentElement.style.removeProperty('--mc-vh');
+      vv.removeEventListener('scroll', set);
+      root.style.removeProperty('--mc-vh');
+      root.style.removeProperty('--mc-vtop');
     };
   }, []);
 

@@ -6052,3 +6052,15 @@ img.pj-initials {
     animation: none;
   }
 }
+
+/* keep the call screen over the visible area when the iPhone keyboard opens
+   (Safari scrolls the page up; --mc-vtop follows it) */
+.mc {
+  top: var(--mc-vtop, 0px);
+}
+/* nothing behind the call screen should show through while typing */
+html:has(.mc),
+body:has(.mc) {
+  background: #000;
+  overscroll-behavior: none;
+}
