@@ -147,8 +147,16 @@ export default function MobileCall({ call }) {
     const main = mainRef.current;
     const strip = stripRef.current;
     if (!stackPresenting || !main || !strip) return undefined;
+    const feed = main.querySelector('.mc-feedwrap');
     const set = () => {
       const m = main.getBoundingClientRect();
+      // the row sits just above the chat (whose position depends on the bar,
+      // which is taller on iPhones with a home bar) …
+      if (feed) {
+        const f = feed.getBoundingClientRect();
+        main.style.setProperty('--mc-row-bottom', `${Math.max(0, m.bottom - f.top + 6)}px`);
+      }
+      // … and the presentation ends just above the row
       const st = strip.getBoundingClientRect();
       main.style.setProperty('--mc-stage-bottom', `${Math.max(0, m.bottom - st.top + 6)}px`);
     };
@@ -156,6 +164,7 @@ export default function MobileCall({ call }) {
     const ro = new ResizeObserver(set);
     ro.observe(main);
     ro.observe(strip);
+    if (feed) ro.observe(feed);
     return () => ro.disconnect();
   }, [stackPresenting, strip.length]);
 
@@ -261,6 +270,23 @@ export default function MobileCall({ call }) {
   const [presentError, setPresentError] = useState(null);
   const photosRef = useRef(null);
   const pdfRef = useRef(null);
+
+  // The leave button sits right next to the others — easy to hit by mistake,
+  // so ask first.
+  async function confirmLeave() {
+    const others = participants.length - 1;
+    const ok = await confirmDialog({
+      title: 'Leave the call?',
+      message:
+        isHost && others > 0
+          ? 'You’re the host — someone else will take over the meeting.'
+          : 'You can rejoin with the invite link.',
+      confirmLabel: 'Leave',
+      cancelLabel: 'Stay',
+      danger: true,
+    });
+    if (ok) onLeave();
+  }
 
   function flashError(msg) {
     setPresentError(msg);
@@ -655,7 +681,12 @@ export default function MobileCall({ call }) {
           </button>
         )}
 
-        <button type="button" className="mc-btn mc-leave" onClick={onLeave} aria-label="Leave call">
+        <button
+          type="button"
+          className="mc-btn mc-leave"
+          onClick={confirmLeave}
+          aria-label="Leave call"
+        >
           <PowerIcon />
         </button>
       </footer>

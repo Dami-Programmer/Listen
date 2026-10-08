@@ -344,6 +344,25 @@ Jakarta Sans), a floating white shell:
   raised-hands dashboard above the stage, per-person actions in the Participant
   tab.
 
+### Mobile view
+
+**Goal:** a phone-first lobby and call screen, from the mobile designs.
+
+- `useIsMobile` (≤560px) switches the lobby (`PreJoin`) and the call
+  (`MobileCall.jsx`) to their phone layouts; desktop is unchanged.
+- The room now has a **title** (`room.title`, set by whoever creates it, in
+  every snapshot); the mobile host must name the meeting before joining.
+- Call screen: spotlight / grid (columns by headcount), the chat feed, people
+  sheet with every moderator action, invite pop-up, long-press device pickers,
+  edit/delete your own messages, photos and files, leave confirmation.
+- Presenting from a phone: photos or a PDF on a canvas
+  (`canvas.captureStream`) sent through the screen-share path
+  (`useCall.presentStream`), since phones have no `getDisplayMedia`.
+- Floating video: `useVideoPip` (pop-out button, double-tap full screen,
+  Chrome's auto action). iPhone Safari refuses PiP for live call video.
+- iPhone layout: `viewport-fit=cover` and the visual viewport keep the bar
+  clear of Safari's toolbar and the keyboard.
+
 ### Deferred / not built
 
 - **Chat moderation** — delete a message, mute someone's chat. Not built; would

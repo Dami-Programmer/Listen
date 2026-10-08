@@ -119,6 +119,9 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode, medi
   const iceRef = useRef(iceServers?.length ? iceServers : DEFAULT_ICE_SERVERS);
   // The stream the pre-join mic/cam on-off choice has already been applied to.
   const prefsAppliedRef = useRef(null);
+  // While the camera is off it is fully released (light off); this remembers
+  // which camera to reopen when it's switched back on.
+  const camDeviceRef = useRef(null);
   // The role effect D last applied — so a device switch (new stream, same
   // role) doesn't re-run the role logic and unmute a muted mic.
   const roleAppliedRef = useRef(null);
@@ -386,7 +389,15 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode, medi
         }
         const prefs = mediaRef.current;
         stream.getAudioTracks().forEach((t) => (t.enabled = prefs?.micOn !== false));
-        stream.getVideoTracks().forEach((t) => (t.enabled = prefs?.camOn !== false));
+        stream.getVideoTracks().forEach((t) => {
+          t.enabled = prefs?.camOn !== false;
+          // Joined with the camera off: release it now so its light goes out.
+          // (The ended track stays in the stream so its senders can be refilled.)
+          if (prefs?.camOn === false) {
+            camDeviceRef.current = t.getSettings().deviceId;
+            t.stop();
+          }
+        });
         localStreamRef.current = stream;
         setLocalStream(stream);
         setDevices(deviceIdsOf(stream));
@@ -682,11 +693,53 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode, medi
   }, [isListener]);
 
   // Camera: anyone, any role — including a moderated room's listeners.
-  const toggleCam = useCallback(() => {
-    const track = localStreamRef.current?.getVideoTracks()[0];
-    if (!track) return;
-    track.enabled = !track.enabled;
-    setCamOn(track.enabled);
+  //
+  // Off really means off: the camera track is STOPPED, which releases the
+  // hardware so the camera light goes out (like Google Meet) — not just
+  // disabled, which keeps the camera running behind a black frame. On opens
+  // the camera again and swaps the fresh track into every connection with
+  // replaceTrack: no renegotiation, nobody reconnects.
+  const toggleCam = useCallback(async () => {
+    const stream = localStreamRef.current;
+    if (!stream) return;
+    const track = stream.getVideoTracks()[0];
+
+    if (track && track.readyState === 'live' && track.enabled) {
+      camDeviceRef.current = track.getSettings().deviceId;
+      track.enabled = false;
+      track.stop();
+      setCamOn(false);
+      return;
+    }
+
+    let fresh;
+    try {
+      const id = camDeviceRef.current;
+      const s = await navigator.mediaDevices.getUserMedia({
+        video: id ? { deviceId: { ideal: id } } : true,
+      });
+      fresh = s.getVideoTracks()[0];
+    } catch (err) {
+      setMediaError(friendlyMediaError(err));
+      return;
+    }
+    if (localStreamRef.current !== stream) {
+      fresh.stop(); // left the call (or switched devices) while it was opening
+      return;
+    }
+    for (const { pc } of peersRef.current.values()) {
+      // Exact match only: a screen share is another video sender.
+      const sender = track && pc.getSenders().find((x) => x.track === track);
+      if (sender) await sender.replaceTrack(fresh).catch(() => {});
+      else if (!track) pc.addTrack(fresh, stream); // never had a camera track
+    }
+    const next = new MediaStream([...stream.getTracks().filter((t) => t !== track), fresh]);
+    setMediaError(null);
+    prefsAppliedRef.current = next;
+    localStreamRef.current = next;
+    setLocalStream(next);
+    setDevices(deviceIdsOf(next));
+    setCamOn(true);
   }, []);
 
   // --- switch mic / camera mid-call ---------------------------------------
@@ -702,6 +755,12 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode, medi
   const switchDevice = useCallback(async (kind, deviceId) => {
     const stream = localStreamRef.current;
     const old = kind === 'audio' ? stream?.getAudioTracks()[0] : stream?.getVideoTracks()[0];
+    // Camera is off (released): don't switch it on — use this one next time.
+    if (kind === 'video' && old && old.readyState === 'ended') {
+      camDeviceRef.current = deviceId;
+      setDevices((d) => ({ ...d, video: deviceId }));
+      return;
+    }
     if (!stream || !deviceId || old?.getSettings().deviceId === deviceId) return;
 
     const open = (id) =>

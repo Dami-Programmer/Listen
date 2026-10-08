@@ -99,8 +99,27 @@ export async function loadDeck(files) {
   if (pdf) return loadPdf(pdf);
   const images = list.filter((f) => f.type.startsWith('image/'));
   if (!images.length) throw new Error('Pick photos or a PDF.');
-  const pages = await Promise.all(images.map(decodeImage));
-  return { count: pages.length, page: async (i) => pages[i], close: () => {} };
+  // Decode each photo only when it's shown, keeping just the last few —
+  // decoding them all up front (~7 MB each) can crash a phone tab with a big
+  // album. The next photo is decoded ahead so flipping stays quick.
+  const cache = new Map();
+  function load(i) {
+    if (!cache.has(i)) {
+      cache.set(i, decodeImage(images[i]));
+      if (cache.size > 4) cache.delete(cache.keys().next().value);
+    }
+    return cache.get(i);
+  }
+  await load(0); // fail now if the first photo can't be read
+  return {
+    count: images.length,
+    page: async (i) => {
+      const page = await load(i);
+      if (i + 1 < images.length) load(i + 1).catch(() => {}); // warm the next one
+      return page;
+    },
+    close: () => cache.clear(),
+  };
 }
 
 /**

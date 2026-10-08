@@ -14,10 +14,28 @@ import ProfileCard, { PROFILE } from './ProfileCard.jsx';
 
 // A link with ?profile in it (https://your-site/?profile) opens the creator card.
 const wantsProfile = () => new URLSearchParams(window.location.search).has('profile');
-// The card also pops up by itself on every page load (so every refresh), but
-// not again when you come back to the lobby after a call. This flag lives in
-// memory, so a refresh resets it.
+// The card pops up by itself only the first time a device opens the site —
+// remembered in this browser's storage, so not again after refreshes or new
+// meetings. (Storage can be blocked, e.g. private mode: then it falls back to
+// once per page load.) The "Made by" credit and ?profile still open it.
+const SEEN_KEY = 'listen.creatorCardSeen';
 let profileShown = false;
+function cardSeen() {
+  if (profileShown) return true;
+  try {
+    return localStorage.getItem(SEEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+function markCardSeen() {
+  profileShown = true;
+  try {
+    localStorage.setItem(SEEN_KEY, '1');
+  } catch {
+    // not remembered — it may pop up again on another visit
+  }
+}
 
 function friendlyMediaError(err) {
   switch (err?.name) {
@@ -76,14 +94,16 @@ export default function PreJoin({
   const [speakerId, setSpeakerId] = useState('');
   const [testing, setTesting] = useState(false);
 
-  // Open the preview, and reopen it whenever a different device is picked.
+  // Open the preview, and reopen it whenever a different device is picked —
+  // or the camera is switched on / off. Off asks for no camera at all, so the
+  // camera is released and its light goes out (not just a hidden picture).
   useEffect(() => {
     let cancelled = false;
     let opened = null;
     navigator.mediaDevices
       .getUserMedia({
         audio: audioId ? { deviceId: { exact: audioId } } : true,
-        video: videoId ? { deviceId: { exact: videoId } } : true,
+        video: camOn ? (videoId ? { deviceId: { exact: videoId } } : true) : false,
       })
       .then((s) => {
         if (cancelled) {
@@ -101,7 +121,7 @@ export default function PreJoin({
       cancelled = true;
       opened?.getTracks().forEach((t) => t.stop());
     };
-  }, [audioId, videoId]);
+  }, [audioId, videoId, camOn]);
 
   // Mic / camera toggles just enable/disable the preview tracks.
   useEffect(() => {
@@ -206,12 +226,12 @@ export default function PreJoin({
   // Auto pop-up: a short beat after the lobby appears, so the card rises in
   // over the page rather than flashing up with it.
   useEffect(() => {
-    if (profileShown) return undefined;
+    if (cardSeen()) return undefined;
     const t = setTimeout(() => setProfileOpen(true), 700);
     return () => clearTimeout(t);
   }, []);
   useEffect(() => {
-    if (profileOpen) profileShown = true;
+    if (profileOpen) markCardSeen();
   }, [profileOpen]);
   function closeProfile() {
     setProfileOpen(false);
@@ -226,14 +246,23 @@ export default function PreJoin({
   if (isMobile) {
     return (
       <main className="prejoin pjm">
-        <button
-          type="button"
-          className="pjm-back"
-          onClick={() => window.history.back()}
-          aria-label="Back"
-        >
-          <ArrowLeft />
-        </button>
+        <div className="pjm-top">
+          <button
+            type="button"
+            className="pjm-back"
+            onClick={() => window.history.back()}
+            aria-label="Back"
+          >
+            <ArrowLeft />
+          </button>
+          {/* the creator credit — opens the profile card */}
+          <button type="button" className="pj-credit" onClick={() => setProfileOpen(true)}>
+            <img src={PROFILE.photo} alt="" />
+            <span>
+              Made by <strong>{PROFILE.name}</strong>
+            </span>
+          </button>
+        </div>
         {profileOpen && <ProfileCard onClose={closeProfile} />}
 
         <form className="pjm-body" onSubmit={handleSubmit}>
@@ -319,14 +348,6 @@ export default function PreJoin({
           {error && <p className="err">{error}</p>}
         </form>
 
-        <footer className="pjm-foot">
-          <button type="button" className="pj-credit" onClick={() => setProfileOpen(true)}>
-            <img src={PROFILE.photo} alt="" />
-            <span>
-              Made by <strong>{PROFILE.name}</strong>
-            </span>
-          </button>
-        </footer>
       </main>
     );
   }

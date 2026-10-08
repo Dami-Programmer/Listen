@@ -122,12 +122,36 @@ top of the Phase 2 call:
   everyone currently waiting). If a room empties while someone waits, the oldest
   waiter comes in as the new host.
 
+- **Mobile (≤560px):** its own lobby (meeting name required for the host,
+  your name, picture) and call screen (`MobileCall.jsx`): spotlight and grid
+  layouts (grid columns by headcount — 4 → 2×2), a TikTok-style chat feed that
+  fades older lines out, press-and-hold to switch camera/mic, hold your own
+  message to edit or delete, photo/file sending, an invite pop-up with copy and
+  share, and a host-only top bar (Open/Moderated and door lock).
+- **Presenting from a phone:** phones can't share their screen, so the share
+  button presents **photos or a PDF** instead — drawn onto a canvas and sent
+  like a screen share (`presenter.js`, PDFs via pdf.js loaded on demand).
+- **While someone presents:** people sit in a swipeable row of four under the
+  presentation (mobile grid and full screen; desktop/tablet with ‹ › buttons).
+- **Joining:** a doorbell chime for the host/co-host (`knockSound.js`) and an
+  animated join notice with accept/decline.
+- **Floating video:** desktop Chrome opens the mini-call window automatically
+  (with notices for messages, raised hands and join requests); phones float
+  the big video from a pop-out button, or double-tap it for full screen
+  (Android then floats it on home). iPhone Safari won't float live call video.
+- **Camera off really releases the camera** (its light goes out), in the lobby
+  and the call.
+- **Creator card:** pops up once per device; "Made by Newtz" (top right) opens
+  it again.
+
 Test: open 3–4 tabs at http://localhost:5173/?room=demo, allow camera in each.
 Talking in one tab glows that tile everywhere. As the host, flip to Moderated,
 **Grant** a raised hand, then have that speaker **Pass the mic** — the floor
 goes to the next raised hand. **Mute** or **Remove** anyone from
 the participants list. Type in the chat, drop an emoji or a sticker, and open a
 fresh tab to confirm the last 100 messages replay on join. Hit **Share screen**
-in two tabs at once. STUN only (localhost / same Wi-Fi); TURN is Phase 8.
+in two tabs at once. For the mobile screens, use the browser's phone view
+(DevTools device toolbar). Real phones need the deployed https:// site — phone
+browsers only allow the camera on https.
 
 Next: Phase 8 (TURN server, reconnect handling, deploy).
