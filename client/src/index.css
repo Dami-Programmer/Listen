@@ -5575,7 +5575,364 @@ img.pj-initials {
   box-sizing: border-box;
 }
 
-/* floating video on phones (useVideoPip): the pop-out button */
+
+/* --- "X want to join" notice: slide in / out, living buttons ---------------- */
+.mc-knock {
+  animation: mc-knock-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.mc-knock.leaving {
+  animation: mc-knock-out 0.32s cubic-bezier(0.64, 0, 0.78, 0) both;
+  pointer-events: none;
+}
+@keyframes mc-knock-in {
+  from {
+    opacity: 0;
+    transform: translateX(115%);
+  }
+}
+@keyframes mc-knock-out {
+  to {
+    opacity: 0;
+    transform: translateX(115%);
+  }
+}
+/* accept: a green ring pulsing out of it, and the phone giving a little wiggle */
+.mc .mc-knock-yes {
+  border-radius: 50%;
+  animation: mc-ring-green 1.6s ease-out 0.4s infinite;
+  transition: transform 0.15s ease;
+}
+.mc-knock-yes svg {
+  transform-origin: 50% 60%;
+  animation: mc-wiggle 2.4s ease-in-out 0.6s infinite;
+}
+/* decline: breathes gently, with a softer red ring */
+.mc .mc-knock-no {
+  animation:
+    mc-breathe 1.6s ease-in-out 0.4s infinite,
+    mc-ring-red 1.6s ease-out 1.2s infinite;
+  transition: transform 0.15s ease;
+}
+.mc .mc-knock-yes:active,
+.mc .mc-knock-no:active {
+  transform: scale(0.86);
+  animation-play-state: paused;
+}
+@keyframes mc-ring-green {
+  0% {
+    box-shadow: 0 0 0 0 rgba(47, 191, 113, 0.55);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 12px rgba(47, 191, 113, 0);
+  }
+}
+@keyframes mc-ring-red {
+  0% {
+    box-shadow: 0 0 0 0 rgba(240, 69, 58, 0.45);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 10px rgba(240, 69, 58, 0);
+  }
+}
+@keyframes mc-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.07);
+  }
+}
+@keyframes mc-wiggle {
+  0%,
+  60%,
+  100% {
+    transform: rotate(0);
+  }
+  65% {
+    transform: rotate(-14deg);
+  }
+  72% {
+    transform: rotate(12deg);
+  }
+  79% {
+    transform: rotate(-10deg);
+  }
+  86% {
+    transform: rotate(6deg);
+  }
+  93% {
+    transform: rotate(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mc-knock,
+  .mc-knock.leaving,
+  .mc .mc-knock-yes,
+  .mc-knock-yes svg,
+  .mc .mc-knock-no {
+    animation: none;
+  }
+}
+
+/* --- smart mobile grid + bottom bar clear of iPhone Safari's toolbar ------ */
+.mc {
+  /* the visible height (JS keeps --mc-vh in sync with Safari's toolbar) */
+  bottom: auto;
+  height: var(--mc-vh, 100dvh);
+}
+.mc-bar {
+  padding-bottom: max(12px, calc(8px + env(safe-area-inset-bottom)));
+}
+.mc-gridwrap,
+.mc-member .mc-gridwrap {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  margin-top: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.mc-gridarea {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.mc-gridtiles {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center; /* a half-empty last row sits in the middle */
+  align-content: center;
+  gap: 2px;
+  width: 100%;
+}
+.mc-gtile {
+  flex: 0 0 var(--tile-w, calc((100% - 4px) / 3));
+  width: var(--tile-w, calc((100% - 4px) / 3));
+}
+.mc-grid .mc-feedwrap {
+  margin-top: 8px;
+}
+/* safe areas now apply (viewport-fit=cover): keep the lobby off the notch */
+.prejoin.pjm {
+  padding-top: max(12px, env(safe-area-inset-top));
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+}
+
+/* grid view while someone presents: big screen on top, people in a row
+   underneath that scrolls sideways — four visible, swipe for the rest */
+.mc-gridwrap.presenting .mc-screen {
+  flex: 1;
+  min-height: 0;
+  aspect-ratio: auto;
+  margin-bottom: 4px;
+}
+.mc-gridwrap.presenting .mc-gridarea {
+  flex: none;
+  display: block;
+}
+.mc-gridtiles.scroll {
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  align-content: normal;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.mc-gridtiles.scroll::-webkit-scrollbar {
+  display: none;
+}
+.mc-gridtiles.scroll .mc-gtile {
+  flex: 0 0 calc((100% - 6px) / 4);
+  width: calc((100% - 6px) / 4);
+  scroll-snap-align: start;
+}
+/* four or fewer: centred; more: they scroll normally from the left */
+.mc-gridtiles.scroll .mc-gtile:first-child {
+  margin-left: auto;
+}
+.mc-gridtiles.scroll .mc-gtile:last-child {
+  margin-right: auto;
+}
+/* more than four: fade the right edge so it's clear you can swipe */
+.mc-gridtiles.scroll.more {
+  -webkit-mask-image: linear-gradient(to right, #000 85%, transparent);
+  mask-image: linear-gradient(to right, #000 85%, transparent);
+}
+.mc-gridtiles.scroll .mc-gname {
+  font-size: 12px;
+  right: 6px;
+}
+
+/* full-screen view while someone presents: people in a swipeable row of four
+   under the presentation, above the chat (instead of the right-hand column) */
+.mc-strip.row {
+  left: 8px;
+  right: 8px;
+  bottom: calc(76px + 196px + env(safe-area-inset-bottom));
+  max-height: none;
+  flex-direction: row;
+  gap: 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+.mc-strip.row::-webkit-scrollbar {
+  display: none;
+}
+.mc-strip.row .mc-thumb {
+  flex: 0 0 calc((100% - 6px) / 4);
+  width: calc((100% - 6px) / 4);
+  height: auto;
+  aspect-ratio: 3 / 4;
+  scroll-snap-align: start;
+}
+.mc-strip.row .mc-thumb:first-child {
+  margin-left: auto;
+}
+.mc-strip.row .mc-thumb:last-child {
+  margin-right: auto;
+}
+.mc-strip.row.more {
+  -webkit-mask-image: linear-gradient(to right, #000 85%, transparent);
+  mask-image: linear-gradient(to right, #000 85%, transparent);
+}
+/* swiped to the end: no more to reveal, so drop the edge fade */
+.mc-strip.row.more.at-end,
+.mc-gridtiles.scroll.more.at-end {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+/* --- presenting on desktop / tablet: share on top, people in a row of four
+   underneath that scrolls sideways (was a column on the right) ------------ */
+.cs-body.presenting {
+  flex-direction: column;
+}
+.cs-body.presenting .cs-side {
+  width: auto;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+.cs-body.presenting .cs-side-list {
+  flex-direction: row;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+}
+.cs-body.presenting .cs-side-tile {
+  flex: 0 0 calc((100% - 30px) / 4);
+  width: calc((100% - 30px) / 4);
+  max-height: 22vh;
+}
+/* four or fewer: centred under the share */
+.cs-body.presenting .cs-side-tile:first-child {
+  margin-left: auto;
+}
+.cs-body.presenting .cs-side-tile:last-child {
+  margin-right: auto;
+}
+.cs-body.presenting .cs-side-more {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+.cs-body.presenting .cs-side-more svg {
+  transform: rotate(-90deg);
+}
+.cs-body.presenting .cs-side-more.hidden {
+  display: none;
+}
+@media (max-width: 720px) {
+  .cs-body.presenting .cs-side-tile {
+    flex-basis: calc((100% - 30px) / 4);
+    width: calc((100% - 30px) / 4);
+  }
+}
+
+/* Full-screen view while someone presents: stack instead of overlap —
+   header, then the shared screen, then the row of people, then the chat and
+   the buttons. Nothing covers the presentation. */
+.mc-presenting .mc-stage {
+  /* top: under the header; bottom: above the people row
+     (row = 4 tiles across the width at 3:4, + chat 196px + bar 76px) */
+  top: calc(var(--mc-head, 120px) + 4px);
+  bottom: calc(76px + 196px + (100vw - 22px) / 3 + 10px + env(safe-area-inset-bottom));
+  left: 0;
+  right: 0;
+  height: auto;
+}
+.mc-presenting .mc-stage::before,
+.mc-presenting .mc-stage::after {
+  display: none; /* no dark scrims over a presentation */
+}
+.mc-presenting .mc-stage .mc-tile,
+.mc-presenting .mc-stage .mc-tile .tile {
+  background: #000;
+}
+.mc-presenting .mc-stage {
+  bottom: var(
+    --mc-stage-bottom,
+    calc(76px + 196px + (100vw - 22px) / 3 + 10px + env(safe-area-inset-bottom))
+  );
+}
+
+/* desktop / tablet join request: decline breathes with a soft red ring,
+   off-beat with the admit button's ringing (as on phones) */
+.cs-join-req:not(.leaving) .cs-jr-deny {
+  animation:
+    mc-breathe 1.6s ease-in-out 1.5s infinite,
+    cs-deny-ring 1.6s ease-out 2.3s infinite;
+}
+@keyframes cs-deny-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(240, 69, 58, 0.4);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 9px rgba(240, 69, 58, 0);
+  }
+}
+.cs-join-req .cs-jr-btn:active:not(:disabled) {
+  transform: scale(0.88);
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cs-join-req:not(.leaving) .cs-jr-deny {
+    animation: none;
+  }
+}
+/* ‹ on the left of the row, › on the right; hidden buttons keep their space
+   so the row doesn't jump when one appears */
+.cs-body.presenting .cs-side-prev svg {
+  transform: rotate(90deg);
+}
+.cs-body.presenting .cs-side-next svg {
+  transform: rotate(-90deg);
+}
+.cs-body.presenting .cs-side-more.hidden {
+  display: grid;
+  visibility: hidden;
+}
+.cs-body.presenting .cs-side-list {
+  flex: 1;
+  min-width: 0;
+}
+
+/* pop-out (floating video) button, next to the layout swap */
 .mc .mc-popout {
   flex-shrink: 0;
   width: 40px;
@@ -5597,4 +5954,101 @@ img.pj-initials {
 }
 .mc-row2 .mc-popout {
   margin-left: 4px;
+}
+/* the big video fills the screen when it goes full screen */
+.mc video:fullscreen {
+  object-fit: contain;
+  background: #000;
+}
+
+/* --- notices inside the desktop floating window (Pip.jsx PipNotices) ---- */
+.pip {
+  position: relative;
+}
+.pip-notices {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+}
+.pip-note {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px 6px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(20, 18, 26, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #f5f7fa;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  animation: pip-note-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.pip-note.knock {
+  cursor: default;
+  border-color: rgba(47, 191, 113, 0.45);
+}
+.pip-note-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pip-note-text b {
+  font-weight: 600;
+}
+.pip-note-text em {
+  font-style: normal;
+  opacity: 0.7;
+}
+.pip-note-btn {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: #fff;
+  cursor: pointer;
+}
+.pip-note-btn svg {
+  width: 16px;
+  height: 16px;
+}
+.pip-note-btn.deny {
+  background: #f0453a;
+}
+.pip-note-btn.admit {
+  background: #2fbf71;
+  animation: mc-ring-green 1.6s ease-out 0.4s infinite;
+}
+.pip-note-btn:active {
+  transform: scale(0.88);
+}
+@keyframes pip-note-in {
+  from {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.97);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pip-note,
+  .pip-note-btn.admit {
+    animation: none;
+  }
 }

@@ -30,6 +30,7 @@ import { usePip } from './usePip.js';
 import { newMeetingCode } from './meeting.js';
 import MobileCall from './MobileCall.jsx';
 import useIsMobile from './useIsMobile.js';
+import { playKnock } from './knockSound.js';
 import {
   Cam,
   CamOff,
@@ -526,6 +527,21 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
   const locked = state?.locked ?? false;
   const waiting = state?.waiting ?? [];
 
+  // Ding-dong for each new person who knocks — only for whoever can let them
+  // in (host / co-host), on phones and desktops alike.
+  const heardKnocks = useRef(null);
+  const waitingKey = waiting.map((w) => w.id).join(','); // changes only when the door list does
+  useEffect(() => {
+    const ids = waitingKey ? waitingKey.split(',') : [];
+    if (heardKnocks.current === null) {
+      heardKnocks.current = new Set(ids); // already waiting when the call opened
+      return;
+    }
+    const fresh = ids.filter((id) => !heardKnocks.current.has(id));
+    heardKnocks.current = new Set(ids);
+    if (isModerator && fresh.length) playKnock();
+  }, [waitingKey, isModerator]);
+
   // Phase 5 — the speaker queue, straight from the snapshot (socketIds, oldest
   // first). The server owns it; we only render it.
   const queue = state?.queue ?? [];
@@ -960,7 +976,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
 
         {mediaError && <p className="err">{mediaError}</p>}
 
-        <div className="cs-body">
+        <div className={`cs-body${presenting ? ' presenting' : ''}`}>
           {equalGrid ? (
             // Grid view: everyone (me first) in same-size tiles. --cols /
             // --rows drive the tile size in the CSS.
@@ -1240,6 +1256,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
               toggleHand: handRaised ? lowerHand : raiseHand,
               onLeave,
             }}
+            events={{ chat, queue, waiting, participants, selfId, isModerator, admit, deny }}
           />
         )}
 
@@ -1557,17 +1574,22 @@ function JoinRequest({ knocker: incoming, extra, onAdmit, onDeny }) {
   );
 }
 
-// The camera column beside a screen share (design: "share"). It scrolls
-// when there are more people than fit; the chevron under it pages down one
-// tile at a time and only shows while there's more below.
+// Everyone's camera in a row under a screen share: four across, scrolling
+// sideways when there are more. The ‹ and › buttons move one tile at a time
+// and each only shows while there's more on its side.
 function SideStrip({ tiles, sinkId }) {
   const listRef = useRef(null);
-  const [more, setMore] = useState(false);
+  const [canLeft, setCanLeft] = useState(false);
+  const [canRight, setCanRight] = useState(false);
 
   useEffect(() => {
     const el = listRef.current;
     if (!el) return;
-    const check = () => setMore(el.scrollTop + el.clientHeight < el.scrollHeight - 2);
+    // People sit in a sideways row under the share: anything off either side?
+    const check = () => {
+      setCanLeft(el.scrollLeft > 2);
+      setCanRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 2);
+    };
     check();
     el.addEventListener('scroll', check, { passive: true });
     const ro = new ResizeObserver(check);
@@ -1578,16 +1600,26 @@ function SideStrip({ tiles, sinkId }) {
     };
   }, [tiles.length]);
 
-  function pageDown() {
+  // Move one tile left (-1) or right (+1).
+  function page(dir) {
     const el = listRef.current;
     const tile = el?.firstElementChild;
     if (!tile) return;
-    const step = tile.getBoundingClientRect().height + parseFloat(getComputedStyle(el).rowGap || 0);
-    el.scrollBy({ top: step, behavior: 'smooth' });
+    const step = tile.getBoundingClientRect().width + parseFloat(getComputedStyle(el).columnGap || 0);
+    el.scrollBy({ left: dir * step, behavior: 'smooth' });
   }
 
   return (
     <div className="cs-side">
+      <button
+        className={`cs-side-more cs-side-prev${canLeft ? '' : ' hidden'}`}
+        onClick={() => page(-1)}
+        aria-label="Previous people"
+        title="Previous people"
+        tabIndex={canLeft ? 0 : -1}
+      >
+        <ChevronDown />
+      </button>
       <div className="cs-side-list" ref={listRef}>
         {tiles.map((t) => (
           <div key={t.key} className={`cs-side-tile${t.speaking ? ' speaking' : ''}`}>
@@ -1603,11 +1635,11 @@ function SideStrip({ tiles, sinkId }) {
         ))}
       </div>
       <button
-        className={`cs-side-more${more ? '' : ' hidden'}`}
-        onClick={pageDown}
-        aria-label="Show more people"
-        title="Show more people"
-        tabIndex={more ? 0 : -1}
+        className={`cs-side-more cs-side-next${canRight ? '' : ' hidden'}`}
+        onClick={() => page(1)}
+        aria-label="More people"
+        title="More people"
+        tabIndex={canRight ? 0 : -1}
       >
         <ChevronDown />
       </button>

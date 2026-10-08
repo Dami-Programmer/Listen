@@ -129,5 +129,8 @@ export function useVideoPip(findVideo, spotKey) {
   // Leaving the call closes it.
   useEffect(() => exit, [exit]);
 
-  return { supported: canPip, active, enter, exit };
+  // Did the last request actually float? (Browsers refuse silently.)
+  const isFloatingNow = useCallback(() => isFloating(floatingEl.current), []);
+
+  return { supported: canPip, active, enter, exit, isFloatingNow };
 }

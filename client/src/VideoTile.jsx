@@ -8,6 +8,11 @@
 import { useEffect, useRef } from 'react';
 import { MicOff } from './icons.jsx';
 
+// iPhone / iPad Safari (and Mac Safari) — the browsers with webkit PiP.
+const isWebKit =
+  typeof HTMLVideoElement !== 'undefined' &&
+  'webkitSetPresentationMode' in HTMLVideoElement.prototype;
+
 /**
  * @param {object}       props
  * @param {MediaStream}  props.stream   the stream to show
@@ -44,7 +49,13 @@ export default function VideoTile({
 
   useEffect(() => {
     const el = videoRef.current;
-    if (el && stream) el.srcObject = stream;
+    if (!el || !stream) return;
+    // Safari (WebKit bug 262479): a live-stream <video> can't float in
+    // picture-in-picture unless its controls were on when the stream was
+    // attached. Flip them on for the assignment only — never visible.
+    if (isWebKit) el.controls = true;
+    el.srcObject = stream;
+    if (isWebKit) el.controls = false;
   }, [stream]);
 
   // Play this tile's audio through the speaker picked in the pre-join lobby.

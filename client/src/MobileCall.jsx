@@ -123,16 +123,123 @@ export default function MobileCall({ call }) {
   const [inviteOpen, setInviteOpen] = useState(() => isHost && participants.length === 1);
 
   const knocker = isModerator ? waiting[0] : null;
+
+  // Full-screen view while someone presents: the shared screen sits between
+  // the header and the row of people instead of under them, so we need the
+  // header's height (it changes with the join notice, long names, …).
+  const mainRef = useRef(null);
+  const headRef = useRef(null);
+  useLayoutEffect(() => {
+    const head = headRef.current;
+    const main = mainRef.current;
+    if (!head || !main) return undefined;
+    const set = () => main.style.setProperty('--mc-head', `${head.offsetHeight}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(head);
+    return () => ro.disconnect();
+  }, []);
+  // …and where the people row actually starts, so the presentation ends just
+  // above it (measured, not guessed — phone toolbars change the height).
+  const stripRef = useRef(null);
+  const stackPresenting = layout !== 'grid' && presenting; // (`grid` is defined further down)
+  useLayoutEffect(() => {
+    const main = mainRef.current;
+    const strip = stripRef.current;
+    if (!stackPresenting || !main || !strip) return undefined;
+    const set = () => {
+      const m = main.getBoundingClientRect();
+      const st = strip.getBoundingClientRect();
+      main.style.setProperty('--mc-stage-bottom', `${Math.max(0, m.bottom - st.top + 6)}px`);
+    };
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(main);
+    ro.observe(strip);
+    return () => ro.disconnect();
+  }, [stackPresenting, strip.length]);
+
+  // Grid view: columns by headcount (4 -> 2 x 2, 5+ -> 3 across), and tiles
+  // as big as the space between the header and the chat allows.
+  const gridCols = tiles.length <= 1 ? 1 : tiles.length === 4 ? 2 : Math.min(3, tiles.length);
+  const gridRows = Math.ceil(tiles.length / gridCols);
+  const gridAreaRef = useRef(null);
+  const [gridBox, setGridBox] = useState(null);
+  useLayoutEffect(() => {
+    const el = gridAreaRef.current;
+    if (!el) return undefined;
+    const measure = () => setGridBox({ w: el.clientWidth, h: el.clientHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [layout, presenting]);
+  const GAP = 2;
+  const TILE_RATIO = 247 / 335; // width / height, from the design
+  const tileW = gridBox
+    ? Math.floor(
+        Math.min(
+          (gridBox.w - GAP * (gridCols - 1)) / gridCols,
+          ((gridBox.h - GAP * (gridRows - 1)) / gridRows) * TILE_RATIO,
+        ),
+      )
+    : null;
+
+  // iPhone Safari's floating toolbar can cover the bottom of the page; size
+  // the call screen to the part that's actually visible.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return undefined;
+    const set = () => document.documentElement.style.setProperty('--mc-vh', `${vv.height}px`);
+    set();
+    vv.addEventListener('resize', set);
+    return () => {
+      vv.removeEventListener('resize', set);
+      document.documentElement.style.removeProperty('--mc-vh');
+    };
+  }, []);
+
   const grid = layout === 'grid';
 
-  // Floating video when you leave the browser (or tap pop-out): whoever is on
-  // your big screen, or the screen being presented.
-  const pip = useVideoPip(() => {
+  // "The big video": whoever is on your big screen, or the screen being presented.
+  const findBigVideo = () => {
     if (!grid) return document.querySelector('.mc-stage video');
     if (presenting) return document.querySelector('.mc-screen video');
     const key = CSS.escape(String(spotlight?.key ?? ''));
     return document.querySelector(`.mc-gtile[data-key="${key}"] video`);
-  }, `${grid}|${presenting}|${spotlight?.key}`);
+  };
+
+  // Floating video: automatically when you leave the browser where the phone
+  // allows it (desktop Chrome today), or from the pop-out button.
+  const pip = useVideoPip(findBigVideo, `${grid}|${presenting}|${spotlight?.key}`);
+  function popOut() {
+    pip.enter();
+    setTimeout(() => {
+      if (!pip.isFloatingNow()) flashError('This browser won\u2019t float a live call video.');
+    }, 1500);
+  }
+
+  // Double-tap the big video: full screen. On Android, pressing home while a
+  // video is full screen floats it automatically.
+  const lastTap = useRef({ t: 0, x: 0, y: 0 });
+  function goFullscreen() {
+    const v = findBigVideo();
+    if (!v) return;
+    v.play?.()?.catch?.(() => {});
+    if (v.requestFullscreen) v.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+    else if (v.webkitEnterFullscreen) v.webkitEnterFullscreen(); // iPhone
+  }
+  const onBigTap = (e) => {
+    const now = Date.now();
+    const p = lastTap.current;
+    const near = Math.hypot(e.clientX - p.x, e.clientY - p.y) < 30;
+    if (now - p.t < 320 && near) {
+      lastTap.current = { t: 0, x: 0, y: 0 };
+      goFullscreen();
+    } else {
+      lastTap.current = { t: now, x: e.clientX, y: e.clientY };
+    }
+  };
   const badge = isModerator ? waiting.length + (moderated ? queue.length : 0) : 0;
   // Share button: phones can't capture the screen (no getDisplayMedia), so it
   // opens "Present to everyone" — photos or a PDF, streamed like a screen
@@ -215,15 +322,25 @@ export default function MobileCall({ call }) {
     : {};
 
   return (
-    <main className={`mc${grid ? ' mc-grid' : ''}${isModerator ? '' : ' mc-member'}`}>
+    <main
+      ref={mainRef}
+      className={`mc${grid ? ' mc-grid' : ''}${isModerator ? '' : ' mc-member'}${!grid && presenting ? ' mc-presenting' : ''}`}
+    >
       {/* Spotlight: the big video behind everything. */}
       {!grid && spotlight && (
-        <div className="mc-stage" {...swipeHandlers}>
+        <div
+          className="mc-stage"
+          {...swipeHandlers}
+          onPointerUp={(e) => {
+            swipeHandlers.onPointerUp?.(e);
+            onBigTap(e);
+          }}
+        >
           <Tile tile={spotlight} sinkId={media?.speakerId} screen={presenting} />
         </div>
       )}
 
-      <header className="mc-top">
+      <header className="mc-top" ref={headRef}>
         <div className="mc-title">
           <button
             type="button"
@@ -279,7 +396,7 @@ export default function MobileCall({ call }) {
                 <button
                   type="button"
                   className={`mc-popout${pip.active ? ' on' : ''}`}
-                  onClick={pip.active ? pip.exit : pip.enter}
+                  onClick={pip.active ? pip.exit : popOut}
                   aria-label={pip.active ? 'Bring the video back' : 'Pop out a floating video'}
                 >
                   <PopOutIcon />
@@ -316,36 +433,18 @@ export default function MobileCall({ call }) {
               <button
                 type="button"
                 className={`mc-popout${pip.active ? ' on' : ''}`}
-                onClick={pip.active ? pip.exit : pip.enter}
+                onClick={pip.active ? pip.exit : popOut}
                 aria-label={pip.active ? 'Bring the video back' : 'Pop out a floating video'}
               >
                 <PopOutIcon />
               </button>
             )}
-            {knocker && (
-              <div className="mc-knock" role="status">
-                <span className="mc-knock-text">
-                  <b>{knocker.name}</b> want to join
-                  {waiting.length > 1 && <em> +{waiting.length - 1}</em>}
-                </span>
-                <button
-                  type="button"
-                  className="mc-knock-yes"
-                  onClick={() => act.admit(knocker.id)}
-                  aria-label={`Let ${knocker.name} in`}
-                >
-                  <AcceptCall />
-                </button>
-                <button
-                  type="button"
-                  className="mc-knock-no"
-                  onClick={() => act.deny(knocker.id)}
-                  aria-label={`Turn ${knocker.name} away`}
-                >
-                  <PhoneGlyph />
-                </button>
-              </div>
-            )}
+            <KnockNotice
+              knocker={knocker}
+              extra={Math.max(0, waiting.length - 1)}
+              onAdmit={act.admit}
+              onDeny={act.deny}
+            />
           </div>
         )}
         {!connected && <p className="mc-status">reconnecting…</p>}
@@ -353,60 +452,71 @@ export default function MobileCall({ call }) {
       </header>
 
       {grid ? (
-        <section className="mc-gridwrap">
+        <section className={`mc-gridwrap${presenting ? ' presenting' : ''}`}>
           {presenting && (
-            <div className="mc-screen">
+            <div className="mc-screen" onPointerUp={onBigTap}>
               <Tile tile={screenTiles[0]} sinkId={media?.speakerId} screen />
             </div>
           )}
-          <div className="mc-gridtiles">
-            {tiles.map((t) => {
-              const canMod =
-                isModerator && t.key !== 'me' && t.role !== ROLES.HOST && t.id !== selfId;
-              const open = canMod && picked === t.key;
-              return (
-                <div
-                  key={t.key}
-                  data-key={t.key}
-                  className={`mc-gtile${t.speaking ? ' speaking' : ''}`}
-                  onClick={canMod ? () => setPicked(open ? null : t.key) : undefined}
-                >
-                  <Tile tile={t} sinkId={media?.speakerId} />
-                  <span className="mc-gname">{t.name}</span>
-                  {t.micOff && !open && (
-                    <span className="mc-gmuted" aria-label="muted">
-                      <MicOff />
-                    </span>
-                  )}
-                  {open && (
-                    <div className="mc-gactions">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          act.forceMute(t.id);
-                          setPicked(null);
-                        }}
-                        aria-label={`Mute ${t.name}`}
-                      >
+          <div className="mc-gridarea" ref={gridAreaRef}>
+            {/* While someone presents, people become a sideways-scrolling row
+                under the screen: four at a time, swipe for the rest. */}
+            <div
+              className={`mc-gridtiles${presenting ? ' scroll' : ''}${presenting && tiles.length > 4 ? ' more' : ''}`}
+              onScroll={(e) => {
+                const el = e.currentTarget;
+                el.classList.toggle('at-end', el.scrollLeft + el.clientWidth >= el.scrollWidth - 2);
+              }}
+              style={!presenting && tileW ? { '--tile-w': `${Math.max(60, tileW)}px` } : undefined}
+            >
+              {tiles.map((t) => {
+                const canMod =
+                  isModerator && t.key !== 'me' && t.role !== ROLES.HOST && t.id !== selfId;
+                const open = canMod && picked === t.key;
+                return (
+                  <div
+                    key={t.key}
+                    data-key={t.key}
+                    className={`mc-gtile${t.speaking ? ' speaking' : ''}`}
+                    onClick={canMod ? () => setPicked(open ? null : t.key) : undefined}
+                  >
+                    <Tile tile={t} sinkId={media?.speakerId} />
+                    <span className="mc-gname">{t.name}</span>
+                    {t.micOff && !open && (
+                      <span className="mc-gmuted" aria-label="muted">
                         <MicOff />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setPicked(null);
-                          act.removeParticipant(peerOf(t.id));
-                        }}
-                        aria-label={`Remove ${t.name}`}
-                      >
-                        <X />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                      </span>
+                    )}
+                    {open && (
+                      <div className="mc-gactions">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            act.forceMute(t.id);
+                            setPicked(null);
+                          }}
+                          aria-label={`Mute ${t.name}`}
+                        >
+                          <MicOff />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPicked(null);
+                            act.removeParticipant(peerOf(t.id));
+                          }}
+                          aria-label={`Remove ${t.name}`}
+                        >
+                          <X />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </section>
       ) : (
@@ -415,7 +525,14 @@ export default function MobileCall({ call }) {
 
       {/* Spotlight: everyone else, stacked on the right. Tap one to put them big. */}
       {!grid && strip.length > 0 && (
-        <div className="mc-strip">
+        <div
+          ref={stripRef}
+          className={`mc-strip${presenting ? ' row' : ''}${presenting && strip.length > 4 ? ' more' : ''}`}
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            el.classList.toggle('at-end', el.scrollLeft + el.clientWidth >= el.scrollWidth - 2);
+          }}
+        >
           {strip.map((t) => (
             <button
               type="button"
@@ -435,7 +552,7 @@ export default function MobileCall({ call }) {
         typers={typers}
         selfId={selfId}
         participants={participants}
-        narrow={!grid}
+        narrow={!grid && !presenting}
         held={msgMenu?.id}
         onHold={setMsgMenu}
         onView={setViewing}
@@ -814,6 +931,57 @@ function SwapLabel({ on, off, onLabel }) {
         {onLabel}
       </span>
     </span>
+  );
+}
+
+// "<name> want to join" with accept / decline. Slides in from the right; when
+// the knock is answered (or the person gives up) it slides back out before it
+// goes. A new person knocking slides in fresh.
+function KnockNotice({ knocker, extra, onAdmit, onDeny }) {
+  const [shown, setShown] = useState(knocker); // what's on screen right now
+  const [leaving, setLeaving] = useState(false);
+  if (knocker && (knocker.id !== shown?.id || leaving)) {
+    setShown(knocker);
+    setLeaving(false);
+  } else if (!knocker && shown && !leaving) {
+    setLeaving(true);
+  }
+  if (!shown) return null;
+  return (
+    <div
+      key={shown.id}
+      className={`mc-knock${leaving ? ' leaving' : ''}`}
+      role="status"
+      onAnimationEnd={(e) => {
+        if (leaving && e.target === e.currentTarget) {
+          setShown(null);
+          setLeaving(false);
+        }
+      }}
+    >
+      <span className="mc-knock-text">
+        <b>{shown.name}</b> want to join
+        {extra > 0 && !leaving && <em> +{extra}</em>}
+      </span>
+      <button
+        type="button"
+        className="mc-knock-yes"
+        onClick={() => onAdmit(shown.id)}
+        disabled={leaving}
+        aria-label={`Let ${shown.name} in`}
+      >
+        <AcceptCall />
+      </button>
+      <button
+        type="button"
+        className="mc-knock-no"
+        onClick={() => onDeny(shown.id)}
+        disabled={leaving}
+        aria-label={`Turn ${shown.name} away`}
+      >
+        <PhoneGlyph />
+      </button>
+    </div>
   );
 }
 
