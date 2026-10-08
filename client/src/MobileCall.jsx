@@ -170,8 +170,25 @@ export default function MobileCall({ call }) {
 
   // Grid view: columns by headcount (4 -> 2 x 2, 5+ -> 3 across), and tiles
   // as big as the space between the header and the chat allows.
-  const gridCols = tiles.length <= 1 ? 1 : tiles.length === 4 ? 2 : Math.min(3, tiles.length);
-  const gridRows = Math.ceil(tiles.length / gridCols);
+  // At most 3 x 3. With more than nine people, the ninth tile becomes "+N"
+  // (tap it for the people list). Whoever is talking always gets a visible
+  // tile; everyone else hidden behind "+N" is still heard (see mc-offstage).
+  const GRID_MAX = 9;
+  const overflow = !presenting && tiles.length > GRID_MAX;
+  let gridShown = tiles;
+  let gridHidden = [];
+  if (overflow) {
+    gridShown = tiles.slice(0, GRID_MAX - 1);
+    gridHidden = tiles.slice(GRID_MAX - 1);
+    const talker = gridHidden.find((t) => t.speaking);
+    if (talker) {
+      gridHidden = gridHidden.filter((t) => t !== talker).concat(gridShown[gridShown.length - 1]);
+      gridShown = [...gridShown.slice(0, -1), talker];
+    }
+  }
+  const gridCount = overflow ? GRID_MAX : gridShown.length;
+  const gridCols = gridCount <= 1 ? 1 : gridCount === 4 ? 2 : Math.min(3, gridCount);
+  const gridRows = Math.ceil(gridCount / gridCols);
   const gridAreaRef = useRef(null);
   const [gridBox, setGridBox] = useState(null);
   useLayoutEffect(() => {
@@ -504,7 +521,7 @@ export default function MobileCall({ call }) {
               }}
               style={!presenting && tileW ? { '--tile-w': `${Math.max(60, tileW)}px` } : undefined}
             >
-              {tiles.map((t) => {
+              {(presenting ? tiles : gridShown).map((t) => {
                 const canMod =
                   isModerator && t.key !== 'me' && t.role !== ROLES.HOST && t.id !== selfId;
                 const open = canMod && picked === t.key;
@@ -551,8 +568,32 @@ export default function MobileCall({ call }) {
                   </div>
                 );
               })}
+              {overflow && (
+                <button
+                  type="button"
+                  className="mc-gtile mc-gmore"
+                  onClick={() => setSheet(true)}
+                  aria-label={`${gridHidden.length} more people — show everyone`}
+                >
+                  <span className="mc-gmore-faces" aria-hidden="true">
+                    {gridHidden.slice(0, 3).map((t) => (
+                      <Avatar key={t.key} name={t.name} src={t.avatar} size={34} />
+                    ))}
+                  </span>
+                  <b>+{gridHidden.length}</b>
+                </button>
+              )}
             </div>
           </div>
+          {/* People behind "+N": their video isn't shown, but it keeps playing
+              off-screen so their audio is still heard. */}
+          {overflow && (
+            <div className="mc-offstage" aria-hidden="true">
+              {gridHidden.map((t) => (
+                <Tile key={t.key} tile={t} sinkId={media?.speakerId} />
+              ))}
+            </div>
+          )}
         </section>
       ) : (
         <div className="mc-spacer" />
@@ -834,7 +875,6 @@ export default function MobileCall({ call }) {
             handRaised,
             myQueuePos,
             cohostId,
-            micOf: call.micOf,
             act,
           }}
         />
@@ -1499,7 +1539,6 @@ function PeopleSheet({
   handRaised,
   myQueuePos,
   cohostId,
-  micOf,
   act,
 }) {
   const ordered = [...participants].sort(
@@ -1600,7 +1639,7 @@ function PeopleSheet({
           const hostControls = isHost && p.id !== selfId && p.role !== ROLES.HOST;
           return (
             <div className="mc-person" key={p.id}>
-              <Avatar name={p.name} src={p.avatar} size={36} status={micOf(p.id) ? 'on' : 'off'} />
+              <Avatar name={p.name} src={p.avatar} size={36} />
               <span className="mc-pname">
                 {p.name}
                 {p.id === selfId ? ' (you)' : ''}

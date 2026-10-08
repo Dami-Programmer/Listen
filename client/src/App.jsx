@@ -1292,9 +1292,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
               <X />
             </button>
             {/* Me, top-right. My dot uses my own mic state directly. */}
-            {self && (
-              <Avatar name={self.name} src={self.avatar} size={44} status={micOn ? 'on' : 'off'} />
-            )}
+            {self && <Avatar name={self.name} src={self.avatar} size={44} />}
           </div>
 
           <div className="cp-people-row" ref={peopleRef}>
@@ -1312,17 +1310,10 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
               <ChevronDown className="cp-chevron" />
             </button>
 
-            {/* Up to three other people, then "+ N" for the rest. Dots: green
-                = mic on, red = muted (from the shared `mics` map). */}
+            {/* Up to three other people, then "+ N" for the rest. */}
             <div className="cp-avatars">
               {otherPeople.slice(0, 3).map((p) => (
-                <Avatar
-                  key={p.id}
-                  name={p.name}
-                  src={p.avatar}
-                  size={38}
-                  status={micOf(p.id) ? 'on' : 'off'}
-                />
+                <Avatar key={p.id} name={p.name} src={p.avatar} size={38} />
               ))}
               {otherPeople.length > 3 && (
                 <span className="cp-more">+ {otherPeople.length - 3}</span>
@@ -1448,13 +1439,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
             )}
           </div>
 
-          <ChatPanel
-            messages={chat}
-            typers={typers}
-            selfId={selfId}
-            mics={state?.mics ?? {}}
-            participants={participants}
-          />
+          <ChatPanel messages={chat} typers={typers} selfId={selfId} participants={participants} />
         </aside>
       )}
     </main>
@@ -1605,7 +1590,8 @@ function SideStrip({ tiles, sinkId }) {
     const el = listRef.current;
     const tile = el?.firstElementChild;
     if (!tile) return;
-    const step = tile.getBoundingClientRect().width + parseFloat(getComputedStyle(el).columnGap || 0);
+    const step =
+      tile.getBoundingClientRect().width + parseFloat(getComputedStyle(el).columnGap || 0);
     el.scrollBy({ left: dir * step, behavior: 'smooth' });
   }
 

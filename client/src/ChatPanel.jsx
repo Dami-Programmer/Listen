@@ -130,12 +130,10 @@ function groupMessages(messages) {
  * @param {object[]} props.messages  chat history, oldest first
  * @param {object}   props.typers    socketId -> name of everyone typing
  * @param {string}   props.selfId    my socket id (decides left vs right)
- * @param {object}  [props.mics]     socketId -> bool, mic live? — for the
- *                                   green / red dot on each avatar
- * @param {object[]} [props.participants] who's in the call now — someone who
- *                                   has left keeps their avatar but loses the dot
+ * @param {object[]} [props.participants] who's in the call now (for their
+ *                                   profile pictures)
  */
-export default function ChatPanel({ messages, typers, selfId, mics = {}, participants = [] }) {
+export default function ChatPanel({ messages, typers, selfId, participants = [] }) {
   const [text, setText] = useState('');
   const [picker, setPicker] = useState(null); // 'emoji' | 'sticker' | null
   const [attachError, setAttachError] = useState(null);
@@ -308,11 +306,6 @@ export default function ChatPanel({ messages, typers, selfId, mics = {}, partici
     if (e.key === 'Enter' && !e.shiftKey) sendText(e);
   }
 
-  // The mic dot for someone's avatar: 'on' / 'off' while they're in the call,
-  // undefined (no dot) once they've left. Unknown mic state counts as on,
-  // matching how the video tiles treat it.
-  const present = new Set(participants.map((p) => p.id));
-  const statusOf = (id) => (present.has(id) ? (mics[id] === false ? 'off' : 'on') : undefined);
   // Their profile picture, while they're still here (initials otherwise).
   const avatarOf = (id) => participants.find((p) => p.id === id)?.avatar;
 
@@ -488,14 +481,7 @@ export default function ChatPanel({ messages, typers, selfId, mics = {}, partici
               <div className="cp-group-row">
                 {/* Avatar only for other people; it sits at the bottom of the
                     group, next to their latest message. */}
-                {!mine && (
-                  <Avatar
-                    name={g.name}
-                    src={avatarOf(g.from)}
-                    size={38}
-                    status={statusOf(g.from)}
-                  />
-                )}
+                {!mine && <Avatar name={g.name} src={avatarOf(g.from)} size={38} />}
                 <div className="cp-bubbles">
                   {g.items.map((m) => {
                     const editing = editingId === m.id;

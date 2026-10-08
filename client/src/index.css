@@ -1946,25 +1946,6 @@ button.cs-mode-badge.moderated:hover {
   line-height: 1;
   user-select: none;
 }
-/* Mic dot in the bottom-right corner. The dark ring (same color as the panel)
-   makes it look "cut out" of the avatar, like the design. */
-.avatar-dot {
-  position: absolute;
-  right: -1px;
-  bottom: -1px;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  border: 2px solid var(--bg, #10161c);
-  transition: background-color 0.25s ease;
-}
-.avatar-dot.on {
-  background: #2fd36b;
-}
-.avatar-dot.off {
-  background: #ff3b4f;
-}
-
 /* --- top row: close + me -------------------------------------------------- */
 .cp-head {
   display: flex;
@@ -6024,4 +6005,41 @@ body:has(.mc) {
 /* measured: the people row sits just above the chat on every phone */
 .mc-strip.row {
   bottom: var(--mc-row-bottom, calc(76px + 196px + env(safe-area-inset-bottom)));
+}
+
+/* mobile grid, more than nine people: the ninth tile is "+N" */
+.mc .mc-gmore {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #241b33;
+  border-radius: 0;
+  color: #fff;
+}
+.mc-gmore-faces {
+  display: flex;
+}
+.mc-gmore-faces .avatar + .avatar {
+  margin-left: -10px;
+}
+.mc-gmore-faces .avatar {
+  box-shadow: 0 0 0 2px #241b33;
+}
+.mc-gmore b {
+  font-size: 22px;
+  font-weight: 700;
+}
+.mc .mc-gmore:active {
+  background: #2e2342;
+}
+/* hidden tiles keep playing (for their audio) but take no space */
+.mc-offstage {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
 }

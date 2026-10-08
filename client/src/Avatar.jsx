@@ -1,5 +1,4 @@
-// A round avatar: the person's initials on a colored circle, with an optional
-// status dot in the bottom-right corner.
+// A round avatar: the person's initials on a colored circle.
 //
 // A picture (`src`, picked in the pre-join lobby) replaces the initials when
 // there is one; if it fails to load, the initials show instead.
@@ -8,9 +7,6 @@
 // having to store or send a color.
 //
 import { useState } from 'react';
-
-// The dot shows mic state: green = mic on, red = muted. (Pass `status` as
-// undefined to hide the dot, e.g. for someone who has left the call.)
 
 // A handful of saturated colors that all read well with white text on the
 // dark call screen. The pink matches the "MY" avatar in the design.
@@ -39,11 +35,10 @@ function initialsOf(name = '') {
  * @param {object}  props
  * @param {string}  props.name      whose avatar this is (drives initials + color)
  * @param {number} [props.size=38]  diameter in px
- * @param {'on'|'off'} [props.status] mic state for the corner dot; omit to hide it
  * @param {string} [props.src]        profile picture URL; omit for initials
  * @param {string} [props.className]  extra classes (e.g. for positioning)
  */
-export default function Avatar({ name, size = 38, status, src, className = '' }) {
+export default function Avatar({ name, size = 38, src, className = '' }) {
   // Remember which src failed, so a new picture gets a fresh try.
   const [broken, setBroken] = useState(null);
   const showImg = src && broken !== src;
@@ -65,12 +60,6 @@ export default function Avatar({ name, size = 38, status, src, className = '' })
         <img className="avatar-img" src={src} alt="" onError={() => setBroken(src)} />
       ) : (
         initialsOf(name)
-      )}
-      {status && (
-        <span
-          className={`avatar-dot ${status === 'on' ? 'on' : 'off'}`}
-          aria-label={status === 'on' ? 'mic on' : 'muted'}
-        />
       )}
     </span>
   );
