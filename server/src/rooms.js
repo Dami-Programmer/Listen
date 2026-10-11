@@ -12,7 +12,14 @@
 // silences its outbound tracks. `setRole` below is the single place any role
 // changes, so Phases 4-7 never poke `participant.role` directly.
 
-import { CHAT_ATTACHMENT_BUDGET_BYTES, MODES, ROLES, cleanAvatar } from '@listen/shared';
+import { randomUUID } from 'node:crypto';
+import {
+  CHAT_ATTACHMENT_BUDGET_BYTES,
+  MODES,
+  REJOIN_WINDOW_MS,
+  ROLES,
+  cleanAvatar,
+} from '@listen/shared';
 
 /**
  * roomId -> {
@@ -33,6 +40,12 @@ import { CHAT_ATTACHMENT_BUDGET_BYTES, MODES, ROLES, cleanAvatar } from '@listen
  *   mics: object         // socketId -> bool, whether that person's mic is live
  *                        // (each client reports its own; see setMic)
  *   cams: object         // socketId -> bool, whether that person's camera is on
+ *   tickets: object      // socketId -> secret rejoin ticket (see EVENTS.RESUME).
+ *                        // NEVER put in a snapshot — it's what lets a dropped
+ *                        // person take their seat back.
+ *   away: object         // socketId -> when their connection dropped, for
+ *                        // people whose seat is being held while they
+ *                        // reconnect
  * }
  */
 const rooms = new Map();
@@ -62,6 +75,8 @@ function createRoom() {
     sharing: {},
     mics: {},
     cams: {},
+    tickets: {},
+    away: {},
   };
 }
 
@@ -89,7 +104,184 @@ function attach(room, socketId, name, avatar) {
   // real state as soon as its microphone opens).
   room.mics[socketId] = true;
   room.cams[socketId] = true; // same for the camera
+  // Their secret rejoin ticket, handed only to them (in the join / admit
+  // payload) so they can get this seat back after a network drop.
+  room.tickets[socketId] = randomUUID();
   return room.participants[socketId];
+}
+
+// The rejoin ticket for one participant (for the join / admit payload).
+export function ticketOf(room, socketId) {
+  return room?.tickets[socketId] ?? null;
+}
+
+/* --------------------------------------------------------------------------
+ * Reconnecting after a network drop (see EVENTS.RESUME in @listen/shared).
+ *
+ * A dropped participant stays in `room.participants` — same role, same place
+ * in the queue — but is listed in `room.away` so everyone's screen can show
+ * "Reconnecting…". index.js gives them RECONNECT_GRACE_MS to come back; if
+ * they don't, it removes them with removeParticipant as if they had left.
+ * ---------------------------------------------------------------------- */
+
+// Mark a participant as dropped. They can't be "the active speaker" while
+// gone, so they leave the talking list (the glow moves on).
+export function markAway(room, socketId) {
+  if (!room?.participants[socketId]) return;
+  room.away[socketId] = Date.now();
+  room.speaking = room.speaking.filter((id) => id !== socketId);
+}
+
+export function isAway(room, socketId) {
+  return Boolean(room?.away[socketId]);
+}
+
+// Which room + seat a rejoin ticket belongs to, or null if it's unknown
+// (seat already given up, or the server restarted and forgot everything).
+export function findTicket(ticket) {
+  if (typeof ticket !== 'string' || !ticket) return null;
+  for (const [roomId, room] of rooms) {
+    for (const [socketId, t] of Object.entries(room.tickets)) {
+      if (t === ticket && room.participants[socketId]) return { roomId, room, oldId: socketId };
+    }
+  }
+  return null;
+}
+
+/**
+ * Move a seat from the old (dropped) connection to the new one.
+ *
+ * Everything in the room is keyed by socket id, and a reconnect always gets a
+ * NEW socket id — so every place the old id appears is rewritten to the new
+ * one: the participant itself, host / co-host, the queue, who's presenting,
+ * mic / camera state, the ticket, and the `from` on their chat messages (so
+ * they can still edit / unsend them, and their bubbles stay on "their" side).
+ */
+export function rekey(room, oldId, newId) {
+  const p = room?.participants[oldId];
+  if (!p || oldId === newId) return;
+
+  // Rebuild `participants` in the same order, so the list doesn't reshuffle
+  // (insertion order also decides who inherits the host role).
+  const next = {};
+  for (const [id, value] of Object.entries(room.participants)) {
+    if (id === oldId) next[newId] = { ...value, id: newId };
+    else next[id] = value;
+  }
+  room.participants = next;
+
+  if (room.hostId === oldId) room.hostId = newId;
+  if (room.cohostId === oldId) room.cohostId = newId;
+  room.queue = room.queue.map((id) => (id === oldId ? newId : id));
+  room.speaking = room.speaking.filter((id) => id !== oldId);
+
+  // Plain socketId -> value maps: move the value across.
+  for (const map of [room.sharing, room.mics, room.cams, room.tickets]) {
+    if (oldId in map) {
+      map[newId] = map[oldId];
+      delete map[oldId];
+    }
+  }
+  delete room.away[oldId]; // they're back
+
+  for (const m of room.chat) if (m.from === oldId) m.from = newId;
+}
+
+/* --------------------------------------------------------------------------
+ * Rejoining after leaving on purpose (Google-Meet style "You left the
+ * meeting — Rejoin").
+ *
+ * Pressing Leave takes you out of the room at once — everyone sees you go —
+ * but for REJOIN_WINDOW_MS your ticket stays good as a "rejoin pass". Showing
+ * it (EVENTS.RESUME) puts you straight back in: no knocking, even if the door
+ * is locked, and with your old role back (see restoreRole).
+ *
+ * Passes live here, outside the rooms, so a pass still works if you were the
+ * last one out and the room closed — rejoining reopens it with you as host.
+ * ---------------------------------------------------------------------- */
+
+const passes = new Map(); // ticket -> pass (see createPass)
+
+/**
+ * Write a rejoin pass for someone who is about to leave on purpose. Call it
+ * BEFORE removeParticipant (which forgets their ticket and role), then set
+ * `pass.heir` afterwards to whoever became host (see index.js).
+ * Returns the pass, or null if they have no seat.
+ */
+export function createPass(room, roomId, socketId) {
+  const p = room?.participants[socketId];
+  const ticket = room?.tickets[socketId];
+  if (!p || !ticket) return null;
+  const pass = {
+    roomId,
+    title: room.title, // to reopen the room under the same name if it closed
+    name: p.name,
+    avatar: p.avatar,
+    role: p.role, // what they had — restoreRole gives it back
+    oldId: socketId, // to hand their chat messages back to them
+    cohostBefore: room.cohostId, // was the co-host the one who takes over?
+    heir: null, // filled in after they're removed: the new host
+    timer: setTimeout(() => passes.delete(ticket), REJOIN_WINDOW_MS),
+  };
+  pass.timer.unref?.(); // never keep the server alive just for this
+  passes.set(ticket, pass);
+  return pass;
+}
+
+/**
+ * Use a rejoin pass: put `socketId` back into the room with their old role.
+ * One use only. Returns { roomId, room }, or null if there's no such pass
+ * (never left, more than a minute ago, or the server restarted).
+ */
+export function usePass(ticket, socketId) {
+  const pass = typeof ticket === 'string' ? passes.get(ticket) : null;
+  if (!pass) return null;
+  passes.delete(ticket);
+  clearTimeout(pass.timer);
+
+  let room = rooms.get(pass.roomId);
+  if (!room) {
+    // They were the last one out and the room closed — reopen it.
+    room = createRoom();
+    room.title = pass.title;
+    rooms.set(pass.roomId, room);
+  }
+  // Straight into the room — no waiting-room knock, they were already in.
+  attach(room, socketId, pass.name, pass.avatar);
+  restoreRole(room, socketId, pass);
+  for (const m of room.chat) if (m.from === pass.oldId) m.from = socketId;
+  return { roomId: pass.roomId, room };
+}
+
+// Give a rejoiner back the role they had when they left.
+function restoreRole(room, socketId, pass) {
+  const me = room.participants[socketId];
+  if (room.hostId === socketId) return; // the room was empty: they're host anyway
+
+  if (pass.role === ROLES.HOST) {
+    // Take the room back from whoever inherited it.
+    const stand = room.hostId;
+    room.hostId = socketId;
+    me.role = ROLES.HOST;
+    if (stand && room.participants[stand]) {
+      if (stand === pass.heir && stand === pass.cohostBefore && !room.cohostId) {
+        // They were the co-host before taking over — co-host again.
+        room.cohostId = stand;
+        room.participants[stand].role = ROLES.COHOST;
+      } else {
+        setRole(room, stand, normalRole(room)); // hostId moved, so this applies
+      }
+    }
+  } else if (pass.role === ROLES.COHOST) {
+    // Only one co-host at a time: if the host picked a new one meanwhile,
+    // they keep it and the rejoiner comes back as a normal participant.
+    if (!room.cohostId) {
+      room.cohostId = socketId;
+      me.role = ROLES.COHOST;
+    }
+  } else if (pass.role === ROLES.SPEAKER && room.mode === MODES.MODERATED) {
+    setRole(room, socketId, ROLES.SPEAKER); // had the floor — gets it back
+  }
 }
 
 /**
@@ -117,7 +309,9 @@ export function addParticipant(roomId, socketId, name, avatar, title) {
   if (!room) {
     room = createRoom();
     // Only the creator names the meeting; later joiners can't rename it.
-    room.title = String(title ?? '').trim().slice(0, 80);
+    room.title = String(title ?? '')
+      .trim()
+      .slice(0, 80);
     rooms.set(roomId, room);
   }
   attach(room, socketId, name, avatar);
@@ -491,6 +685,8 @@ export function removeParticipant(socketId) {
     delete room.sharing[socketId];
     delete room.mics[socketId]; // they've left — forget their mic state
     delete room.cams[socketId];
+    delete room.tickets[socketId]; // their seat is gone — the ticket is useless now
+    delete room.away[socketId];
     if (room.cohostId === socketId) room.cohostId = null;
 
     const remaining = Object.keys(room.participants);
@@ -549,5 +745,8 @@ export function snapshot(roomId) {
     mics: { ...room.mics },
     // socketId -> bool, whether that person's camera is on.
     cams: { ...room.cams },
+    // socketIds of people whose connection dropped and who are reconnecting
+    // (their tiles say "Reconnecting…"). The tickets themselves stay secret.
+    away: Object.keys(room.away),
   };
 }

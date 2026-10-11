@@ -5,7 +5,7 @@
 // DOM-only property, not an HTML attribute — so we grab the element with a ref
 // and assign it in an effect whenever the stream changes.
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { MicOff } from './icons.jsx';
 
 // iPhone / iPad Safari (and Mac Safari) — the browsers with webkit PiP.
@@ -33,6 +33,9 @@ const isWebKit =
  *                                      crossed-out mic badge in the corner.
  *                                      (Different from `muted`, which only
  *                                      silences this <video> element locally.)
+ * @param {boolean}    [props.away]     this person's connection dropped and
+ *                                      they're reconnecting — dim the tile
+ *                                      and say "Reconnecting…" over it
  */
 export default function VideoTile({
   stream,
@@ -44,6 +47,7 @@ export default function VideoTile({
   screen = false,
   sinkId,
   micOff = false,
+  away = false,
 }) {
   const videoRef = useRef(null);
 
@@ -64,6 +68,30 @@ export default function VideoTile({
     if (el && sinkId && el.setSinkId) el.setSinkId(sinkId).catch(() => {});
   }, [sinkId]);
 
+  // Is the picture tall (a phone held upright) or wide (a laptop, a phone on
+  // its side)? It goes on the <video> as data-shape, so the CSS can show a
+  // tall picture WHOLE in a wide tile (and the other way round) instead of
+  // cropping it to fit — cropping is what makes a camera look zoomed in.
+  // 'resize' fires whenever the picture's size changes, e.g. a phone turned
+  // sideways mid-call.
+  const [shape, setShape] = useState(null); // 'portrait' | 'landscape' | null
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return undefined;
+    const measure = () => {
+      if (el.videoWidth && el.videoHeight) {
+        setShape(el.videoHeight > el.videoWidth ? 'portrait' : 'landscape');
+      }
+    };
+    measure();
+    el.addEventListener('loadedmetadata', measure);
+    el.addEventListener('resize', measure);
+    return () => {
+      el.removeEventListener('loadedmetadata', measure);
+      el.removeEventListener('resize', measure);
+    };
+  }, [stream]);
+
   // Keep the element's mute in step with the prop as it changes mid-call
   // (e.g. someone becomes a listener and their audio must stop right away).
   useEffect(() => {
@@ -78,12 +106,21 @@ export default function VideoTile({
         playsInline
         muted={muted}
         className={mirror && !screen ? 'mirror' : undefined}
+        data-shape={shape ?? undefined}
       />
       <span className="tile-label">{label}</span>
       {/* Mute badge — only on camera tiles; a screen share has no mic. */}
       {micOff && !screen && (
         <span className="tile-mic-off" title={`${label} is muted`}>
           <MicOff />
+        </span>
+      )}
+      {/* Their connection dropped: their picture is frozen or black, so say
+          why. Goes away by itself when they're back (or have left). */}
+      {away && !screen && (
+        <span className="tile-away" role="status">
+          <span className="tile-away-spin" aria-hidden="true" />
+          Reconnecting…
         </span>
       )}
       {role && !screen && (

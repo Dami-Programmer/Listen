@@ -4,13 +4,15 @@
 // handed to the call via onSubmit so the call opens exactly as previewed.
 
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Cam, CamOff, Mic, MicOff, Speaker } from './icons.jsx';
+import { Cam, CamOff, Mic, MicOff, Speaker } from './icons.jsx';
 import AvatarPicker from './AvatarPicker.jsx';
 import Select from './Select.jsx';
 import useIsMobile from './useIsMobile.js';
 import ThemeToggle from './ThemeToggle.jsx';
 import Logo from './Logo.jsx';
 import ProfileCard, { PROFILE } from './ProfileCard.jsx';
+import { SIGNALING_URL } from './socket.js';
+import { cameraConstraints } from './webrtc.js';
 
 // A link with ?profile in it (https://your-site/?profile) opens the creator card.
 const wantsProfile = () => new URLSearchParams(window.location.search).has('profile');
@@ -79,8 +81,26 @@ export default function PreJoin({
   onTitle,
   onAvatar,
   onSubmit,
+  joining = false, // the join request is on its way ("Joining…")
+  slowJoin = false, // ...and it's taking a while (the server is waking up)
 }) {
   const isMobile = useIsMobile();
+
+  // Wake the server up while people are still typing their name. On Render's
+  // free plan it falls asleep after ~15 idle minutes and takes up to a minute
+  // to start again — this tiny request starts that the moment the lobby
+  // opens, so by the time they press Join it's usually awake. The answer
+  // itself doesn't matter.
+  useEffect(() => {
+    fetch(`${SIGNALING_URL}/health`).catch(() => {});
+  }, []);
+
+  // Shown under the form while a slow join is waiting.
+  const wakingNote = slowJoin && (
+    <p className="pj-note" role="status">
+      Waking up the server — this can take up to a minute the first time…
+    </p>
+  );
   const videoRef = useRef(null);
   const meterRef = useRef(null);
   const [stream, setStream] = useState(null);
@@ -103,7 +123,8 @@ export default function PreJoin({
     navigator.mediaDevices
       .getUserMedia({
         audio: audioId ? { deviceId: { exact: audioId } } : true,
-        video: camOn ? (videoId ? { deviceId: { exact: videoId } } : true) : false,
+        // Same HD picture the call will use, so the preview isn't zoomed in.
+        video: camOn ? cameraConstraints(videoId) : false,
       })
       .then((s) => {
         if (cancelled) {
@@ -247,14 +268,10 @@ export default function PreJoin({
     return (
       <main className="prejoin pjm">
         <div className="pjm-top">
-          <button
-            type="button"
-            className="pjm-back"
-            onClick={() => window.history.back()}
-            aria-label="Back"
-          >
-            <ArrowLeft />
-          </button>
+          {/* the Listen logo, top left */}
+          <span className="pjm-logo">
+            <Logo />
+          </span>
           {/* the creator credit — opens the profile card */}
           <button type="button" className="pj-credit" onClick={() => setProfileOpen(true)}>
             <img src={PROFILE.photo} alt="" />
@@ -317,9 +334,9 @@ export default function PreJoin({
               type="submit"
               className="pjm-join"
               // Whoever starts the meeting has to name it; invitees only need their name.
-              disabled={!name.trim() || (!invited && !title.trim())}
+              disabled={joining || !name.trim() || (!invited && !title.trim())}
             >
-              Join
+              {joining ? 'Joining…' : 'Join'}
             </button>
           </div>
 
@@ -345,6 +362,7 @@ export default function PreJoin({
             <AvatarPicker name={name} avatar={avatar} onChange={onAvatar} />
           </div>
           {note && <p className="pj-note">{note}</p>}
+          {wakingNote}
           {error && <p className="err">{error}</p>}
         </form>
 
@@ -519,9 +537,10 @@ export default function PreJoin({
               />
             </label>
             <AvatarPicker name={name} avatar={avatar} onChange={onAvatar} />
-            <button type="submit" className="pj-join" disabled={!name.trim()}>
-              {roomId.trim() ? 'Join now' : 'Start a new meeting'}
+            <button type="submit" className="pj-join" disabled={joining || !name.trim()}>
+              {joining ? 'Joining…' : roomId.trim() ? 'Join now' : 'Start a new meeting'}
             </button>
+            {wakingNote}
             {error && <p className="err">{error}</p>}
           </form>
         </section>

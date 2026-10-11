@@ -152,6 +152,25 @@ export const EVENTS = {
   // The server adds `from` (the sender's socket id) before relaying.
   RTC_SIGNAL: 'rtc-signal',
 
+  // Reconnecting after a network drop (Google-Meet style).
+  // When someone's internet drops, the server does NOT remove them straight
+  // away: it marks them "away" (everyone sees "Reconnecting…" on their tile)
+  // and holds their seat for RECONNECT_GRACE_MS. Every join / admit hands the
+  // client a secret `ticket` (never in room-state, so nobody else can see it).
+  //   RESUME : client -> server { ticket }, sent by the client's NEW
+  //     connection once the internet is back. If the seat is still held, the
+  //     server moves it — role, raised hand, mic/cam state, chat ownership — onto
+  //     the new connection and acks like a join:
+  //       { ok: true, selfId, state, chat, iceServers, ticket }
+  //     Seat already given up (too long away, server restarted) ->
+  //       { ok: false, error: 'expired' } and the client goes to the lobby.
+  // Pressing Leave (or closing the tab) takes you out of the room at once —
+  // everyone sees you go — but the same ticket works as a one-minute REJOIN
+  // pass: the "You left the meeting — Rejoin" screen sends RESUME with it and
+  // you're straight back in (no knocking, even if the door is locked) with
+  // your old role. Being removed or denied ends it for good: no pass.
+  RESUME: 'resume',
+
   // server -> client
   ROOM_STATE: 'room-state', // full snapshot on every change
   ERROR: 'room-error',
@@ -162,6 +181,15 @@ export const MODES = {
   OPEN: 'open',
   MODERATED: 'moderated',
 };
+
+// How long the server holds a disconnected person's seat (see EVENTS.RESUME).
+// Long enough for a Wi-Fi blip or a phone switching Wi-Fi -> mobile data; short
+// enough that someone who really left doesn't linger as "Reconnecting…".
+export const RECONNECT_GRACE_MS = 60 * 1000;
+
+// How long "You left the meeting — Rejoin" works after pressing Leave (the
+// server keeps the rejoin pass this long; the screen counts down the same).
+export const REJOIN_WINDOW_MS = 60 * 1000;
 
 // Every participant has exactly one role.
 //   host     — created the room / promoted on host leave. Full control. One only.

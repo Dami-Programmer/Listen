@@ -12,7 +12,7 @@
 // button here is advisory: the server re-checks that the caller is the host.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { EVENTS, MODES, ROLES } from '@listen/shared';
+import { EVENTS, MODES, RECONNECT_GRACE_MS, REJOIN_WINDOW_MS, ROLES } from '@listen/shared';
 import { socket } from './socket.js';
 import { useCall } from './webrtc.js';
 import VideoTile from './VideoTile.jsx';
@@ -31,6 +31,18 @@ import { newMeetingCode } from './meeting.js';
 import MobileCall from './MobileCall.jsx';
 import useIsMobile from './useIsMobile.js';
 import { playKnock } from './knockSound.js';
+import ReconnectBanner from './ReconnectBanner.jsx';
+import LeftScreen from './LeftScreen.jsx';
+
+// How long the "You left the meeting" screen offers Rejoin — the same minute
+// the server keeps the rejoin pass for.
+const REJOIN_SECONDS = Math.round(REJOIN_WINDOW_MS / 1000);
+
+// Joining: after this long with no answer, explain the wait ("Waking up the
+// server…"); after this long, give up and let them try again. A sleeping
+// Render free-plan server takes ~30–60 s to wake.
+const SLOW_JOIN_MS = 4000;
+const JOIN_TIMEOUT_MS = 90_000;
 import {
   Cam,
   CamOff,
@@ -104,7 +116,6 @@ export default function App() {
   const [chat, setChat] = useState([]); // in-call chat, seeded from the join ack
   const [typers, setTypers] = useState({}); // socketId -> name, currently typing
   const [error, setError] = useState(null);
-  const [connected, setConnected] = useState(false);
   // true while we're in the locked room's waiting area, before a moderator lets
   // us in.
   const [waiting, setWaiting] = useState(false);
@@ -118,6 +129,40 @@ export default function App() {
   // STUN + TURN servers for the call, sent by the server in the join ack.
   const [iceServers, setIceServers] = useState(null);
 
+  // --- reconnecting after a network drop (Google-Meet style) --------------
+  // true while our connection to the server is down but we're still on the
+  // call screen, waiting for it to come back (see EVENTS.RESUME).
+  const [reconnecting, setReconnecting] = useState(false);
+  // The secret ticket the server gave us when we got in. Showing it on the
+  // new connection gets our seat (role, hand, chat) back. Kept in memory
+  // only: a page refresh is a fresh start, like Google Meet.
+  const ticketRef = useRef(null);
+  // The socket listeners below are registered once, so they read these
+  // through refs rather than (stale) state.
+  const reconnectingRef = useRef(false);
+  // Gives up if the server can't be reached at all for too long.
+  const giveUpTimerRef = useRef(null);
+
+  // --- "You left the meeting — Rejoin" (Google-Meet style) ----------------
+  // true on the screen shown right after pressing Leave; `rejoining` while
+  // the Rejoin request is on its way.
+  const [left, setLeft] = useState(false);
+  const [rejoining, setRejoining] = useState(false);
+  // The meeting we just left (its name, or code), for the review form.
+  const [leftMeeting, setLeftMeeting] = useState('');
+
+  // --- the Join button while the server answers ---------------------------
+  // true from the Join click until the server answers ("Joining…"), and
+  // `slowJoin` once that has taken more than a few seconds ("Waking up the
+  // server…"). The ref holds the in-flight attempt's timers — and blocks a
+  // second click from sending a second join request.
+  const [joining, setJoining] = useState(false);
+  const [slowJoin, setSlowJoin] = useState(false);
+  const joinAttemptRef = useRef(null);
+  // true when this call was entered with Rejoin — so the "Your meeting is
+  // ready" invite card (for whoever just STARTED a meeting) doesn't pop up.
+  const [rejoined, setRejoined] = useState(false);
+
   // Drop every "is typing" indicator and its safety timer.
   const clearTypers = () => {
     Object.values(typerTimersRef.current).forEach(clearTimeout);
@@ -125,21 +170,87 @@ export default function App() {
     setTypers({});
   };
 
+  // Stop trying to get back in: back to the lobby with a note. Unlike Leave,
+  // this KEEPS the name, picture and meeting code, so "Join" right there is
+  // all it takes to rejoin.
+  function dropToLobby(note) {
+    clearTimeout(giveUpTimerRef.current);
+    reconnectingRef.current = false;
+    ticketRef.current = null;
+    socket.disconnect(); // also stops Socket.IO's automatic retrying
+    setReconnecting(false);
+    setJoined(false);
+    setWaiting(false);
+    setState(null);
+    setSelfId(null);
+    setChat([]);
+    clearTypers();
+    setRemovedNote(note);
+  }
+  // The socket listeners are registered once, so they call the latest
+  // dropToLobby through a ref.
+  const dropToLobbyRef = useRef(dropToLobby);
+  dropToLobbyRef.current = dropToLobby;
+
   // Wire socket listeners once. These are the Phase 1 room-state events; the
   // Phase 2 RTC_SIGNAL listener is added/removed inside the useCall hook.
   useEffect(() => {
+    const LOST_NOTE = 'You lost your connection and left the meeting. Join again to go back in.';
+
     function onConnect() {
-      setConnected(true);
+      // We're back online after a drop: show our ticket to get our seat back.
+      if (reconnectingRef.current && ticketRef.current) {
+        socket.emit(EVENTS.RESUME, { ticket: ticketRef.current }, (ack) => {
+          if (!ack?.ok) {
+            // Too late (the seat was given up) or the server restarted.
+            dropToLobbyRef.current(LOST_NOTE);
+            return;
+          }
+          clearTimeout(giveUpTimerRef.current);
+          reconnectingRef.current = false;
+          ticketRef.current = ack.ticket ?? null;
+          // A reconnect always gets a new socket id. Everything on screen
+          // follows from these, and the call rebuilds its connections to
+          // everyone under the new id (webrtc.js effects B + C).
+          setSelfId(ack.selfId);
+          setState(ack.state);
+          setChat(ack.chat ?? []);
+          if (ack.iceServers) setIceServers(ack.iceServers);
+          setReconnecting(false);
+        });
+      }
     }
-    function onDisconnect() {
-      setConnected(false);
+    function onDisconnect(reason) {
+      clearTypers();
+      // Socket.IO's reason tells us WHY the line dropped:
+      //  'io client disconnect' — we closed it (Leave, closing the tab)
+      //  'io server disconnect' — the server closed it (removed, denied)
+      //  anything else          — a network problem. Socket.IO is already
+      //                           retrying; stay on the call screen.
+      const meant = reason === 'io client disconnect' || reason === 'io server disconnect';
+      if (!meant && ticketRef.current) {
+        reconnectingRef.current = true;
+        setReconnecting(true);
+        // The server holds our seat for RECONNECT_GRACE_MS after IT notices
+        // the drop (up to ~20 s after we do). If we still can't reach it by
+        // then, the seat is gone anyway — stop and say so.
+        clearTimeout(giveUpTimerRef.current);
+        giveUpTimerRef.current = setTimeout(
+          () => dropToLobbyRef.current(LOST_NOTE),
+          RECONNECT_GRACE_MS + 20_000,
+        );
+        return;
+      }
+      // Removed or denied: no way back in. (When WE closed it — Leave — the
+      // ticket is kept: it's the one-minute rejoin pass; handleLeave decides.)
+      if (reason === 'io server disconnect') ticketRef.current = null;
       setJoined(false);
       setWaiting(false);
       setState(null);
       setChat([]);
-      clearTypers();
     }
-    function onAdmitted({ selfId: id, state: snap, chat: history }) {
+    function onAdmitted({ selfId: id, state: snap, chat: history, ticket }) {
+      ticketRef.current = ticket ?? null;
       setSelfId(id);
       setState(snap);
       setChat(history ?? []);
@@ -233,9 +344,13 @@ export default function App() {
 
   function handleJoin(e, prefs) {
     e.preventDefault();
+    // Already on its way — a second click would send a second join request,
+    // which the server turns down ("already in a room").
+    if (joinAttemptRef.current) return;
     setError(null);
     setMediaPrefs(prefs ?? null);
     setRemovedNote(null);
+    setRejoined(false);
     if (!name.trim()) return;
     // No code typed -> this is a brand-new meeting with its own code.
     const id = roomId.trim() || newMeetingCode();
@@ -246,17 +361,40 @@ export default function App() {
     url.searchParams.set('room', id);
     window.history.replaceState({}, '', url);
 
+    // Show "Joining…" straight away, and say so if it's slow. On Render's free
+    // plan the server falls asleep after ~15 idle minutes and takes up to a
+    // minute to wake — without this, the button looks dead and people click
+    // again. If there's still no answer after JOIN_TIMEOUT_MS, give up
+    // cleanly so they can try again.
+    const attempt = {
+      slow: setTimeout(() => setSlowJoin(true), SLOW_JOIN_MS),
+      fail: setTimeout(() => {
+        endJoinAttempt();
+        socket.disconnect(); // drop the half-made connection; a retry starts fresh
+        // Socket.IO keeps unsent messages and sends them on the next connect —
+        // throw this join away, or the retry would arrive as a second join.
+        socket.sendBuffer = [];
+        setError('Couldn’t reach the server. Check your internet and try again.');
+      }, JOIN_TIMEOUT_MS),
+    };
+    joinAttemptRef.current = attempt;
+    setJoining(true);
+
     if (!socket.connected) socket.connect();
     socket.emit(
       EVENTS.JOIN_ROOM,
       { roomId: id, name: name.trim(), avatar, title: title.trim() },
       (ack) => {
+        // An answer to an attempt we already gave up on — ignore it.
+        if (joinAttemptRef.current !== attempt) return;
+        endJoinAttempt();
         if (ack?.ok) setIceServers(ack.iceServers ?? null);
         if (ack?.ok && ack.waiting) {
           // Locked room — sit in the lobby until a moderator admits us.
           setSelfId(ack.selfId);
           setWaiting(true);
         } else if (ack?.ok) {
+          ticketRef.current = ack.ticket ?? null; // our way back in after a drop
           setSelfId(ack.selfId);
           setState(ack.state);
           setChat(ack.chat ?? []);
@@ -268,7 +406,42 @@ export default function App() {
     );
   }
 
-  function handleLeave() {
+  // The join request got an answer (or timed out): stop the timers and put
+  // the Join button back to normal.
+  function endJoinAttempt() {
+    const attempt = joinAttemptRef.current;
+    if (attempt) {
+      clearTimeout(attempt.slow);
+      clearTimeout(attempt.fail);
+    }
+    joinAttemptRef.current = null;
+    setJoining(false);
+    setSlowJoin(false);
+  }
+
+  // Closing or refreshing the tab is leaving on purpose, like Google Meet:
+  // close the connection ourselves so the server takes us out right away
+  // (a connection that just vanishes would look like a network drop, and
+  // everyone would see us "Reconnecting…" for a minute).
+  useEffect(() => {
+    const onPageHide = () => {
+      if (socket.connected) socket.disconnect();
+    };
+    window.addEventListener('pagehide', onPageHide);
+    return () => window.removeEventListener('pagehide', onPageHide);
+  }, []);
+
+  // Leave the call on purpose (the red button, "Leave" on the reconnect
+  // banner, the floating window). Like Google Meet, you land on "You left the
+  // meeting" with a Rejoin button for a minute — the server keeps a rejoin
+  // pass for our ticket (see EVENTS.RESUME). `devices` is the mic / camera
+  // on-off at the moment we left, so Rejoin brings them back the same way.
+  // (Cancelling a knock in the waiting room has no ticket: straight home.)
+  function handleLeave(devices) {
+    clearTimeout(giveUpTimerRef.current);
+    reconnectingRef.current = false;
+    setReconnecting(false);
+    const canRejoin = joined && Boolean(ticketRef.current);
     // Disconnecting the socket also unmounts <CallView/>, whose useCall cleanup
     // stops the camera and closes every peer connection.
     socket.disconnect();
@@ -278,6 +451,52 @@ export default function App() {
     setSelfId(null);
     setChat([]);
     clearTypers();
+    if (!canRejoin) {
+      goHome();
+      return;
+    }
+    // Remember mic / camera as they were (ignore a click event passed by a
+    // plain onClick={onLeave}).
+    if (typeof devices?.micOn === 'boolean') {
+      setMediaPrefs((p) => ({ ...p, micOn: devices.micOn, camOn: devices.camOn }));
+    }
+    // Which meeting this was — shown with their review, if they write one.
+    setLeftMeeting(state?.title || state?.roomId || roomId);
+    setLeft(true);
+  }
+
+  // "Rejoin" on the You-left screen: show our ticket and go straight back in
+  // with our old role. If the minute is up (or the server restarted), fall
+  // back to the lobby with the name and meeting code still filled in.
+  function handleRejoin() {
+    const ticket = ticketRef.current;
+    if (!ticket) {
+      goHome();
+      return;
+    }
+    setRejoining(true);
+    if (!socket.connected) socket.connect();
+    socket.emit(EVENTS.RESUME, { ticket }, (ack) => {
+      setRejoining(false);
+      setLeft(false);
+      if (!ack?.ok) {
+        dropToLobby('It’s been too long to rejoin automatically. Join again to go back in.');
+        return;
+      }
+      ticketRef.current = ack.ticket ?? null;
+      setSelfId(ack.selfId);
+      setState(ack.state);
+      setChat(ack.chat ?? []);
+      if (ack.iceServers) setIceServers(ack.iceServers);
+      setRejoined(true);
+      setJoined(true);
+    });
+  }
+
+  // All the way out: the rejoin minute is over, or "Return to home screen".
+  function goHome() {
+    ticketRef.current = null;
+    setLeft(false);
     // Leaving (or cancelling a knock) wipes the form: name, picture and
     // meeting code, plus the ?room= in the address bar, so the next person at
     // this screen starts from scratch.
@@ -295,6 +514,19 @@ export default function App() {
     return <WaitingScreen roomId={roomId} onCancel={handleLeave} />;
   }
 
+  if (left) {
+    return (
+      <LeftScreen
+        seconds={REJOIN_SECONDS}
+        busy={rejoining}
+        onRejoin={handleRejoin}
+        onHome={goHome}
+        name={name.trim()}
+        meeting={leftMeeting}
+      />
+    );
+  }
+
   if (!joined) {
     return (
       <PreJoin
@@ -310,21 +542,27 @@ export default function App() {
         onTitle={setTitle}
         onAvatar={setAvatar}
         onSubmit={handleJoin}
+        joining={joining}
+        slowJoin={slowJoin}
       />
     );
   }
 
   return (
-    <CallView
-      state={state}
-      chat={chat}
-      typers={typers}
-      selfId={selfId}
-      connected={connected}
-      onLeave={handleLeave}
-      media={mediaPrefs}
-      iceServers={iceServers}
-    />
+    <>
+      <CallView
+        state={state}
+        chat={chat}
+        typers={typers}
+        selfId={selfId}
+        onLeave={handleLeave}
+        media={mediaPrefs}
+        iceServers={iceServers}
+        rejoined={rejoined}
+      />
+      {/* Our connection dropped: stay on the call, say so, offer Leave. */}
+      {reconnecting && <ReconnectBanner onLeave={handleLeave} />}
+    </>
   );
 }
 
@@ -410,7 +648,7 @@ function useExitable() {
 }
 
 // --- the in-call screen ----------------------------------------------------
-function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceServers }) {
+function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rejoined }) {
   const participants = state?.participants ?? [];
   const isMobile = useIsMobile();
   // Side panel (chat, participants, moderation) — toggled by the chat button,
@@ -511,6 +749,10 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
     media,
   });
 
+  // Leave the call, telling <App/> how the mic and camera were — so if you
+  // hit Rejoin on the "You left the meeting" screen, they come back the same.
+  const leave = () => onLeave({ micOn, camOn });
+
   // The floating mini-call shown while you're on another tab (Pip.jsx).
   const { pipWin } = usePip();
 
@@ -519,7 +761,10 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
   const isModerator = isHost || self?.role === ROLES.COHOST;
   // Whoever starts a meeting (first in, so host, and alone) gets the invite
   // link straight away; anyone can reopen it from the Invite button.
-  const [inviteOpen, setInviteOpen] = useState(() => isHost && participants.length === 1);
+  // (Not when coming back with Rejoin — the meeting isn't new to them.)
+  const [inviteOpen, setInviteOpen] = useState(
+    () => !rejoined && isHost && participants.length === 1,
+  );
   const cohostId = state?.cohostId ?? null;
   const moderated = state?.mode === MODES.MODERATED;
 
@@ -566,6 +811,8 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
   const micOf = (id) => state?.mics?.[id] ?? true;
   // Same for cameras (CAM_STATE -> `state.cams`).
   const camOf = (id) => state?.cams?.[id] ?? true;
+  // People whose connection dropped and who are reconnecting.
+  const awayIds = state?.away ?? [];
 
   // --- one media stage, Google-Meet style -------------------------------
   // Camera tiles for everyone (me first). If anyone is screen sharing, the
@@ -596,6 +843,9 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
       muted: peerOf(id)?.role === ROLES.LISTENER,
       // Everyone else's mic: what they last reported via the server.
       micOff: !micOf(id),
+      // Their connection dropped and the server is holding their seat while
+      // they reconnect — the tile says "Reconnecting…".
+      away: awayIds.includes(id),
     })),
   ].filter(Boolean);
 
@@ -880,8 +1130,8 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
             chat,
             typers,
             selfId,
-            connected,
-            onLeave,
+            onLeave: leave,
+            rejoined,
             media,
             participants,
             self,
@@ -967,8 +1217,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
                 moderated={moderated}
                 onToggle={() => changeMode(moderated ? MODES.OPEN : MODES.MODERATED)}
               />
-            )}
-            {!connected && <span className="cs-status">reconnecting…</span>}
+            )}{' '}
           </div>
 
           <JoinRequest
@@ -993,6 +1242,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
                     stream={t.stream}
                     label={t.label}
                     muted={t.muted}
+                    away={t.away}
                     mirror={t.mirror}
                   />
                   <div className="cs-name-pill">
@@ -1015,6 +1265,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
                     stream={t.stream}
                     label={t.label}
                     muted={t.muted}
+                    away={t.away}
                     mirror={t.mirror}
                   />
                   {/* Same "[mic] Jonas Berg is muted" pill as the big tile. */}
@@ -1042,6 +1293,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
                   stream={spotlight.stream}
                   label={spotlight.label}
                   muted={spotlight.muted}
+                  away={spotlight.away}
                   mirror={spotlight.mirror}
                   screen={presenting}
                 />
@@ -1074,6 +1326,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
                         label={t.label}
                         speaking={t.speaking}
                         muted={t.muted}
+                        away={t.away}
                         mirror={t.mirror}
                         micOff={t.micOff}
                       />
@@ -1177,7 +1430,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
             )}
             <button
               className="cs-hangup"
-              onClick={onLeave}
+              onClick={leave}
               aria-label="Leave call"
               title="Leave call"
             >
@@ -1259,7 +1512,7 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
               toggleMic,
               toggleCam,
               toggleHand: handRaised ? lowerHand : raiseHand,
-              onLeave,
+              onLeave: leave,
             }}
             events={{ chat, queue, waiting, participants, selfId, isModerator, admit, deny }}
           />
@@ -1619,6 +1872,7 @@ function SideStrip({ tiles, sinkId }) {
               stream={t.stream}
               label={t.label}
               muted={t.muted}
+              away={t.away}
               mirror={t.mirror}
               micOff={t.micOff}
             />

@@ -37,15 +37,34 @@ const CONNECT_TIMEOUT_MS = 10000;
 // peer that's truly unreachable doesn't get hammered forever.
 const MAX_RESTARTS = 5;
 
+// The camera picture we ask for: HD (720p). Asking for nothing in particular
+// (`video: true`) gets a small 640×480 LANDSCAPE picture — on a phone held
+// upright that's a cropped slice of the camera's view, which then gets
+// cropped AGAIN to fill a tall phone tile, so the front camera looks zoomed
+// in. Asking for 1280×720 gets the camera's natural wide view instead; phones
+// hand it over upright (720×1280) when they're held upright, just like the
+// phone's own video recording. `ideal` = "this if you can, the closest you
+// have otherwise", so an old webcam still works.
+const CAMERA_QUALITY = { width: { ideal: 1280 }, height: { ideal: 720 } };
+
+/**
+ * The `video` part of a getUserMedia request: HD, plus a specific camera if
+ * one was picked. `how` is 'exact' (that camera or fail) or 'ideal' (that
+ * camera if it's still there, else any).
+ */
+export function cameraConstraints(deviceId, how = 'exact') {
+  return deviceId ? { ...CAMERA_QUALITY, deviceId: { [how]: deviceId } } : { ...CAMERA_QUALITY };
+}
+
 // Camera + mic. Individual tracks get muted via `track.enabled` — we never
 // renegotiate just to toggle mic/camera. (Screen share does renegotiate.)
-const MEDIA_CONSTRAINTS = { audio: true, video: true };
+const MEDIA_CONSTRAINTS = { audio: true, video: cameraConstraints() };
 
 // Use the devices picked in the pre-join lobby, when there are any.
 function constraintsFor(media) {
   return {
     audio: media?.audioId ? { deviceId: { exact: media.audioId } } : MEDIA_CONSTRAINTS.audio,
-    video: media?.videoId ? { deviceId: { exact: media.videoId } } : MEDIA_CONSTRAINTS.video,
+    video: cameraConstraints(media?.videoId),
   };
 }
 
@@ -586,18 +605,21 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode, medi
   // host mute, a role change — so watching it here catches them all in one
   // place. The server stores it and re-broadcasts, which is how other people's
   // screens learn to show "<name> is muted".
+  // `selfId` is in the list too: after a reconnect (new socket id) we report
+  // again, in case the mic was toggled while we were offline and the report
+  // never got through.
   useEffect(() => {
     if (inCall && localStream && socket.connected) {
       socket.emit(EVENTS.MIC_STATE, { on: micOn });
     }
-  }, [micOn, inCall, localStream]);
+  }, [micOn, inCall, localStream, selfId]);
 
   // ...and the camera, so others can show my avatar while it's off.
   useEffect(() => {
     if (inCall && localStream && socket.connected) {
       socket.emit(EVENTS.CAM_STATE, { on: camOn });
     }
-  }, [camOn, inCall, localStream]);
+  }, [camOn, inCall, localStream, selfId]);
 
   // --- screen sharing ----------------------------------------------------
   const stopShare = useCallback(() => {
@@ -716,7 +738,7 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode, medi
     try {
       const id = camDeviceRef.current;
       const s = await navigator.mediaDevices.getUserMedia({
-        video: id ? { deviceId: { ideal: id } } : true,
+        video: cameraConstraints(id, 'ideal'),
       });
       fresh = s.getVideoTracks()[0];
     } catch (err) {
@@ -765,7 +787,11 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode, medi
 
     const open = (id) =>
       navigator.mediaDevices
-        .getUserMedia({ [kind]: { deviceId: { exact: id } } })
+        .getUserMedia(
+          kind === 'video'
+            ? { video: cameraConstraints(id) }
+            : { audio: { deviceId: { exact: id } } },
+        )
         .then((s) => (kind === 'audio' ? s.getAudioTracks()[0] : s.getVideoTracks()[0]));
 
     // Many phones/laptops can't run two cameras at once, so the old camera is

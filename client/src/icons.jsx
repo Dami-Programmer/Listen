@@ -257,9 +257,3 @@ export const Minimize = (p) => (
     <path d="M9 4v4a1 1 0 0 1-1 1H4M20 9h-4a1 1 0 0 1-1-1V4M15 20v-4a1 1 0 0 1 1-1h4M4 15h4a1 1 0 0 1 1 1v4" />
   </svg>
 );
-
-export const ArrowLeft = (p) => (
-  <svg {...s} {...p}>
-    <path d="M20 12H4m6-6-6 6 6 6" />
-  </svg>
-);

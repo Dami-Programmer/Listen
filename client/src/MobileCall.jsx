@@ -48,8 +48,8 @@ export default function MobileCall({ call }) {
     chat,
     typers,
     selfId,
-    connected,
     onLeave,
+    rejoined,
     media,
     participants,
     self,
@@ -120,7 +120,10 @@ export default function MobileCall({ call }) {
   const [editing, setEditing] = useState(null); // my message being edited
   // The invite pop-up: opens by itself for whoever starts the meeting (alone
   // in it), and again from the meeting name or the people sheet.
-  const [inviteOpen, setInviteOpen] = useState(() => isHost && participants.length === 1);
+  // (Not when coming back with Rejoin — the meeting isn't new to them.)
+  const [inviteOpen, setInviteOpen] = useState(
+    () => !rejoined && isHost && participants.length === 1,
+  );
 
   const knocker = isModerator ? waiting[0] : null;
 
@@ -296,8 +299,8 @@ export default function MobileCall({ call }) {
       title: 'Leave the call?',
       message:
         isHost && others > 0
-          ? 'You’re the host — someone else will take over the meeting.'
-          : 'You can rejoin with the invite link.',
+          ? 'You’re the host — someone else takes over, unless you rejoin within a minute.'
+          : 'You’ll have a minute to rejoin.',
       confirmLabel: 'Leave',
       cancelLabel: 'Stay',
       danger: true,
@@ -499,7 +502,6 @@ export default function MobileCall({ call }) {
             />
           </div>
         )}
-        {!connected && <p className="mc-status">reconnecting…</p>}
         {mediaError && <p className="mc-status err">{mediaError}</p>}
       </header>
 
@@ -1077,6 +1079,7 @@ function Tile({ tile, sinkId, screen = false }) {
         muted={tile.muted}
         mirror={tile.mirror}
         screen={screen}
+        away={tile.away}
       />
       {!screen && tile.camOff && (
         <div className="mc-camoff">

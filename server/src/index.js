@@ -22,22 +22,27 @@ import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import { Server } from 'socket.io';
-import { CHAT_FILE_MAX_BYTES, EVENTS, MODES, STICKERS } from '@listen/shared';
+import { CHAT_FILE_MAX_BYTES, EVENTS, MODES, RECONNECT_GRACE_MS, STICKERS } from '@listen/shared';
 import {
   addChatMessage,
   addParticipant,
   addWaiting,
   admitWaiting,
   clearFloor,
+  createPass,
   demoteCohost,
   denyWaiting,
   editChatMessage,
+  findTicket,
   getRoom,
   grantFloor,
+  isAway,
   lowerHand,
+  markAway,
   passFloor,
   promoteCohost,
   raiseHand,
+  rekey,
   removeParticipant,
   removeWaiting,
   reorderQueue,
@@ -49,7 +54,9 @@ import {
   setSharing,
   setSpeaking,
   snapshot,
+  ticketOf,
   unsendChatMessage,
+  usePass,
 } from './rooms.js';
 
 // Load the single .env from the repo root (two levels up from server/src).
@@ -147,13 +154,165 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, phase: 7, time: new Date().toISOString() });
 });
 
+// --- Reviews from the "You left the meeting" screen -------------------------
+// After leaving a call, people can write what to improve (UI / UX). Each review
+// is emailed to the app's owner through Resend (resend.com), configured in the
+// env — so the owner's address and the key never sit in the code:
+//   RESEND_API_KEY  the Resend API key
+//   FEEDBACK_TO     where reviews are sent (the owner's inbox)
+//   FEEDBACK_FROM   optional sender; defaults to Resend's test sender, which
+//                   can only deliver to the Resend account's own email —
+//                   exactly what's needed here
+// Without the key, reviews are written to the server log instead (Render's
+// "Logs" tab), so none are lost while email isn't set up yet.
+//
+// The browser has already left the call (its socket is closed), so this is a
+// plain HTTP POST rather than a socket event.
+const FEEDBACK_MAX_CHARS = 2000;
+const FEEDBACK_LIMIT = { max: 5, perMs: 10 * 60 * 1000 }; // per IP: 5 every 10 minutes
+const feedbackHits = new Map(); // ip -> timestamps inside the window
+
+// Render sits in front of the app as a proxy; trust it so req.ip is the
+// visitor's real address (used only for the rate limit above).
+app.set('trust proxy', 1);
+
+// One line of plain text from whatever the browser sent: a string, no line
+// breaks (it may end up in an email subject), and not too long.
+const oneLine = (v, max) =>
+  (typeof v === 'string' ? v : '')
+    .replace(/[\r\n\t]+/g, ' ')
+    .trim()
+    .slice(0, max);
+
+app.post('/feedback', async (req, res) => {
+  // Rate limit, so nobody can flood the inbox.
+  const now = Date.now();
+  const recent = (feedbackHits.get(req.ip) ?? []).filter((t) => now - t < FEEDBACK_LIMIT.perMs);
+  if (recent.length >= FEEDBACK_LIMIT.max) {
+    return res.status(429).json({ ok: false, error: 'Too many reviews — try again later.' });
+  }
+  recent.push(now);
+  feedbackHits.set(req.ip, recent);
+
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const comment = (typeof body.comment === 'string' ? body.comment : '')
+    .trim()
+    .slice(0, FEEDBACK_MAX_CHARS);
+  if (!comment) return res.status(400).json({ ok: false, error: 'Write something first.' });
+
+  // A little context, so a review like "the buttons are too small" can be
+  // matched to a phone or a laptop. All of it comes from the browser, so it's
+  // treated as plain text and trimmed.
+  const name = oneLine(body.name, 60) || 'Someone';
+  const meeting = oneLine(body.meeting, 120) || 'a meeting';
+  const device = body.device === 'phone' ? 'phone' : 'computer';
+  const browser = oneLine(req.get('user-agent'), 300);
+  const when = new Date().toUTCString();
+
+  const subject = `Listen review from ${name}`;
+  const text = [
+    comment,
+    '',
+    '—',
+    `From: ${name}`,
+    `Meeting: ${meeting}`,
+    `Device: ${device}`,
+    `Browser: ${browser}`,
+    `Sent: ${when}`,
+  ].join('\n');
+
+  const key = process.env.RESEND_API_KEY;
+  const to = process.env.FEEDBACK_TO;
+  if (!key || !to) {
+    console.log(`[feedback] (email not set up — logging it instead)\n${subject}\n${text}`);
+    return res.json({ ok: true });
+  }
+
+  try {
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: process.env.FEEDBACK_FROM || 'Listen <onboarding@resend.dev>',
+        to: [to],
+        subject,
+        text, // plain text only — nothing from the browser is treated as HTML
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status} ${await r.text()}`);
+    console.log(`[feedback] emailed a review from ${name}`);
+    res.json({ ok: true });
+  } catch (err) {
+    // Keep the review even if the email failed.
+    console.error('[feedback] email failed:', err.message, `\n${subject}\n${text}`);
+    res.status(502).json({ ok: false, error: 'Couldn’t send right now — please try again.' });
+  }
+});
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: CLIENT_ORIGIN, methods: ['GET', 'POST'] },
   // Chat attachments travel as data: URLs — allow frames well over the 1 MB
   // default (a 5 MB file is ~6.7 MB base64, plus JSON overhead).
   maxHttpBufferSize: 12 * 1024 * 1024,
+  // Notice a dead connection (internet gone, laptop lid shut) within ~20 s
+  // instead of the default ~45 s: the server pings every 10 s and gives up
+  // after 10 s without an answer. That's when "Reconnecting…" shows for
+  // everyone else and the 1-minute seat hold starts.
+  pingInterval: 10_000,
+  pingTimeout: 10_000,
 });
+
+// Disconnect reasons that mean "they meant to go" — pressed Leave / closed the
+// tab (the client closed it), or we removed / denied them (the server closed
+// it). Anything else (transport close, ping timeout, …) is a network drop, and
+// gets the seat held for RECONNECT_GRACE_MS.
+const DELIBERATE = new Set([
+  'client namespace disconnect',
+  'server namespace disconnect',
+  'server shutting down',
+]);
+
+// socketId -> the timer that gives up a dropped person's seat.
+const awayTimers = new Map();
+
+// Take someone out of their room for good and tell everyone. Used when they
+// leave on purpose, and when a dropped person's hold runs out.
+function finishLeave(socketId) {
+  clearTimeout(awayTimers.get(socketId));
+  awayTimers.delete(socketId);
+
+  const result = removeParticipant(socketId);
+  if (!result) return;
+
+  const { roomId, room, admitted } = result;
+  if (room === null) {
+    console.log(`[room ${roomId}] closed (empty)`);
+    return;
+  }
+
+  // The room emptied but someone was waiting — they were just made host.
+  if (admitted) {
+    const sock = io.sockets.sockets.get(admitted);
+    if (sock) {
+      sock.join(roomId);
+      sock.emit(EVENTS.ADMITTED, {
+        selfId: admitted,
+        state: snapshot(roomId),
+        chat: [...room.chat],
+        ticket: ticketOf(room, admitted),
+      });
+    }
+    console.log(`[room ${roomId}] host left; ${admitted} let in from the waiting room as host`);
+  }
+
+  console.log(
+    `[room ${roomId}] - ${socketId} — ${Object.keys(room.participants).length} left,` +
+      ` host is ${room.hostId}`,
+  );
+  broadcastRoom(roomId);
+}
 
 // Per-socket rate limits (see `allow` in the connection handler). Generous for
 // a person, tight for a script. Events not listed here aren't limited
@@ -277,8 +436,81 @@ io.on('connection', (socket) => {
       state: snapshot(id),
       chat: [...room.chat],
       iceServers,
+      ticket: ticketOf(room, socket.id), // their secret way back in after a drop
     });
     broadcastRoom(id);
+  }
+
+  // --- Getting back in with a ticket (see EVENTS.RESUME) ------------------
+  // Two ways the same ticket gets you back in:
+  //  - after a network drop: the client's internet came back and Socket.IO
+  //    opened a fresh connection (new socket id). The seat is still held, so
+  //    it moves onto this connection and the call carries on.
+  //  - after pressing Leave: the "Rejoin" button, within a minute. The seat
+  //    is gone, but the rejoin pass puts them back with their old role.
+  on(EVENTS.RESUME, (payload, ack) => iceReady.then(() => handleResume(payload, ack)), {
+    max: 5,
+    perMs: 10_000,
+  });
+
+  function handleResume({ ticket } = {}, ack) {
+    if (socket.disconnected) return; // dropped again while we waited
+    if (joinedRoomId) return ack?.({ ok: false, error: 'already in a room' });
+
+    const found = findTicket(ticket);
+    if (!found) return handleRejoin(ticket, ack); // no held seat — maybe they left on purpose
+    const { roomId, room, oldId } = found;
+
+    // Cancel the "give up their seat" timer.
+    clearTimeout(awayTimers.get(oldId));
+    awayTimers.delete(oldId);
+
+    // Often the client notices the drop and reconnects BEFORE the server has
+    // noticed the old connection is dead. Close the old one ourselves, flagged
+    // so its disconnect handler knows the seat has moved and does nothing.
+    const old = io.sockets.sockets.get(oldId);
+    if (old) {
+      old.data.replaced = true;
+      old.disconnect(true);
+    }
+
+    rekey(room, oldId, socket.id);
+    joinedRoomId = roomId;
+    socket.join(roomId);
+    console.log(`[room ${roomId}] ↺ ${oldId} reconnected as ${socket.id}`);
+
+    ack?.({
+      ok: true,
+      selfId: socket.id,
+      state: snapshot(roomId),
+      chat: [...room.chat],
+      iceServers,
+      ticket: ticketOf(room, socket.id),
+    });
+    broadcastRoom(roomId); // everyone swaps the old id for the new one
+  }
+
+  // "Rejoin" within a minute of pressing Leave: straight back in (no knock,
+  // even through a locked door) with their old role — see usePass.
+  function handleRejoin(ticket, ack) {
+    const back = usePass(ticket, socket.id);
+    if (!back) return ack?.({ ok: false, error: 'expired' }); // too late, or server restarted
+    const { roomId, room } = back;
+    joinedRoomId = roomId;
+    socket.join(roomId);
+    console.log(
+      `[room ${roomId}] ↩ ${socket.id} (${room.participants[socket.id].name}) rejoined` +
+        ` as ${room.participants[socket.id].role}`,
+    );
+    ack?.({
+      ok: true,
+      selfId: socket.id,
+      state: snapshot(roomId),
+      chat: [...room.chat],
+      iceServers,
+      ticket: ticketOf(room, socket.id), // a fresh ticket for this new seat
+    });
+    broadcastRoom(roomId);
   }
 
   // A moderator is the host OR the appointed co-host. Every Phase 4/5/7 control
@@ -452,6 +684,10 @@ io.on('connection', (socket) => {
       targetSocket.emit(EVENTS.REMOVED);
       targetSocket.disconnect(true);
     }
+    // Removing someone whose connection had dropped: there's no socket to
+    // close, so take them out now — and their ticket with them, so they
+    // can't reconnect into the seat they were just removed from.
+    if (isAway(room, target)) finishLeave(target);
   });
 
   // Reorder the queue. `order` must be a permutation of the current queue —
@@ -523,6 +759,7 @@ io.on('connection', (socket) => {
       selfId: targetId,
       state: snapshot(joinedRoomId),
       chat: [...room.chat],
+      ticket: ticketOf(room, targetId),
     });
     return true;
   }
@@ -753,6 +990,10 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', (reason) => {
     console.log(`[socket] disconnected ${socket.id} (${reason})`);
+    // Their seat already moved to a newer connection (handleResume) — this is
+    // just the old one being closed. Nothing to clean up.
+    if (socket.data.replaced) return;
+
     if (joinedRoomId) {
       // Clear any lingering "typing" indicator for this socket right away.
       socket.to(joinedRoomId).emit(EVENTS.CHAT_TYPING, { id: socket.id, typing: false });
@@ -766,34 +1007,37 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const result = removeParticipant(socket.id);
-    if (!result) return;
-
-    const { roomId, room, admitted } = result;
-    if (room === null) {
-      console.log(`[room ${roomId}] closed (empty)`);
+    // A network drop (not Leave / closing the tab / being removed): hold the
+    // seat. Everyone sees "Reconnecting…" on their tile; if they aren't back
+    // within RECONNECT_GRACE_MS, they're taken out as if they'd left.
+    const room = getRoom(joinedRoomId);
+    if (!DELIBERATE.has(reason) && room?.participants[socket.id]) {
+      markAway(room, socket.id);
+      const id = socket.id;
+      awayTimers.set(
+        id,
+        setTimeout(() => {
+          console.log(`[room ${joinedRoomId}] ${id} didn't reconnect in time`);
+          finishLeave(id);
+        }, RECONNECT_GRACE_MS),
+      );
+      console.log(`[room ${joinedRoomId}] ${id} dropped — holding their seat`);
+      broadcastRoom(joinedRoomId);
       return;
     }
 
-    // The room emptied but someone was waiting — they were just made host.
-    if (admitted) {
-      const sock = io.sockets.sockets.get(admitted);
-      if (sock) {
-        sock.join(roomId);
-        sock.emit(EVENTS.ADMITTED, {
-          selfId: admitted,
-          state: snapshot(roomId),
-          chat: [...room.chat],
-        });
-      }
-      console.log(`[room ${roomId}] host left; ${admitted} let in from the waiting room as host`);
+    // They pressed Leave (or closed the tab): out of the room now, but with a
+    // one-minute rejoin pass. Being removed or denied (the server closed the
+    // connection) gets no pass.
+    if (reason === 'client namespace disconnect' && room?.participants[socket.id]) {
+      const pass = createPass(room, joinedRoomId, socket.id);
+      finishLeave(socket.id);
+      // Who took over as host — so a returning host knows whom to take it back from.
+      if (pass) pass.heir = getRoom(pass.roomId)?.hostId ?? null;
+      return;
     }
 
-    console.log(
-      `[room ${roomId}] - ${socket.id} — ${Object.keys(room.participants).length} left,` +
-        ` host is ${room.hostId}`,
-    );
-    broadcastRoom(roomId);
+    finishLeave(socket.id);
   });
 });
 
