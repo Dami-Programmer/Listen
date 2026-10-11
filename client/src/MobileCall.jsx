@@ -39,7 +39,7 @@ import { useVideoPip } from './useVideoPip.js';
 import { inviteLink } from './meeting.js';
 import { confirmDialog } from './ConfirmDialog.jsx';
 import Tour from './Tour.jsx';
-import { useTour } from './useTour.js';
+import { hasSeenTour, useTour } from './useTour.js';
 import TourButton from './TourButton.jsx';
 
 const ROLE_LABEL = { host: 'Host', cohost: 'Co-host', speaker: 'Speaker', listener: 'Listener' };
@@ -150,9 +150,11 @@ export default function MobileCall({ call }) {
   // The invite pop-up: opens by itself for whoever starts the meeting (alone
   // in it), and again from the meeting name or the people sheet.
   // (Not when coming back with Rejoin — the meeting isn't new to them.)
-  const [inviteOpen, setInviteOpen] = useState(
-    () => !rejoined && isHost && participants.length === 1,
-  );
+  // On the very first call, the step-by-step tour goes first and the invite
+  // pops up when it's done (see the tour further down).
+  const startsMeeting = !rejoined && isHost && participants.length === 1;
+  const inviteAfterTourRef = useRef(startsMeeting && !hasSeenTour('phone'));
+  const [inviteOpen, setInviteOpen] = useState(() => startsMeeting && !inviteAfterTourRef.current);
 
   const knocker = isModerator ? waiting[0] : null;
 
@@ -406,12 +408,19 @@ export default function MobileCall({ call }) {
     : {};
 
   // --- the step-by-step tour of this screen (Tour.jsx) --------------------
-  // Plays once per phone, the first time in a call (after the invite pop-up
-  // is closed); the "?" in the top bar replays it. Only the steps that apply
+  // Plays by itself the moment someone is in their first call on this phone
+  // (before the invite pop-up, which follows it); after that, only the "?"
+  // in the top bar plays it. Only the steps that apply
   // to this person are listed — a listener has no Share button, only
   // moderators have the room switches, and so on. The dial steps open the ⋮
   // dial so its controls can be shown; the steps either side close it again.
-  const tour = useTour('phone', !inviteOpen && !sheet);
+  const tour = useTour('phone', true, () => {
+    // The invite pop-up that was held back for the tour (first call only).
+    if (inviteAfterTourRef.current) {
+      inviteAfterTourRef.current = false;
+      setInviteOpen(true);
+    }
+  });
   const closeDial = () => setDialOpen(false);
   const openDial = () => setDialOpen(true);
   const tourSteps = [

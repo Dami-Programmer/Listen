@@ -1,39 +1,52 @@
 // When the step-by-step tour (Tour.jsx) plays.
 //
-// It plays ONCE per device on its own — the first time in a call, a beat
-// after the screen settles, and only when nothing else is in the way
-// (`ready`, e.g. the invite pop-up is closed). That's remembered in this
-// browser's storage, separately for each layout (phone / desktop), since
-// their buttons differ. After that, the "?" button replays it (start()).
+// It plays ONCE per device on its own — the moment someone is in their first
+// call (just long enough for the call screen to settle). That's remembered in
+// this browser's storage, separately for each layout (phone / desktop), since
+// their buttons differ. After that, only the "?" button plays it (start()).
+//
+// It goes FIRST: for a host starting a meeting, the "Your meeting is ready"
+// invite pop-up waits until the tour is finished (the call screens use
+// hasSeenTour() to decide that up front, then open the invite in onStop).
 
 import { useCallback, useEffect, useState } from 'react';
+
+// Long enough for the call screen to finish appearing, short enough to feel
+// like it starts as you arrive.
+const START_DELAY_MS = 700;
 
 // Fallback when storage is blocked (private mode…): remember for this page
 // load at least, so it doesn't replay every time `ready` flips.
 const seenThisLoad = new Set();
 
+const storageKeyOf = (key) => `listen.tour.${key}.seen`;
+
+/** Has this device already seen (or skipped) the tour for this layout? */
+export function hasSeenTour(key) {
+  const storageKey = storageKeyOf(key);
+  if (seenThisLoad.has(storageKey)) return true;
+  try {
+    return localStorage.getItem(storageKey) === '1';
+  } catch {
+    return false; // storage blocked — the in-memory set covers this page load
+  }
+}
+
 /**
- * @param {string}  key    remembers "seen" separately per layout
- * @param {boolean} ready  nothing else is in the way
+ * @param {string}    key     remembers "seen" separately per layout
+ * @param {boolean}   ready   this layout is the one on screen, nothing in the way
+ * @param {Function} [onStop] runs when the tour ends (finished or skipped)
  * @returns {{ running: boolean, start: Function, stop: Function }}
  */
-export function useTour(key, ready) {
-  const storageKey = `listen.tour.${key}.seen`;
+export function useTour(key, ready, onStop) {
+  const storageKey = storageKeyOf(key);
   const [running, setRunning] = useState(false);
 
   useEffect(() => {
-    if (!ready) return undefined;
-    let seen = seenThisLoad.has(storageKey);
-    try {
-      seen = seen || localStorage.getItem(storageKey) === '1';
-    } catch {
-      // storage blocked — the in-memory set above covers this page load
-    }
-    if (seen) return undefined;
-    // A beat after the call screen settles, not the instant it appears.
-    const t = setTimeout(() => setRunning(true), 1500);
+    if (!ready || hasSeenTour(key)) return undefined;
+    const t = setTimeout(() => setRunning(true), START_DELAY_MS);
     return () => clearTimeout(t);
-  }, [ready, storageKey]);
+  }, [ready, key]);
 
   // Finished or skipped: don't play by itself again on this device.
   const stop = useCallback(() => {
@@ -44,7 +57,8 @@ export function useTour(key, ready) {
     } catch {
       // not remembered past this page load
     }
-  }, [storageKey]);
+    onStop?.();
+  }, [storageKey, onStop]);
 
   const start = useCallback(() => setRunning(true), []);
   return { running, start, stop };

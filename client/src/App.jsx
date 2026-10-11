@@ -35,7 +35,7 @@ import ReconnectBanner from './ReconnectBanner.jsx';
 import LeftScreen from './LeftScreen.jsx';
 import AloneReminder from './AloneReminder.jsx';
 import Tour from './Tour.jsx';
-import { useTour } from './useTour.js';
+import { hasSeenTour, useTour } from './useTour.js';
 import TourButton from './TourButton.jsx';
 
 // How long the "You left the meeting" screen offers Rejoin — the same minute
@@ -771,9 +771,11 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
   // Whoever starts a meeting (first in, so host, and alone) gets the invite
   // link straight away; anyone can reopen it from the Invite button.
   // (Not when coming back with Rejoin — the meeting isn't new to them.)
-  const [inviteOpen, setInviteOpen] = useState(
-    () => !rejoined && isHost && participants.length === 1,
-  );
+  // On their very first call, though, the step-by-step tour goes first and
+  // the invite pops up when it's done (see the tour below).
+  const startsMeeting = !rejoined && isHost && participants.length === 1;
+  const inviteAfterTourRef = useRef(startsMeeting && !isMobile && !hasSeenTour('desktop'));
+  const [inviteOpen, setInviteOpen] = useState(() => startsMeeting && !inviteAfterTourRef.current);
   const cohostId = state?.cohostId ?? null;
   const moderated = state?.mode === MODES.MODERATED;
 
@@ -1152,10 +1154,17 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
   );
 
   // --- the step-by-step tour, desktop / tablet (Tour.jsx) -----------------
-  // Phones have their own tour (MobileCall.jsx). Plays once per device, the
-  // first time in a call (after the invite card is closed); the "?" next to
-  // the theme button replays it. Only the steps that apply to this person.
-  const tour = useTour('desktop', !isMobile && !inviteOpen);
+  // Phones have their own tour (MobileCall.jsx). Plays by itself the moment
+  // someone is in their first call on this device (before the invite card,
+  // which follows it); after that, only the "?" next to the theme button
+  // plays it. Only the steps that apply to this person.
+  const tour = useTour('desktop', !isMobile, () => {
+    // The invite pop-up that was held back for the tour (first call only).
+    if (inviteAfterTourRef.current) {
+      inviteAfterTourRef.current = false;
+      setInviteOpen(true);
+    }
+  });
   const canShareScreen = !isListener && Boolean(navigator.mediaDevices?.getDisplayMedia);
   const tourSteps = [
     {
