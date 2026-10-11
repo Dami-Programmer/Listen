@@ -64,6 +64,12 @@ export default function VideoTile({
     if (el && sinkId && el.setSinkId) el.setSinkId(sinkId).catch(() => {});
   }, [sinkId]);
 
+  // Keep the element's mute in step with the prop as it changes mid-call
+  // (e.g. someone becomes a listener and their audio must stop right away).
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.muted = muted;
+  }, [muted]);
+
   return (
     <div className={`tile${speaking ? ' speaking' : ''}${screen ? ' tile-screen' : ''}`}>
       <video

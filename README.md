@@ -101,7 +101,8 @@ top of the Phase 2 call:
   files as a download chip.
 - **Screen sharing:** in an open room anyone can share; in a moderated room only
   the host + speakers can (a listener has no Share button, the server rejects it,
-  and a demoted speaker's share is dropped). Several people can share at once.
+  and a demoted speaker's share is dropped). One presenter at a time — starting
+  a share (after a confirm) stops whoever was presenting.
   `webrtc.js` moved to the *perfect negotiation* pattern so screen tracks can be
   added/removed mid-call; `screen-share {on, streamId}` puts `room.sharing` in
   every snapshot so clients can pick the screen track out of a peer's media.

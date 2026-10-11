@@ -40,6 +40,13 @@ const rooms = new Map();
 // How many recent chat messages a room keeps so a late joiner has context.
 const CHAT_HISTORY = 100;
 
+// Display names come straight from the client: make sure it's a string and
+// keep it short — it rides along in every room-state snapshot to everyone.
+const NAME_MAX = 60;
+function cleanName(name) {
+  return (typeof name === 'string' ? name.trim().slice(0, NAME_MAX) : '') || 'Guest';
+}
+
 function createRoom() {
   return {
     title: '', // meeting name typed by whoever created the room
@@ -74,7 +81,7 @@ function attach(room, socketId, name, avatar) {
 
   room.participants[socketId] = {
     id: socketId,
-    name: name?.trim() || 'Guest',
+    name: cleanName(name),
     role,
     avatar: cleanAvatar(avatar),
   };
@@ -130,7 +137,7 @@ export function addWaiting(room, socketId, name, avatar) {
   if (!room || room.participants[socketId]) return;
   room.waiting[socketId] = {
     id: socketId,
-    name: name?.trim() || 'Guest',
+    name: cleanName(name),
     avatar: cleanAvatar(avatar),
     since: Date.now(),
   };
@@ -369,6 +376,9 @@ export function clearFloor(room) {
  */
 export function setSpeaking(room, socketId, on) {
   if (!room || !room.participants[socketId]) return false;
+  // A listener has no floor, so it can't be the active speaker — ignore a
+  // hand-rolled client claiming otherwise (it may still say it stopped).
+  if (on && room.participants[socketId].role === ROLES.LISTENER) return false;
   const listed = room.speaking.includes(socketId);
   if (on && !listed) {
     room.speaking.push(socketId);

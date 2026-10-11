@@ -107,6 +107,9 @@ async function refreshCloudflareTurn() {
         method: 'POST',
         headers: { Authorization: `Bearer ${CF_TOKEN}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ ttl: CF_TTL_S }),
+        // Joins wait on this request — never let a slow Cloudflare hold them up
+        // for more than a few seconds (they fall back to the previous list).
+        signal: AbortSignal.timeout(5000),
       },
     );
     if (!res.ok) throw new Error(`HTTP ${res.status} ${await res.text()}`);
@@ -152,6 +155,24 @@ const io = new Server(server, {
   maxHttpBufferSize: 12 * 1024 * 1024,
 });
 
+// Per-socket rate limits (see `allow` in the connection handler). Generous for
+// a person, tight for a script. Events not listed here aren't limited
+// (WebRTC signaling in particular sends bursts of ICE candidates).
+const RATE_LIMITS = {
+  [EVENTS.CHAT_SEND]: { max: 10, perMs: 10_000 },
+  [EVENTS.CHAT_EDIT]: { max: 10, perMs: 10_000 },
+  [EVENTS.CHAT_UNSEND]: { max: 10, perMs: 10_000 },
+  [EVENTS.CHAT_TYPING]: { max: 20, perMs: 10_000 },
+  [EVENTS.RAISE_HAND]: { max: 10, perMs: 10_000 },
+  [EVENTS.LOWER_HAND]: { max: 20, perMs: 10_000 },
+  [EVENTS.SPEAKING]: { max: 60, perMs: 10_000 },
+};
+
+// Last line of defence: log anything that slipped past the handler wrapper
+// instead of letting it kill every call on the server.
+process.on('uncaughtException', (err) => console.error('[server] uncaught exception:', err));
+process.on('unhandledRejection', (err) => console.error('[server] unhandled rejection:', err));
+
 // Send the current snapshot of a room to everyone in it.
 function broadcastRoom(roomId) {
   const state = snapshot(roomId);
@@ -165,14 +186,59 @@ io.on('connection', (socket) => {
   // when the host leaves, we can tell the room who was promoted.
   let joinedRoomId = null;
 
+  // Every event goes through `on` instead of `socket.on`. Anyone can send
+  // anything, so a handler must never throw: an exception inside a Socket.IO
+  // handler takes down the whole process (every call in every room). This:
+  //  - turns a missing / null / non-object payload into {}
+  //  - passes `ack` only if it's really a function (a stray extra argument
+  //    would otherwise make `ack?.()` throw "ack is not a function")
+  //  - logs, instead of crashing on, anything a handler still throws
+  //  - applies the optional rate limit (see `allow` below)
+  function on(event, handler, limit = RATE_LIMITS[event]) {
+    socket.on(event, (payload, ack) => {
+      const reply = typeof ack === 'function' ? ack : undefined;
+      if (limit && !allow(event, limit)) {
+        reply?.({ ok: false, error: 'slow down' });
+        return;
+      }
+      const p = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+      try {
+        const result = handler(p, reply);
+        if (result instanceof Promise) {
+          result.catch((err) => console.error(`[socket] ${event} failed for ${socket.id}:`, err));
+        }
+      } catch (err) {
+        console.error(`[socket] ${event} failed for ${socket.id}:`, err);
+      }
+    });
+  }
+
+  // Per-socket rate limit: at most `max` events of one kind per `perMs`.
+  // Keeps one person from flooding the room (chat spam, 5 MB files in a loop).
+  const hits = new Map(); // event -> timestamps inside the current window
+  function allow(event, { max, perMs }) {
+    const now = Date.now();
+    const recent = (hits.get(event) ?? []).filter((t) => now - t < perMs);
+    if (recent.length >= max) {
+      hits.set(event, recent);
+      return false;
+    }
+    recent.push(now);
+    hits.set(event, recent);
+    return true;
+  }
+
   // Wait for the TURN login (instant after the first few seconds of uptime).
-  socket.on(EVENTS.JOIN_ROOM, (payload, ack) => {
-    iceReady.then(() => handleJoin(payload, ack));
+  on(EVENTS.JOIN_ROOM, (payload, ack) => iceReady.then(() => handleJoin(payload, ack)), {
+    max: 5,
+    perMs: 10_000,
   });
 
   function handleJoin({ roomId, name, avatar, title } = {}, ack) {
     if (socket.disconnected) return; // left while we waited
-    const id = String(roomId || '').trim();
+    const id = String(roomId || '')
+      .trim()
+      .slice(0, 64);
     if (!id) {
       socket.emit(EVENTS.ERROR, { message: 'roomId is required' });
       ack?.({ ok: false, error: 'roomId is required' });
@@ -242,7 +308,7 @@ io.on('connection', (socket) => {
   // 'moderated' (every non-moderator becomes a listener; each listener's client
   // then silences its own mic/camera). Rejected for anyone who isn't a
   // moderator — the first place the server enforces "host-authoritative".
-  socket.on(EVENTS.SET_MODE, ({ mode } = {}, ack) => {
+  on(EVENTS.SET_MODE, ({ mode } = {}, ack) => {
     const room = requireModeratorRoom(ack);
     if (!room) return;
     if (mode !== MODES.OPEN && mode !== MODES.MODERATED) {
@@ -266,7 +332,7 @@ io.on('connection', (socket) => {
   // then broadcast a fresh snapshot. The helpers are all no-ops when the action
   // isn't valid (wrong mode, wrong role, not queued), so the handlers stay thin.
 
-  socket.on(EVENTS.RAISE_HAND, (_payload, ack) => {
+  on(EVENTS.RAISE_HAND, (_payload, ack) => {
     const room = getRoom(joinedRoomId);
     if (!room) return ack?.({ ok: false, error: 'not in a room' });
     raiseHand(room, socket.id); // no-op unless I'm a listener in a moderated room
@@ -276,7 +342,7 @@ io.on('connection', (socket) => {
 
   // A listener lowers their own hand; a moderator may lower anyone's ("Dismiss"
   // in the dashboard) by passing { targetId }.
-  socket.on(EVENTS.LOWER_HAND, ({ targetId } = {}, ack) => {
+  on(EVENTS.LOWER_HAND, ({ targetId } = {}, ack) => {
     const room = getRoom(joinedRoomId);
     if (!room) return ack?.({ ok: false, error: 'not in a room' });
 
@@ -293,7 +359,7 @@ io.on('connection', (socket) => {
     broadcastRoom(joinedRoomId);
   });
 
-  socket.on(EVENTS.GRANT_FLOOR, ({ targetId } = {}, ack) => {
+  on(EVENTS.GRANT_FLOOR, ({ targetId } = {}, ack) => {
     const room = requireModeratorRoom(ack);
     if (!room) return;
     grantFloor(room, targetId); // listener -> speaker, off the queue
@@ -302,7 +368,7 @@ io.on('connection', (socket) => {
     broadcastRoom(joinedRoomId);
   });
 
-  socket.on(EVENTS.REVOKE_FLOOR, ({ targetId } = {}, ack) => {
+  on(EVENTS.REVOKE_FLOOR, ({ targetId } = {}, ack) => {
     const room = requireModeratorRoom(ack);
     if (!room) return;
     revokeFloor(room, targetId); // speaker -> listener
@@ -311,7 +377,7 @@ io.on('connection', (socket) => {
     broadcastRoom(joinedRoomId);
   });
 
-  socket.on(EVENTS.CLEAR_FLOOR, (_payload, ack) => {
+  on(EVENTS.CLEAR_FLOOR, (_payload, ack) => {
     const room = requireModeratorRoom(ack);
     if (!room) return;
     clearFloor(room); // every non-moderator speaker -> listener
@@ -322,7 +388,7 @@ io.on('connection', (socket) => {
 
   // A speaker gives up the floor themselves — the first raised hand takes it,
   // or the speaker just drops to listener if no hand is up.
-  socket.on(EVENTS.PASS_MIC, (_payload, ack) => {
+  on(EVENTS.PASS_MIC, (_payload, ack) => {
     const room = getRoom(joinedRoomId);
     if (!room) return ack?.({ ok: false, error: 'not in a room' });
     const { passed, next } = passFloor(room, socket.id);
@@ -360,7 +426,7 @@ io.on('connection', (socket) => {
   // Force-mute: the server can't touch peer-to-peer media, so it just asks the
   // target's client to disable its own mic track. Cooperative — they can unmute
   // themselves again. No room state changes, so no broadcast.
-  socket.on(EVENTS.FORCE_MUTE, ({ targetId } = {}, ack) => {
+  on(EVENTS.FORCE_MUTE, ({ targetId } = {}, ack) => {
     const room = requireModeratorRoom(ack);
     if (!room) return;
     const target = requireTarget(room, targetId, ack);
@@ -374,7 +440,7 @@ io.on('connection', (socket) => {
   // 'disconnect' handler below does the room cleanup + broadcast. A client that
   // is disconnected by the server does not auto-reconnect, so they land back on
   // the join screen and can rejoin if they want.
-  socket.on(EVENTS.REMOVE_PARTICIPANT, ({ targetId } = {}, ack) => {
+  on(EVENTS.REMOVE_PARTICIPANT, ({ targetId } = {}, ack) => {
     const room = requireModeratorRoom(ack);
     if (!room) return;
     const target = requireTarget(room, targetId, ack);
@@ -390,7 +456,7 @@ io.on('connection', (socket) => {
 
   // Reorder the queue. `order` must be a permutation of the current queue —
   // reorderQueue rejects anything else, so a stale list is a safe no-op.
-  socket.on(EVENTS.REORDER_QUEUE, ({ order } = {}, ack) => {
+  on(EVENTS.REORDER_QUEUE, ({ order } = {}, ack) => {
     const room = requireModeratorRoom(ack);
     if (!room) return;
     reorderQueue(room, order);
@@ -416,7 +482,7 @@ io.on('connection', (socket) => {
     return room;
   }
 
-  socket.on(EVENTS.PROMOTE_COHOST, ({ targetId } = {}, ack) => {
+  on(EVENTS.PROMOTE_COHOST, ({ targetId } = {}, ack) => {
     const room = requireHostRoom(ack);
     if (!room) return;
     if (!targetId || !room.participants[targetId] || targetId === room.hostId) {
@@ -428,7 +494,7 @@ io.on('connection', (socket) => {
     broadcastRoom(joinedRoomId);
   });
 
-  socket.on(EVENTS.DEMOTE_COHOST, ({ targetId } = {}, ack) => {
+  on(EVENTS.DEMOTE_COHOST, ({ targetId } = {}, ack) => {
     const room = requireHostRoom(ack);
     if (!room) return;
     const subject = targetId || room.cohostId;
@@ -461,7 +527,7 @@ io.on('connection', (socket) => {
     return true;
   }
 
-  socket.on(EVENTS.ADMIT, ({ socketId } = {}, ack) => {
+  on(EVENTS.ADMIT, ({ socketId } = {}, ack) => {
     const room = requireModeratorRoom(ack);
     if (!room) return;
     if (!room.waiting[socketId]) return ack?.({ ok: false, error: 'not waiting' });
@@ -471,7 +537,7 @@ io.on('connection', (socket) => {
     broadcastRoom(joinedRoomId);
   });
 
-  socket.on(EVENTS.DENY, ({ socketId } = {}, ack) => {
+  on(EVENTS.DENY, ({ socketId } = {}, ack) => {
     const room = requireModeratorRoom(ack);
     if (!room) return;
     if (!room.waiting[socketId]) return ack?.({ ok: false, error: 'not waiting' });
@@ -489,7 +555,7 @@ io.on('connection', (socket) => {
     broadcastRoom(joinedRoomId);
   });
 
-  socket.on(EVENTS.SET_LOCK, ({ locked } = {}, ack) => {
+  on(EVENTS.SET_LOCK, ({ locked } = {}, ack) => {
     const room = requireModeratorRoom(ack);
     if (!room) return;
     setLock(room, locked);
@@ -508,7 +574,7 @@ io.on('connection', (socket) => {
   // timestamps every message, keeps a bounded history, and fans it out on its
   // own event (never in room-state, which would resend the whole log on every
   // join/role change). Text is escaped by React on render.
-  socket.on(EVENTS.CHAT_SEND, ({ text, kind, file } = {}, ack) => {
+  on(EVENTS.CHAT_SEND, ({ text, kind, file } = {}, ack) => {
     const room = getRoom(joinedRoomId);
     const participant = room?.participants[socket.id];
     if (!room || !participant) {
@@ -571,7 +637,7 @@ io.on('connection', (socket) => {
   // Edit your own text message. Works for everyone in the room in any mode —
   // chat isn't tied to the speaker floor. editChatMessage() refuses anything
   // that isn't the requester's own text message.
-  socket.on(EVENTS.CHAT_EDIT, ({ id, text } = {}, ack) => {
+  on(EVENTS.CHAT_EDIT, ({ id, text } = {}, ack) => {
     const room = getRoom(joinedRoomId);
     if (!room || !room.participants[socket.id]) return ack?.({ ok: false, error: 'not in a room' });
     const body = String(text ?? '').trim();
@@ -587,7 +653,7 @@ io.on('connection', (socket) => {
   });
 
   // Unsend (delete for everyone) your own message — text, sticker or file.
-  socket.on(EVENTS.CHAT_UNSEND, ({ id } = {}, ack) => {
+  on(EVENTS.CHAT_UNSEND, ({ id } = {}, ack) => {
     const room = getRoom(joinedRoomId);
     if (!room || !room.participants[socket.id]) return ack?.({ ok: false, error: 'not in a room' });
     const msgId = String(id ?? '');
@@ -600,7 +666,7 @@ io.on('connection', (socket) => {
 
   // "Someone is typing" — pure relay to the rest of the room, never stored.
   // socket.to() excludes the sender, so nobody sees their own indicator.
-  socket.on(EVENTS.CHAT_TYPING, ({ typing } = {}) => {
+  on(EVENTS.CHAT_TYPING, ({ typing } = {}) => {
     const room = getRoom(joinedRoomId);
     const participant = room?.participants[socket.id];
     if (!room || !participant) return;
@@ -616,7 +682,7 @@ io.on('connection', (socket) => {
   // sharing and the id of their screen stream (so clients can pick the screen
   // track out of that peer's inbound media) — the media itself is renegotiated
   // peer-to-peer. Fire-and-forget.
-  socket.on(EVENTS.SCREEN_SHARE, ({ on, streamId } = {}) => {
+  on(EVENTS.SCREEN_SHARE, ({ on, streamId } = {}) => {
     const room = getRoom(joinedRoomId);
     if (!room || !room.participants[socket.id]) return;
     const bumped = setSharing(room, socket.id, on === true, streamId);
@@ -631,7 +697,7 @@ io.on('connection', (socket) => {
   // --- Mic on/off reports -------------------------------------------------
   // Each client tells us whenever its own mic turns on or off. We store it and
   // re-broadcast the room, so every other screen can show "X is muted".
-  socket.on(EVENTS.MIC_STATE, ({ on } = {}) => {
+  on(EVENTS.MIC_STATE, ({ on } = {}) => {
     const room = getRoom(joinedRoomId);
     if (!room || !room.participants[socket.id]) return;
     // Nothing changed? Skip the broadcast — no need to wake every client.
@@ -641,7 +707,7 @@ io.on('connection', (socket) => {
   });
 
   // Camera on/off reports — same as the mic.
-  socket.on(EVENTS.CAM_STATE, ({ on } = {}) => {
+  on(EVENTS.CAM_STATE, ({ on } = {}) => {
     const room = getRoom(joinedRoomId);
     if (!room || !room.participants[socket.id]) return;
     if ((room.cams[socket.id] ?? true) === (on === true)) return;
@@ -654,7 +720,7 @@ io.on('connection', (socket) => {
   // threshold (rising) or has been quiet for a beat (falling). We record it
   // and re-broadcast so every client can move the "active speaker" glow.
   // Fire-and-forget — no ack.
-  socket.on(EVENTS.SPEAKING, ({ speaking } = {}) => {
+  on(EVENTS.SPEAKING, ({ speaking } = {}) => {
     const room = getRoom(joinedRoomId);
     if (!room) return;
 
@@ -671,7 +737,7 @@ io.on('connection', (socket) => {
   // Safety checks:
   //  - the sender must already be in a room (can't relay before joining)
   //  - the target must be in the SAME room (can't poke sockets in other rooms)
-  socket.on(EVENTS.RTC_SIGNAL, ({ targetId, description, candidate } = {}) => {
+  on(EVENTS.RTC_SIGNAL, ({ targetId, description, candidate } = {}) => {
     if (!joinedRoomId || !targetId) return;
 
     const room = getRoom(joinedRoomId);

@@ -589,6 +589,11 @@ function CallView({ state, chat, typers, selfId, connected, onLeave, media, iceS
       label: peerOf(id)?.name ?? 'Guest',
       role: peerOf(id)?.role,
       speaking: activeSpeakerId === id,
+      // A listener's own client silences its mic, but audio goes browser to
+      // browser, so a tampered client could keep talking. Enforce it on OUR
+      // side too: we never play a listener's audio. (This one flag covers the
+      // desktop and the mobile layouts — MobileCall reuses these tiles.)
+      muted: peerOf(id)?.role === ROLES.LISTENER,
       // Everyone else's mic: what they last reported via the server.
       micOff: !micOf(id),
     })),
