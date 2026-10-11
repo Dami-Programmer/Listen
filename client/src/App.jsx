@@ -33,6 +33,10 @@ import useIsMobile from './useIsMobile.js';
 import { playKnock } from './knockSound.js';
 import ReconnectBanner from './ReconnectBanner.jsx';
 import LeftScreen from './LeftScreen.jsx';
+import AloneReminder from './AloneReminder.jsx';
+import Tour from './Tour.jsx';
+import { useTour } from './useTour.js';
+import TourButton from './TourButton.jsx';
 
 // How long the "You left the meeting" screen offers Rejoin — the same minute
 // the server keeps the rejoin pass for.
@@ -43,6 +47,11 @@ const REJOIN_SECONDS = Math.round(REJOIN_WINDOW_MS / 1000);
 // Render free-plan server takes ~30–60 s to wake.
 const SLOW_JOIN_MS = 4000;
 const JOIN_TIMEOUT_MS = 90_000;
+
+// Alone in a meeting this long → "Are you still there?"; no answer within the
+// countdown → you leave the call (AloneReminder.jsx).
+const ALONE_REMINDER_MS = 5 * 60 * 1000;
+const ALONE_COUNTDOWN_S = 120;
 import {
   Cam,
   CamOff,
@@ -1116,6 +1125,106 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
 
   const knocker = isModerator ? waiting[0] : null;
 
+  // --- "Are you still there?" when you're alone --------------------------
+  // Nobody else in the call (and nobody knocking at the door) for
+  // ALONE_REMINDER_MS → ask. Someone arriving cancels it; "Stay" starts the
+  // wait over (stayCount bumps the timer); no answer → <AloneReminder> leaves.
+  const alone = participants.length === 1 && waiting.length === 0;
+  const [askAlone, setAskAlone] = useState(false);
+  const [stayCount, setStayCount] = useState(0);
+  useEffect(() => {
+    if (!alone) {
+      setAskAlone(false);
+      return undefined;
+    }
+    const t = setTimeout(() => setAskAlone(true), ALONE_REMINDER_MS);
+    return () => clearTimeout(t);
+  }, [alone, stayCount]);
+  const aloneReminder = askAlone && (
+    <AloneReminder
+      seconds={ALONE_COUNTDOWN_S}
+      onStay={() => {
+        setAskAlone(false);
+        setStayCount((n) => n + 1);
+      }}
+      onLeave={leave}
+    />
+  );
+
+  // --- the step-by-step tour, desktop / tablet (Tour.jsx) -----------------
+  // Phones have their own tour (MobileCall.jsx). Plays once per device, the
+  // first time in a call (after the invite card is closed); the "?" next to
+  // the theme button replays it. Only the steps that apply to this person.
+  const tour = useTour('desktop', !isMobile && !inviteOpen);
+  const canShareScreen = !isListener && Boolean(navigator.mediaDevices?.getDisplayMedia);
+  const tourSteps = [
+    {
+      target: '.cs-invite-btn',
+      title: 'Invite people',
+      text: 'Copies this meeting’s link so you can send it to others.',
+    },
+    isHost && {
+      target: '.cs-mode-badge',
+      title: 'Open or Moderated',
+      text: 'Open: everyone can talk. Moderated: people listen until you or your co-host give them the floor.',
+    },
+    isModerator && {
+      target: '.cs-door-btn',
+      title: 'The door',
+      text: 'Locked: you let each new person in. Open: anyone with the link walks straight in.',
+    },
+    {
+      target: '.cs-controls-center > .dp:nth-child(1)',
+      title: 'Camera',
+      text: 'Turns your camera on or off. The little arrow beside it picks another camera.',
+    },
+    {
+      target: '.cs-controls-center > .dp:nth-child(2)',
+      title: 'Microphone',
+      text: isListener
+        ? 'Your mic is off while you’re listening. The arrow beside it picks another microphone.'
+        : 'Mutes or unmutes you. The little arrow beside it picks another microphone.',
+    },
+    !isModerator && {
+      target: '.cs-controls-center button[aria-label$="hand"]',
+      title: 'Raise your hand',
+      text: 'In a moderated meeting, ask to speak. The host sees you in the queue.',
+    },
+    {
+      target: '.cs-hangup',
+      title: 'Leave',
+      text: 'Leaves the call. Changed your mind? You get a minute to rejoin.',
+    },
+    canShareScreen && {
+      target:
+        '.cs-controls-center button[aria-label$="screen"], .cs-controls-center button[aria-label="Stop sharing"]',
+      title: 'Share your screen',
+      text: 'Show everyone your screen, a window or a browser tab.',
+    },
+    {
+      target: '.cs-controls-center button[aria-label^="Switch to"]',
+      title: 'Change the view',
+      text: 'Switch between one big video and a grid of everyone.',
+    },
+    {
+      target: '.cs-chat-btn',
+      title: 'Chat and people',
+      text: isModerator
+        ? 'Opens the chat. The people button at its top lists everyone, with raised hands and your host controls.'
+        : 'Opens the chat. The people button at its top lists everyone in the call.',
+    },
+    {
+      target: '.cs-title-row .theme-btn',
+      title: 'Light or dark',
+      text: 'Switch the look: match your device, light, or dark.',
+    },
+    {
+      target: '.tour-replay',
+      title: 'That’s it!',
+      text: 'Click ? any time to see this tour again.',
+    },
+  ].filter(Boolean);
+
   // Everyone but me — for the avatar row at the top of the chat panel (I'm
   // shown separately, top-right).
   const otherPeople = participants.filter((p) => p.id !== selfId);
@@ -1186,6 +1295,7 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
           }}
         />
         <ConfirmHost />
+        {aloneReminder}
       </>
     );
   }
@@ -1212,6 +1322,8 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
             </button>
             {/* light / dark switch, right next to Invite */}
             <ThemeToggle />
+            {/* replays the step-by-step tour */}
+            <TourButton onClick={tour.start} />
             {isHost && (
               <ModeSwitch
                 moderated={moderated}
@@ -1527,6 +1639,8 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
           onOpen={panel.show}
         />
         <ConfirmHost />
+        {aloneReminder}
+        {tour.running && <Tour steps={tourSteps} onClose={tour.stop} />}
       </div>
 
       {/* Right column: the chat panel (design: "Design Sprint Meeting" chat).
@@ -1674,7 +1788,9 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
                                 Make co-host
                               </button>
                             ))}
-                          {canMod && (
+                          {/* Moderated rooms run the mic through Grant / Revoke
+                              (listeners are silent anyway), so no Mute there. */}
+                          {canMod && !moderated && (
                             <button className="ghost small" onClick={() => forceMute(p.id)}>
                               Mute
                             </button>

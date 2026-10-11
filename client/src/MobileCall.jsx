@@ -38,6 +38,9 @@ import { loadDeck, startPainter } from './presenter.js';
 import { useVideoPip } from './useVideoPip.js';
 import { inviteLink } from './meeting.js';
 import { confirmDialog } from './ConfirmDialog.jsx';
+import Tour from './Tour.jsx';
+import { useTour } from './useTour.js';
+import TourButton from './TourButton.jsx';
 
 const ROLE_LABEL = { host: 'Host', cohost: 'Co-host', speaker: 'Speaker', listener: 'Listener' };
 const ROLE_RANK = { host: 0, cohost: 1, speaker: 2, listener: 3 };
@@ -113,7 +116,33 @@ export default function MobileCall({ call }) {
   const strip = presenting ? tiles : tiles.filter((t) => t !== spotlight);
 
   const [sheet, setSheet] = useState(false); // people sheet
+  // Closing the people sheet happens in two steps, so it can slide away
+  // instead of vanishing: `sheetClosing` plays the slide-down (CSS), and
+  // when that ends the sheet is actually removed (closeSheetNow).
+  const [sheetClosing, setSheetClosing] = useState(false);
+  const openSheet = () => {
+    setSheet(true);
+    setSheetClosing(false); // reopening mid-slide-out cancels it
+  };
+  const closeSheet = () => setSheetClosing(true);
+  const closeSheetNow = () => {
+    setSheet(false);
+    setSheetClosing(false);
+  };
+  // Safety net: browsers pause animations in a background tab (and skip them
+  // for "reduce motion"), so the slide's end might never be reported. Remove
+  // the sheet anyway, a moment after the slide would have finished.
+  useEffect(() => {
+    if (!sheetClosing) return undefined;
+    const t = setTimeout(() => {
+      setSheet(false);
+      setSheetClosing(false);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [sheetClosing]);
   const [deviceMenu, setDeviceMenu] = useState(null); // 'video' | 'audio' | null
+  // The ⋮ control dial (camera, mic, share, leave) in the bottom-right corner.
+  const [dialOpen, setDialOpen] = useState(false);
   const [picked, setPicked] = useState(null); // grid tile showing mute / remove
   const [msgMenu, setMsgMenu] = useState(null); // my message being held: edit / delete
   const [viewing, setViewing] = useState(null); // chat image open full screen: { src, name }
@@ -376,6 +405,106 @@ export default function MobileCall({ call }) {
       }
     : {};
 
+  // --- the step-by-step tour of this screen (Tour.jsx) --------------------
+  // Plays once per phone, the first time in a call (after the invite pop-up
+  // is closed); the "?" in the top bar replays it. Only the steps that apply
+  // to this person are listed — a listener has no Share button, only
+  // moderators have the room switches, and so on. The dial steps open the ⋮
+  // dial so its controls can be shown; the steps either side close it again.
+  const tour = useTour('phone', !inviteOpen && !sheet);
+  const closeDial = () => setDialOpen(false);
+  const openDial = () => setDialOpen(true);
+  const tourSteps = [
+    {
+      target: '.mc-title-btn',
+      title: 'Your meeting',
+      text: 'Tap the meeting name any time to copy or share the invite link.',
+      before: closeDial,
+    },
+    isModerator && {
+      target: '.mc-mode',
+      title: 'Open or Moderated',
+      text: 'Open: everyone can talk. Moderated: people listen until you give them the floor.',
+    },
+    isModerator && {
+      target: '.mc-lock',
+      title: 'The door',
+      text: 'Locked: you let each new person in. Open: anyone with the link walks straight in.',
+    },
+    !isModerator && {
+      target: '.mc-tophand',
+      title: 'Raise your hand',
+      text: 'In a moderated meeting, tap here to ask to speak. The host sees you in the queue.',
+    },
+    {
+      target: '.mc-layout',
+      title: 'Change the view',
+      text: 'Switch between one big video and a grid of everyone.',
+    },
+    pip.supported && {
+      target: '.mc-popout',
+      title: 'Keep the call floating',
+      text: 'Going to another app? Tap this first and the video keeps playing in a small window.',
+    },
+    {
+      target: '.mc-people',
+      title: 'People',
+      text: isModerator
+        ? 'Everyone in the call, who’s knocking, raised hands, and your host controls.'
+        : 'See everyone in the call and get the invite link.',
+    },
+    {
+      target: '.mc-comment',
+      title: 'Chat',
+      text: 'Message everyone here. Use 📎 for photos and files. Press and hold your own message to edit or delete it.',
+      before: closeDial,
+    },
+    {
+      target: '.mc-dial-toggle',
+      title: 'Your controls',
+      text: 'Camera, mic, sharing and leaving are tucked in here. Tap to open, tap anywhere else to close.',
+      before: closeDial,
+    },
+    {
+      target: '.mc-dial-item .mc-leave',
+      title: 'Leave',
+      text: 'Leaves the call. Changed your mind? You get a minute to rejoin.',
+      before: openDial,
+    },
+    {
+      target: '.mc-dial-item .mc-cam',
+      title: 'Camera',
+      text: 'Turns your camera on or off. Press and hold to switch to another camera.',
+      before: openDial,
+    },
+    {
+      target: '.mc-dial-item .mc-mic',
+      title: 'Microphone',
+      text: isListener
+        ? 'Your mic is off while you’re listening. Raise your hand to ask for the floor.'
+        : 'Mutes or unmutes you. Press and hold to pick another microphone.',
+      before: openDial,
+    },
+    showShare && {
+      target: '.mc-dial-item .mc-cast',
+      title: 'Present',
+      text: 'Show everyone photos or a PDF (or your screen, where your phone allows it).',
+      before: openDial,
+    },
+    !grid && {
+      target: '.mc-stage',
+      title: 'The big video',
+      text: 'Double-tap it for full screen. Tap someone on the side to put them here.',
+      before: closeDial,
+    },
+    {
+      target: '.tour-replay',
+      title: 'That’s it!',
+      text: 'Tap ? any time to see this tour again.',
+      before: closeDial,
+    },
+  ].filter(Boolean);
+
   return (
     <main
       ref={mainRef}
@@ -457,6 +586,7 @@ export default function MobileCall({ call }) {
                   <PopOutIcon />
                 </button>
               )}
+              <TourButton onClick={tour.start} />
             </>
           )}
           {isModerator && (
@@ -494,6 +624,7 @@ export default function MobileCall({ call }) {
                 <PopOutIcon />
               </button>
             )}
+            <TourButton onClick={tour.start} />
             <KnockNotice
               knocker={knocker}
               extra={Math.max(0, waiting.length - 1)}
@@ -543,17 +674,20 @@ export default function MobileCall({ call }) {
                     )}
                     {open && (
                       <div className="mc-gactions">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            act.forceMute(t.id);
-                            setPicked(null);
-                          }}
-                          aria-label={`Mute ${t.name}`}
-                        >
-                          <MicOff />
-                        </button>
+                        {/* No Mute in a moderated room (Grant / Revoke runs the mic). */}
+                        {!moderated && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              act.forceMute(t.id);
+                              setPicked(null);
+                            }}
+                            aria-label={`Mute ${t.name}`}
+                          >
+                            <MicOff />
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={(e) => {
@@ -574,7 +708,7 @@ export default function MobileCall({ call }) {
                 <button
                   type="button"
                   className="mc-gtile mc-gmore"
-                  onClick={() => setSheet(true)}
+                  onClick={openSheet}
                   aria-label={`${gridHidden.length} more people — show everyone`}
                 >
                   <span className="mc-gmore-faces" aria-hidden="true">
@@ -678,7 +812,7 @@ export default function MobileCall({ call }) {
         <button
           type="button"
           className="mc-people"
-          onClick={() => setSheet(true)}
+          onClick={openSheet}
           aria-label="People and room controls"
         >
           <PeopleIcon />
@@ -687,51 +821,89 @@ export default function MobileCall({ call }) {
 
         <Composer />
 
-        <HoldButton
-          className={`mc-btn mc-cam${camOn ? '' : ' off'}`}
-          label={camOn ? 'Turn camera off (hold for more cameras)' : 'Turn camera on'}
-          onTap={toggleCam}
-          onHold={() => setDeviceMenu('video')}
-        >
-          <CamFilled off={!camOn} />
-        </HoldButton>
-
-        {/* A listener's mic stays here, greyed out — the ✋ up top asks for the floor. */}
-        <HoldButton
-          className={`mc-btn mc-mic${micOn && !isListener ? '' : ' off'}${isListener ? ' locked' : ''}`}
-          label={
-            isListener
-              ? 'Listening only — raise your hand to speak'
-              : micOn
-                ? 'Mute (hold for more microphones)'
-                : 'Unmute'
-          }
-          onTap={toggleMic}
-          onHold={() => setDeviceMenu('audio')}
-        >
-          <MicFilled off={!micOn || isListener} />
-        </HoldButton>
-
-        {showShare && (
-          <button
-            type="button"
-            className={`mc-btn mc-cast${sharingScreen ? ' on' : ''}${presentBusy ? ' busy' : ''}`}
-            onClick={sharingScreen ? stopShare : () => setPresentMenu(true)}
-            disabled={presentBusy}
-            aria-label={sharingScreen ? 'Stop presenting' : 'Present to everyone'}
-          >
-            <CastIcon />
-          </button>
-        )}
-
-        <button
-          type="button"
-          className="mc-btn mc-leave"
-          onClick={confirmLeave}
-          aria-label="Leave call"
-        >
-          <PowerIcon />
-        </button>
+        <ControlDial
+          open={dialOpen}
+          onToggle={() => setDialOpen((o) => !o)}
+          onClose={() => setDialOpen(false)}
+          micOff={!micOn && !isListener}
+          items={[
+            // In order around the arc, top first (see ControlDial).
+            {
+              key: 'leave',
+              node: (
+                <button
+                  type="button"
+                  className="mc-btn mc-leave"
+                  onClick={() => {
+                    setDialOpen(false);
+                    confirmLeave();
+                  }}
+                  aria-label="Leave call"
+                >
+                  <PowerIcon />
+                </button>
+              ),
+            },
+            {
+              key: 'cam',
+              node: (
+                <HoldButton
+                  className={`mc-btn mc-cam${camOn ? '' : ' off'}`}
+                  label={camOn ? 'Turn camera off (hold for more cameras)' : 'Turn camera on'}
+                  onTap={toggleCam}
+                  onHold={() => {
+                    setDialOpen(false);
+                    setDeviceMenu('video');
+                  }}
+                >
+                  <CamFilled off={!camOn} />
+                </HoldButton>
+              ),
+            },
+            {
+              // A listener's mic stays here, greyed out — the ✋ up top asks
+              // for the floor.
+              key: 'mic',
+              node: (
+                <HoldButton
+                  className={`mc-btn mc-mic${micOn && !isListener ? '' : ' off'}${isListener ? ' locked' : ''}`}
+                  label={
+                    isListener
+                      ? 'Listening only — raise your hand to speak'
+                      : micOn
+                        ? 'Mute (hold for more microphones)'
+                        : 'Unmute'
+                  }
+                  onTap={toggleMic}
+                  onHold={() => {
+                    setDialOpen(false);
+                    setDeviceMenu('audio');
+                  }}
+                >
+                  <MicFilled off={!micOn || isListener} />
+                </HoldButton>
+              ),
+            },
+            showShare && {
+              key: 'share',
+              node: (
+                <button
+                  type="button"
+                  className={`mc-btn mc-cast${sharingScreen ? ' on' : ''}${presentBusy ? ' busy' : ''}`}
+                  onClick={() => {
+                    setDialOpen(false);
+                    if (sharingScreen) stopShare();
+                    else setPresentMenu(true);
+                  }}
+                  disabled={presentBusy}
+                  aria-label={sharingScreen ? 'Stop presenting' : 'Present to everyone'}
+                >
+                  <CastIcon />
+                </button>
+              ),
+            },
+          ].filter(Boolean)}
+        />
       </footer>
 
       {presentMenu && (
@@ -860,9 +1032,12 @@ export default function MobileCall({ call }) {
 
       {sheet && (
         <PeopleSheet
-          onClose={() => setSheet(false)}
+          closing={sheetClosing}
+          onClose={closeSheet}
+          onClosed={closeSheetNow}
           onInvite={() => {
-            setSheet(false);
+            // Straight to the invite pop-up, which slides up in its place.
+            closeSheetNow();
             setInviteOpen(true);
           }}
           {...{
@@ -891,6 +1066,16 @@ export default function MobileCall({ call }) {
           title={state.title}
           locked={locked}
           onClose={() => setInviteOpen(false)}
+        />
+      )}
+
+      {tour.running && (
+        <Tour
+          steps={tourSteps}
+          onClose={() => {
+            closeDial();
+            tour.stop();
+          }}
         />
       )}
     </main>
@@ -1086,6 +1271,85 @@ function Tile({ tile, sinkId, screen = false }) {
           <Avatar name={tile.name} src={tile.avatar} size={56} />
         </div>
       )}
+    </div>
+  );
+}
+
+// The ⋮ button in the bottom-right corner and the call controls it fans out.
+//
+// Tap ⋮: the controls pop out ONE AFTER ANOTHER along a quarter circle around
+// the button — the first item straight above it, the last off to its left —
+// over a dark blurred glow that makes them stand out from the video. The ⋮
+// turns into ✕. Tap ✕, tap anywhere else, or press Esc: they tuck back in,
+// in reverse order.
+//
+// The controls stay mounted while closed (just shrunk away, invisible and
+// untappable), so closing can animate too. Their positions are worked out
+// here from the arc; the timing lives in the CSS (--i = pop-out order,
+// --ri = the reverse, for closing).
+//
+// While closed you can't see the mic button, so a muted mic shows as a small
+// red badge on ⋮ itself.
+const DIAL_RADIUS = 150; // px from the ⋮ button's centre to each control's centre
+const DIAL_FIRST_DEG = 90; // first control: straight up
+const DIAL_STEP_DEG = 28; // each next one this much further round to the left
+
+function ControlDial({ open, onToggle, onClose, micOff, items }) {
+  // Esc closes it, like the other menus.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  const n = items.length;
+  return (
+    <div className={`mc-dial${open ? ' open' : ''}`}>
+      {/* Invisible full-screen layer under the controls: a tap anywhere
+          else lands here and closes the dial. */}
+      <div className="mc-dial-scrim" onClick={onClose} aria-hidden="true" />
+      {/* The dark blurred glow spreading out from the corner. */}
+      <div className="mc-dial-glow" aria-hidden="true" />
+
+      {items.map((item, i) => {
+        // Angle round the circle (0° = right, 90° = up), then x/y on screen
+        // (screen y grows downwards, hence the minus).
+        const rad = ((DIAL_FIRST_DEG + i * DIAL_STEP_DEG) * Math.PI) / 180;
+        const x = Math.round(Math.cos(rad) * DIAL_RADIUS);
+        const y = Math.round(-Math.sin(rad) * DIAL_RADIUS);
+        return (
+          <div
+            key={item.key}
+            className="mc-dial-item"
+            style={{ '--x': `${x}px`, '--y': `${y}px`, '--i': i, '--ri': n - 1 - i }}
+            // While closed: invisible AND out of reach (no taps, no keyboard).
+            {...(open ? {} : { inert: '' })}
+          >
+            {item.node}
+          </div>
+        );
+      })}
+
+      <button
+        type="button"
+        className="mc-dial-toggle"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-label={open ? 'Close call controls' : 'Call controls: camera, mic, share, leave'}
+      >
+        <span className="mc-dial-dots" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+        <X className="mc-dial-x" aria-hidden="true" />
+        {micOff && !open && (
+          <span className="mc-dial-muted" aria-label="Your mic is off">
+            <MicOff />
+          </span>
+        )}
+      </button>
     </div>
   );
 }
@@ -1528,8 +1792,12 @@ function MessageBody({ m, onView }) {
 
 // Bottom sheet behind the people button: invite link, the door, raised hands
 // and everyone in the call with the moderator actions.
+// `closing` = it's sliding back down; when that slide ends, onClosed()
+// removes it for real (onClose only STARTS the slide).
 function PeopleSheet({
+  closing,
   onClose,
+  onClosed,
   onInvite,
   participants,
   selfId,
@@ -1549,8 +1817,15 @@ function PeopleSheet({
   );
 
   return (
-    <div className="mc-backdrop" onClick={onClose}>
-      <div className="mc-sheet" onClick={(e) => e.stopPropagation()}>
+    <div className={`mc-backdrop${closing ? ' closing' : ''}`} onClick={onClose}>
+      <div
+        className="mc-sheet"
+        onClick={(e) => e.stopPropagation()}
+        onAnimationEnd={(e) => {
+          // Only the sheet's OWN slide-down — not animations inside it.
+          if (closing && e.target === e.currentTarget) onClosed();
+        }}
+      >
         <div className="mc-sheet-head">
           <h2>People ({participants.length})</h2>
           <button type="button" className="mc-sheet-x" onClick={onClose} aria-label="Close">
@@ -1669,7 +1944,9 @@ function PeopleSheet({
                       Make co-host
                     </button>
                   ))}
-                {canMod && (
+                {/* Moderated rooms run the mic through Grant / Revoke
+                    (listeners are silent anyway), so no Mute there. */}
+                {canMod && !moderated && (
                   <button type="button" onClick={() => act.forceMute(p.id)}>
                     Mute
                   </button>
