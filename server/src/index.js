@@ -10,11 +10,20 @@
 // "let's connect" paperwork (SDP offers/answers and ICE candidates) from one
 // socket to another. This is what "signaling server" means.
 //
+// With Cloudflare's SFU configured (sfu.js), the media goes through Cloudflare
+// instead: each browser sends its tracks there once and receives everyone
+// else's from there. Every step goes through this server (the SFU_* handlers
+// below), which holds the Cloudflare secret and decides who may send what.
+//
 // Phases 4-7 — host-authoritative moderation. Every host-only action is
-// re-checked here (requireHostRoom) regardless of what the client shows. Since
-// media is peer-to-peer, "mute" and "listener" are cooperative: the server asks
-// the target's client to disable its own tracks.
+// re-checked here (requireHostRoom) regardless of what the client shows. In a
+// peer-to-peer (mesh) call, "mute" and "listener" are cooperative: the server
+// asks the target's client to disable its own tracks. Through the SFU,
+// "listener" is enforced: the server won't pass on a listener's audio
+// (enforceMedia). The host's Mute button stays a polite request either way —
+// a muted speaker may unmute themselves.
 
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import http from 'node:http';
@@ -23,6 +32,7 @@ import express from 'express';
 import cors from 'cors';
 import { Server } from 'socket.io';
 import { CHAT_FILE_MAX_BYTES, EVENTS, MODES, RECONNECT_GRACE_MS, STICKERS } from '@listen/shared';
+import * as sfu from './sfu.js';
 import {
   addChatMessage,
   addParticipant,
@@ -34,11 +44,14 @@ import {
   denyWaiting,
   editChatMessage,
   findTicket,
+  findTrack,
   getRoom,
   grantFloor,
   isAway,
   lowerHand,
   markAway,
+  maySend,
+  mediaOf,
   passFloor,
   promoteCohost,
   raiseHand,
@@ -145,6 +158,12 @@ if (CF_KEY_ID && CF_TOKEN) {
     '[server] no TURN relay configured — calls across strict networks will have no media',
   );
 }
+
+console.log(
+  sfu.sfuEnabled()
+    ? '[server] Cloudflare SFU on — calls go through Cloudflare'
+    : '[server] no Cloudflare SFU configured — calls are peer-to-peer (mesh)',
+);
 
 const app = express();
 app.use(cors({ origin: CLIENT_ORIGIN }));
@@ -325,6 +344,13 @@ const RATE_LIMITS = {
   [EVENTS.RAISE_HAND]: { max: 10, perMs: 10_000 },
   [EVENTS.LOWER_HAND]: { max: 20, perMs: 10_000 },
   [EVENTS.SPEAKING]: { max: 60, perMs: 10_000 },
+  // The video desk: a few calls each time someone joins, leaves, or turns a
+  // camera / share on or off. Each one is a Cloudflare API call, so cap it.
+  [EVENTS.SFU_SESSION]: { max: 10, perMs: 60_000 },
+  [EVENTS.SFU_PUBLISH]: { max: 30, perMs: 10_000 },
+  [EVENTS.SFU_PULL]: { max: 60, perMs: 10_000 },
+  [EVENTS.SFU_ANSWER]: { max: 60, perMs: 10_000 },
+  [EVENTS.SFU_CLOSE]: { max: 60, perMs: 10_000 },
 };
 
 // Last line of defence: log anything that slipped past the handler wrapper
@@ -334,8 +360,46 @@ process.on('unhandledRejection', (err) => console.error('[server] unhandled reje
 
 // Send the current snapshot of a room to everyone in it.
 function broadcastRoom(roomId) {
+  enforceMedia(roomId);
   const state = snapshot(roomId);
   if (state) io.to(roomId).emit(EVENTS.ROOM_STATE, state);
+}
+
+// --- Cloudflare SFU: who may send what -------------------------------------
+// Runs on every change (broadcastRoom). A track someone may no longer send —
+// a listener's audio, a screen share that isn't the room's current one — is
+// already left out of the snapshot (rooms.js), so everyone stops receiving it
+// at once. Their own browser then closes it; if it hasn't within
+// ENFORCE_GRACE_MS (an old or tampered client), the server forces Cloudflare
+// to drop it. That's what makes "listeners can't talk" real, not just a
+// polite request.
+const ENFORCE_GRACE_MS = 3000;
+
+function enforceMedia(roomId) {
+  const room = getRoom(roomId);
+  if (!room || !sfu.sfuEnabled()) return;
+  for (const [id, m] of Object.entries(room.media)) {
+    for (const [kind, t] of Object.entries(m.tracks)) {
+      if (maySend(room, id, kind) || t.cutTimer) continue;
+      t.cutTimer = setTimeout(() => {
+        t.cutTimer = null;
+        // Still there (same Cloudflare session, same track), and still not
+        // allowed (not handed the floor back meanwhile)? Force it off.
+        const owner = Object.entries(room.media).find(
+          ([, x]) => x.sessionId === m.sessionId && x.tracks[kind] === t,
+        );
+        if (!owner || maySend(room, owner[0], kind)) return;
+        delete owner[1].tracks[kind];
+        sfu
+          .close(m.sessionId, [t.mid])
+          .then(() => console.log(`[room ${roomId}] forced ${kind} off (sender didn't stop)`))
+          .catch((err) =>
+            console.error(`[room ${roomId}] forcing ${kind} off failed:`, err.message),
+          );
+      }, ENFORCE_GRACE_MS);
+      t.cutTimer.unref?.();
+    }
+  }
 }
 
 io.on('connection', (socket) => {
@@ -986,6 +1050,169 @@ io.on('connection', (socket) => {
       description, // present for an SDP offer/answer, undefined for ICE
       candidate, // present for an ICE candidate, undefined for SDP
     });
+  });
+
+  // --- Cloudflare SFU: the video desk (see EVENTS.SFU_* and sfu.js) --------
+  // The browser does the WebRTC side; these make the matching Cloudflare API
+  // calls (they need the app secret) after checking the request is allowed.
+
+  // The room, if SFU calls are on and I'm a full participant (not knocking).
+  function sfuRoom(ack) {
+    const room = getRoom(joinedRoomId);
+    if (!sfu.sfuEnabled() || !room?.participants[socket.id]) {
+      ack?.({ ok: false, error: 'not in a room' });
+      return null;
+    }
+    return room;
+  }
+
+  // My Cloudflare connection's bookkeeping, if I've started one.
+  function mySession(room, ack) {
+    const m = room.media[socket.id];
+    if (!m?.sessionId) {
+      ack?.({ ok: false, error: 'no session' });
+      return null;
+    }
+    return m;
+  }
+
+  // Every SFU handler waits on Cloudflare, which can fail or time out: tell
+  // the browser (it starts its connection over) instead of leaving it hanging.
+  function sfuHandler(event, handler) {
+    on(event, async (payload, ack) => {
+      try {
+        await handler(payload, ack);
+      } catch (err) {
+        console.error(`[sfu] ${event} failed for ${socket.id}:`, err.message);
+        ack?.({ ok: false, error: 'video service error' });
+      }
+    });
+  }
+
+  // Short ids from a browser's SDP ("0", "1", …).
+  const isMid = (mid) => typeof mid === 'string' && mid.length > 0 && mid.length <= 16;
+  const KINDS = ['audio', 'video', 'screen', 'screenAudio'];
+
+  sfuHandler(EVENTS.SFU_SESSION, async (_payload, ack) => {
+    const room = sfuRoom(ack);
+    if (!room) return;
+    const sessionId = await sfu.newSession();
+    if (!room.participants[socket.id]) return; // left while we waited
+    // A fresh connection: whatever I was sending before is gone.
+    const m = mediaOf(room, socket.id);
+    for (const t of Object.values(m.tracks)) clearTimeout(t.cutTimer);
+    m.sessionId = sessionId;
+    m.tracks = {};
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  sfuHandler(EVENTS.SFU_PUBLISH, async ({ sdp, tracks } = {}, ack) => {
+    const room = sfuRoom(ack);
+    const m = room && mySession(room, ack);
+    if (!m) return;
+    if (!Array.isArray(tracks) || tracks.length < 1 || tracks.length > 4) {
+      return ack?.({ ok: false, error: 'bad tracks' });
+    }
+    const kinds = tracks.map((t) => t?.kind);
+    if (
+      !tracks.every((t) => isMid(t?.mid) && KINDS.includes(t.kind)) ||
+      new Set(kinds).size !== kinds.length
+    ) {
+      return ack?.({ ok: false, error: 'bad tracks' });
+    }
+    // Allowed to send each of these, and not sending one of that kind already?
+    for (const kind of kinds) {
+      if (!maySend(room, socket.id, kind)) {
+        return ack?.({ ok: false, error: `not allowed to send ${kind}` });
+      }
+      if (m.tracks[kind]) return ack?.({ ok: false, error: `already sending ${kind}` });
+    }
+
+    const named = tracks.map(({ mid, kind }) => ({
+      mid,
+      kind,
+      trackName: `${kind}-${randomUUID()}`,
+    }));
+    const sessionId = m.sessionId;
+    const res = await sfu.publish(sessionId, sdp, named);
+    // Started over while we waited (or left)? This answer is useless now.
+    if (room.media[socket.id] !== m || m.sessionId !== sessionId) {
+      return ack?.({ ok: false, error: 'session replaced' });
+    }
+    const failed = [];
+    for (const t of named) {
+      const result = res.tracks.find((r) => r.trackName === t.trackName);
+      if (result?.errorCode) failed.push(t.kind);
+      else m.tracks[t.kind] = { key: randomUUID(), trackName: t.trackName, mid: t.mid };
+    }
+    ack?.({ ok: true, sdp: res.sdp, failed });
+    broadcastRoom(joinedRoomId); // everyone else pulls the new tracks
+  });
+
+  sfuHandler(EVENTS.SFU_PULL, async ({ keys } = {}, ack) => {
+    const room = sfuRoom(ack);
+    const m = room && mySession(room, ack);
+    if (!m) return;
+    if (!Array.isArray(keys) || keys.length < 1 || keys.length > 64) {
+      return ack?.({ ok: false, error: 'bad keys' });
+    }
+    // Only tracks the snapshot offers: someone else's, in this room, that
+    // they may still send (never a listener's audio).
+    const results = [];
+    const sources = [];
+    for (const key of new Set(keys)) {
+      const t = findTrack(room, key);
+      if (!t || t.ownerId === socket.id || !maySend(room, t.ownerId, t.kind)) {
+        results.push({ key, error: 'unavailable' });
+      } else {
+        sources.push({ key, sessionId: t.sessionId, trackName: t.trackName });
+      }
+    }
+    if (!sources.length) return ack?.({ ok: true, sdp: null, tracks: results });
+
+    const res = await sfu.pull(m.sessionId, sources);
+    for (const s of sources) {
+      const r = res.tracks.find((x) => x.trackName === s.trackName && x.sessionId === s.sessionId);
+      results.push(
+        r && !r.errorCode && r.mid != null
+          ? { key: s.key, mid: String(r.mid) }
+          : { key: s.key, error: r?.errorCode ?? 'failed' },
+      );
+    }
+    ack?.({ ok: true, sdp: res.sdp, tracks: results });
+  });
+
+  sfuHandler(EVENTS.SFU_ANSWER, async ({ sdp } = {}, ack) => {
+    const room = sfuRoom(ack);
+    const m = room && mySession(room, ack);
+    if (!m) return;
+    await sfu.answer(m.sessionId, sdp);
+    ack?.({ ok: true });
+  });
+
+  sfuHandler(EVENTS.SFU_CLOSE, async ({ mids, sdp } = {}, ack) => {
+    const room = sfuRoom(ack);
+    const m = room && mySession(room, ack);
+    if (!m) return;
+    if (!Array.isArray(mids) || mids.length < 1 || mids.length > 64 || !mids.every(isMid)) {
+      return ack?.({ ok: false, error: 'bad mids' });
+    }
+    // Always negotiated (with the browser's offer). Forced closes are only
+    // ever the server's own (enforceMedia).
+    if (typeof sdp !== 'string') return ack?.({ ok: false, error: 'offer required' });
+    const res = await sfu.close(m.sessionId, mids, sdp);
+    // Any of mine that were being SENT: off the snapshot, so others drop them.
+    let changed = false;
+    for (const [kind, t] of Object.entries(m.tracks)) {
+      if (mids.includes(t.mid)) {
+        clearTimeout(t.cutTimer);
+        delete m.tracks[kind];
+        changed = true;
+      }
+    }
+    ack?.({ ok: true, sdp: res.sdp });
+    if (changed) broadcastRoom(joinedRoomId);
   });
 
   socket.on('disconnect', (reason) => {

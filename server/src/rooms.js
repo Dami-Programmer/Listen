@@ -7,9 +7,10 @@
 // Roles (Phase 3): every participant has exactly one — host | speaker | listener.
 //   - open mode      -> every non-host is a speaker
 //   - moderated mode -> every non-host is a listener (Phase 4)
-// Roles are DATA here; nothing on the server blocks media (it's peer-to-peer).
-// Enforcement is cooperative: a client that sees its own role become 'listener'
-// silences its outbound tracks. `setRole` below is the single place any role
+// Roles are DATA here. A client that sees its own role become 'listener'
+// silences its outbound tracks; in a peer-to-peer (mesh) call that's all there
+// is. Through Cloudflare's SFU the server also enforces it (see maySend, and
+// enforceMedia in index.js). `setRole` below is the single place any role
 // changes, so Phases 4-7 never poke `participant.role` directly.
 
 import { randomUUID } from 'node:crypto';
@@ -20,6 +21,7 @@ import {
   ROLES,
   cleanAvatar,
 } from '@listen/shared';
+import { sfuEnabled } from './sfu.js';
 
 /**
  * roomId -> {
@@ -46,6 +48,11 @@ import {
  *   away: object         // socketId -> when their connection dropped, for
  *                        // people whose seat is being held while they
  *                        // reconnect
+ *   media: object        // Cloudflare SFU only (see sfu.js): socketId ->
+ *                        //   { sessionId, tracks: { [kind]: { key, trackName, mid } } }
+ *                        // — their Cloudflare connection and what they're
+ *                        // sending on it. Snapshots show only each track's
+ *                        // `key`; the rest stays on the server.
  * }
  */
 const rooms = new Map();
@@ -77,6 +84,7 @@ function createRoom() {
     cams: {},
     tickets: {},
     away: {},
+    media: {},
   };
 }
 
@@ -176,7 +184,9 @@ export function rekey(room, oldId, newId) {
   room.speaking = room.speaking.filter((id) => id !== oldId);
 
   // Plain socketId -> value maps: move the value across.
-  for (const map of [room.sharing, room.mics, room.cams, room.tickets]) {
+  // (`media` too: their Cloudflare connection can outlive a Socket.IO drop,
+  // so after a quick reconnect their video just carries on.)
+  for (const map of [room.sharing, room.mics, room.cams, room.tickets, room.media]) {
     if (oldId in map) {
       map[newId] = map[oldId];
       delete map[oldId];
@@ -687,6 +697,7 @@ export function removeParticipant(socketId) {
     delete room.cams[socketId];
     delete room.tickets[socketId]; // their seat is gone — the ticket is useless now
     delete room.away[socketId];
+    delete room.media[socketId]; // their tracks: everyone stops receiving them
     if (room.cohostId === socketId) room.cohostId = null;
 
     const remaining = Object.keys(room.participants);
@@ -748,5 +759,56 @@ export function snapshot(roomId) {
     // socketIds of people whose connection dropped and who are reconnecting
     // (their tiles say "Reconnecting…"). The tickets themselves stay secret.
     away: Object.keys(room.away),
+    // Cloudflare SFU: whether calls go through it, and socketId -> { kind:
+    // key } for the tracks each person is sending (see EVENTS.SFU_PULL).
+    // Only tracks they may still send (see maySend): never a listener's audio.
+    sfu: sfuEnabled(),
+    media: Object.fromEntries(
+      Object.entries(room.media)
+        .filter(([id]) => room.participants[id])
+        .map(([id, { tracks }]) => [
+          id,
+          Object.fromEntries(
+            Object.entries(tracks)
+              .filter(([kind]) => maySend(room, id, kind))
+              .map(([kind, t]) => [kind, t.key]),
+          ),
+        ]),
+    ),
   };
+}
+
+/* --------------------------------------------------------------------------
+ * Cloudflare SFU bookkeeping (see sfu.js and the SFU_* handlers in index.js).
+ * ------------------------------------------------------------------------ */
+
+/**
+ * May this person send this kind of track right now? Listeners can't send
+ * audio; only the room's current presenter can send a screen (and its sound).
+ * Anyone may send their camera. Tracks that fail this are left out of
+ * snapshots and cut off by the server (enforceMedia in index.js).
+ */
+export function maySend(room, socketId, kind) {
+  const p = room?.participants[socketId];
+  if (!p) return false;
+  if (kind === 'audio') return p.role !== ROLES.LISTENER;
+  if (kind === 'screen' || kind === 'screenAudio') return socketId in room.sharing;
+  return kind === 'video';
+}
+
+/** Someone's Cloudflare connection + tracks, created on first use. */
+export function mediaOf(room, socketId) {
+  room.media[socketId] ??= { sessionId: null, tracks: {} };
+  return room.media[socketId];
+}
+
+/** The track with this snapshot key: { ownerId, kind, sessionId, trackName }, or null. */
+export function findTrack(room, key) {
+  if (typeof key !== 'string') return null;
+  for (const [ownerId, m] of Object.entries(room.media)) {
+    for (const [kind, t] of Object.entries(m.tracks)) {
+      if (t.key === key) return { ownerId, kind, sessionId: m.sessionId, trackName: t.trackName };
+    }
+  }
+  return null;
 }

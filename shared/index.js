@@ -125,8 +125,9 @@ export const EVENTS = {
 
   // Screen sharing (added after in-call chat). Google-Meet-style: only ONE
   // person presents at a time. The media itself is renegotiated peer-to-peer
-  // (perfect negotiation in webrtc.js); this event only tells the room WHO is
-  // sharing and WHICH inbound stream is the screen.
+  // (perfect negotiation in webrtc.js), or published to the SFU (sfu.js —
+  // only allowed once this event has made you the presenter); this event
+  // tells the room WHO is sharing and WHICH inbound stream is the screen.
   //   SCREEN_SHARE : client -> server { on, streamId }. `on:true` carries the
   //     MediaStream id so every client can pick the screen track out of that
   //     peer's inbound media; `on:false` stops. The server keeps
@@ -151,6 +152,32 @@ export const EVENTS = {
   //   { targetId, candidate }    -> an RTCIceCandidate
   // The server adds `from` (the sender's socket id) before relaying.
   RTC_SIGNAL: 'rtc-signal',
+
+  // Cloudflare SFU ("video desk") — used instead of RTC_SIGNAL when the server
+  // has CLOUDFLARE_SFU_APP_ID / _SECRET (snapshots then say `sfu: true`).
+  // Each browser keeps ONE connection, to Cloudflare, and sends each of its
+  // tracks there once; Cloudflare copies them to everyone else. The server
+  // holds the Cloudflare secret, so every step goes through it (and it
+  // decides who may send / receive what — e.g. a listener can't send audio).
+  // All are client -> server with an ack:
+  //   SFU_SESSION {} : start (or start over with) my Cloudflare connection.
+  //     Anything I was sending before is dropped.            -> { ok }
+  //   SFU_PUBLISH { sdp, tracks: [{ mid, kind }] } : send these tracks.
+  //     kind is 'audio' | 'video' | 'screen' | 'screenAudio'.
+  //                                                        -> { ok, sdp (answer) }
+  //   SFU_PULL { keys: [...] } : receive these tracks (keys come from the
+  //     snapshot's `media` map).
+  //       -> { ok, sdp (offer) | null, tracks: [{ key, mid, error? }] }
+  //   SFU_ANSWER { sdp } : my answer to the offer SFU_PULL returned. -> { ok }
+  //   SFU_CLOSE { mids: [...], sdp (offer) } : stop sending / receiving the
+  //     tracks on these mids.                              -> { ok, sdp (answer) }
+  // The snapshot's `media` is { socketId: { audio?, video?, screen?,
+  // screenAudio? } } — an opaque key for each track that person is sending.
+  SFU_SESSION: 'sfu-session',
+  SFU_PUBLISH: 'sfu-publish',
+  SFU_PULL: 'sfu-pull',
+  SFU_ANSWER: 'sfu-answer',
+  SFU_CLOSE: 'sfu-close',
 
   // Reconnecting after a network drop (Google-Meet style).
   // When someone's internet drops, the server does NOT remove them straight

@@ -11,8 +11,11 @@
 //   5. expose mic / camera on-off toggles and screen sharing
 //
 // "Mesh" = with N people in a room, every browser holds N-1 peer connections and
-// uploads its camera N-1 times. Fine for 3-6 friends; a bigger room needs an SFU
-// (a post-v1 rewrite).
+// uploads its camera N-1 times. Fine for 3-6 friends. When the server has
+// Cloudflare's SFU set up (snapshots say `sfu: true`), the mesh stays off and
+// sfu.js carries the media instead: one connection, each track sent once.
+// Everything else here — camera, mic, toggles, sharing, moderation — is the
+// same either way.
 //
 // Screen sharing adds a video track to every peer connection mid-call, which
 // needs renegotiation — so the connection setup uses the "perfect negotiation"
@@ -23,6 +26,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { EVENTS, MODES, ROLES } from '@listen/shared';
 import { socket } from './socket.js';
+import { useSfu } from './sfu.js';
 
 // Fallback when the server didn't send a list: STUN only (direct routes).
 // The server's list adds a TURN relay for networks that block direct routes.
@@ -104,8 +108,21 @@ function friendlyMediaError(err) {
  * @param {object}     [args.media]        pre-join choices: { audioId, videoId,
  *                                         micOn, camOn } — applied when the
  *                                         call opens
+ * @param {boolean}    [args.sfu]          media goes through Cloudflare's SFU
+ *                                         (sfu.js) instead of the mesh
+ * @param {object}     [args.sfuMedia]     room-state `media` (the SFU's tracks)
  */
-export function useCall({ selfId, participants, inCall, sharing = {}, mode, media, iceServers }) {
+export function useCall({
+  selfId,
+  participants,
+  inCall,
+  sharing = {},
+  mode,
+  media,
+  iceServers,
+  sfu = false,
+  sfuMedia,
+}) {
   const myRole = participants.find((p) => p.id === selfId)?.role ?? null;
   const isListener = myRole === ROLES.LISTENER;
 
@@ -446,7 +463,7 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode, medi
   // means an early offer lands in handleSignal, which stashes it in pendingRef
   // until the camera is up (effect B2 replays it).
   useEffect(() => {
-    if (!inCall || !selfId) return undefined;
+    if (!inCall || !selfId || sfu) return undefined;
 
     const peers = peersRef.current;
     const pending = pendingRef.current;
@@ -457,23 +474,23 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode, medi
       for (const id of [...peers.keys()]) removePeer(id);
       pending.clear(); // stashed messages for a call we've left are useless
     };
-  }, [inCall, selfId, queueSignal, removePeer]);
+  }, [inCall, selfId, sfu, queueSignal, removePeer]);
 
   // --- effect B2: camera ready -> replay whatever arrived early -------------
   // Everything stashed while the camera was starting goes back through the
   // same one-at-a-time line, oldest first, so an offer is always fully
   // applied before its ICE candidates.
   useEffect(() => {
-    if (!inCall || !selfId || !localStream) return;
+    if (!inCall || !selfId || !localStream || sfu) return;
 
     const queued = [...pendingRef.current.values()].flat();
     pendingRef.current.clear();
     queued.forEach(queueSignal);
-  }, [inCall, selfId, localStream, queueSignal]);
+  }, [inCall, selfId, localStream, sfu, queueSignal]);
 
   // --- effect C: keep exactly one connection per other participant ----------
   useEffect(() => {
-    if (!inCall || !selfId || !localStream) return;
+    if (!inCall || !selfId || !localStream || sfu) return;
 
     const others = new Set(participants.map((p) => p.id).filter((id) => id !== selfId));
 
@@ -486,7 +503,7 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode, medi
         removePeer(peerId);
       }
     }
-  }, [inCall, selfId, localStream, participants, addPeer, removePeer]);
+  }, [inCall, selfId, localStream, sfu, participants, addPeer, removePeer]);
 
   // --- effect D: moderation follows your role -----------------------------
   // When the host moderates the room the server sets my role to 'listener'; my
@@ -833,14 +850,28 @@ export function useCall({ selfId, participants, inCall, sharing = {}, mode, medi
     setDevices(deviceIdsOf(next));
   }, []);
 
+  // --- the SFU's media (when it's on) -------------------------------------
+  const viaSfu = useSfu({
+    active: inCall && sfu,
+    selfId,
+    media: sfuMedia,
+    localStream,
+    camOn,
+    isListener,
+    screenStream,
+    iceServers,
+  });
+
   // --- split each peer's streams into camera vs screen --------------------
-  const remotes = [];
-  const remoteScreens = [];
-  for (const { id, streams } of peerMedia) {
-    const screenId = sharing?.[id];
-    for (const stream of streams) {
-      if (screenId && stream.id === screenId) remoteScreens.push({ id, stream });
-      else remotes.push({ id, stream });
+  const remotes = sfu ? viaSfu.remotes : [];
+  const remoteScreens = sfu ? viaSfu.remoteScreens : [];
+  if (!sfu) {
+    for (const { id, streams } of peerMedia) {
+      const screenId = sharing?.[id];
+      for (const stream of streams) {
+        if (screenId && stream.id === screenId) remoteScreens.push({ id, stream });
+        else remotes.push({ id, stream });
+      }
     }
   }
 

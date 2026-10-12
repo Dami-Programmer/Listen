@@ -56,6 +56,11 @@ top of the Phase 2 call:
   promotion); WebRTC negotiation relayed via one `rtc-signal` event; mesh
   video/voice with `getUserMedia`, one `RTCPeerConnection` per peer, responsive
   tile grid, mic / camera / leave controls.
+- **Cloudflare SFU:** with `CLOUDFLARE_SFU_APP_ID` / `_SECRET` set, calls go
+  through Cloudflare's SFU instead of the mesh — one connection per browser,
+  each track sent once (`client/src/sfu.js`, `server/src/sfu.js`). The server
+  makes every Cloudflare call and enforces who may send what (a listener's
+  audio is cut off). Without the keys, calls fall back to the mesh.
 - **Phase 3 (roles):** every participant is `host | speaker | listener`.
   `setRole` in `rooms.js` is the single place roles change. Participant list is
   sorted host-first with coloured role pills; each video tile shows its role.

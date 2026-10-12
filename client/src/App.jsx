@@ -756,6 +756,9 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
     sharing,
     mode: state?.mode,
     media,
+    // The server has Cloudflare's SFU set up: media goes through it (sfu.js).
+    sfu: state?.sfu === true,
+    sfuMedia: state?.media,
   });
 
   // Leave the call, telling <App/> how the mic and camera were — so if you

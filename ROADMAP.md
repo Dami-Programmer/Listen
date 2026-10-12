@@ -391,9 +391,10 @@ Jakarta Sans), a floating white shell:
 
 ## Known constraints
 
-- Mesh WebRTC scales to ~5-6 video participants. Fine for friends. Larger rooms
-  would need an SFU — a post-v1 rewrite of the media layer, so the signaling/role
-  code is designed to not care how media is routed.
+- Mesh WebRTC scales to ~5-6 video participants. Larger rooms now go through
+  Cloudflare's SFU when it's configured (one upload per track). Every viewer
+  still receives every camera at full quality (no simulcast yet), so very large
+  rooms on weak connections are the next limit.
 - Everything host-authoritative lives on the server; the client never decides its
   own permissions.
 - **Single process, all in memory.** One Node process holds every room in a
