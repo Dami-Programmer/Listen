@@ -15,3 +15,10 @@ export function inviteLink(roomId) {
   url.searchParams.set('room', roomId);
   return url.href;
 }
+
+// The page where a meeting's recording can be watched (?rec=<id>).
+export function recordingLink(id) {
+  const url = new URL(window.location.pathname, window.location.origin);
+  url.searchParams.set('rec', id);
+  return url.href;
+}

@@ -30,17 +30,20 @@ import {
   MicOff,
   Paperclip,
   Pencil,
+  RecordIcon,
+  StopRecordIcon,
   Trash,
   X,
 } from './icons.jsx';
 import { sendChatFile } from './chatFiles.js';
 import { loadDeck, startPainter } from './presenter.js';
 import { useVideoPip } from './useVideoPip.js';
-import { inviteLink } from './meeting.js';
+import { inviteLink, recordingLink } from './meeting.js';
 import { confirmDialog } from './ConfirmDialog.jsx';
 import Tour from './Tour.jsx';
 import { hasSeenTour, useTour } from './useTour.js';
 import TourButton from './TourButton.jsx';
+import RecBadge from './RecBadge.jsx';
 
 const ROLE_LABEL = { host: 'Host', cohost: 'Co-host', speaker: 'Speaker', listener: 'Listener' };
 const ROLE_RANK = { host: 0, cohost: 1, speaker: 2, listener: 3 };
@@ -85,6 +88,9 @@ export default function MobileCall({ call }) {
     toggleLayout,
     camOf,
     cohostId,
+    recording,
+    startRecording,
+    stopRecording,
     act,
   } = call;
 
@@ -455,6 +461,11 @@ export default function MobileCall({ call }) {
       title: 'Keep the call floating',
       text: 'Going to another app? Tap this first and the video keeps playing in a small window.',
     },
+    isModerator && {
+      target: '.mc-rec',
+      title: 'Record',
+      text: 'Records the meeting. Everyone sees it’s being recorded and can watch it afterwards, for a day.',
+    },
     {
       target: '.mc-people',
       title: 'People',
@@ -596,6 +607,8 @@ export default function MobileCall({ call }) {
                 </button>
               )}
               <TourButton onClick={tour.start} />
+              {/* (just the dot: this row is already full) */}
+              {recording && <RecBadge recording={recording} dotOnly />}
             </>
           )}
           {isModerator && (
@@ -634,6 +647,16 @@ export default function MobileCall({ call }) {
               </button>
             )}
             <TourButton onClick={tour.start} />
+            {/* Record / stop, and "● 12:34" while recording. */}
+            <button
+              type="button"
+              className={`mc-rec${recording ? ' on' : ''}`}
+              onClick={recording ? stopRecording : startRecording}
+              aria-label={recording ? 'Stop recording' : 'Record the meeting'}
+            >
+              {recording ? <StopRecordIcon /> : <RecordIcon />}
+            </button>
+            {recording && <RecBadge recording={recording} compact />}
             <KnockNotice
               knocker={knocker}
               extra={Math.max(0, waiting.length - 1)}
@@ -1671,6 +1694,20 @@ function ChatFeed({ chat, typers, selfId, participants, narrow, held, onHold, on
       >
         {items.map((m) => {
           const enter = initialIds.current.has(m.id) ? '' : ' mc-in';
+          if (m.kind === 'note') {
+            // From Listen itself: "Sam started recording · Open recording".
+            return (
+              <p key={m.id} className={`mc-join mc-note${enter}`}>
+                {m.recording && <span className="rec-dot" aria-hidden="true" />}
+                {m.text}
+                {m.recording && (
+                  <a href={recordingLink(m.recording)} target="_blank" rel="noreferrer">
+                    Open recording
+                  </a>
+                )}
+              </p>
+            );
+          }
           return m.kind === 'join' ? (
             <p key={m.id} className={`mc-join${enter}`}>
               <b>{m.name}</b> joined via share invitation

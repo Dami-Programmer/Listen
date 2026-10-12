@@ -85,6 +85,7 @@ function createRoom() {
     tickets: {},
     away: {},
     media: {},
+    recording: null, // { id, startedAt, recorderId, part } while recording
   };
 }
 
@@ -180,6 +181,7 @@ export function rekey(room, oldId, newId) {
 
   if (room.hostId === oldId) room.hostId = newId;
   if (room.cohostId === oldId) room.cohostId = newId;
+  if (room.recording?.recorderId === oldId) room.recording.recorderId = newId;
   room.queue = room.queue.map((id) => (id === oldId ? newId : id));
   room.speaking = room.speaking.filter((id) => id !== oldId);
 
@@ -762,6 +764,16 @@ export function snapshot(roomId) {
     // Cloudflare SFU: whether calls go through it, and socketId -> { kind:
     // key } for the tracks each person is sending (see EVENTS.SFU_PULL).
     // Only tracks they may still send (see maySend): never a listener's audio.
+    // Recording: { id, startedAt, recorderId, part } while it's on, else null.
+    // Everyone shows "● Recording"; `recorderId` is the browser recording it.
+    recording: room.recording
+      ? {
+          id: room.recording.id,
+          startedAt: room.recording.startedAt,
+          recorderId: room.recording.recorderId,
+          part: room.recording.part,
+        }
+      : null,
     sfu: sfuEnabled(),
     media: Object.fromEntries(
       Object.entries(room.media)
@@ -794,6 +806,20 @@ export function maySend(room, socketId, kind) {
   if (kind === 'audio') return p.role !== ROLES.LISTENER;
   if (kind === 'screen' || kind === 'screenAudio') return socketId in room.sharing;
   return kind === 'video';
+}
+
+/** The room a participant is in: { roomId, room }, or null. */
+export function roomOf(socketId) {
+  for (const [roomId, room] of rooms) {
+    if (room.participants[socketId]) return { roomId, room };
+  }
+  return null;
+}
+
+/** Whether someone is on a laptop / desktop (better at recording than a phone). */
+export function setDevice(room, socketId, desktop) {
+  const p = room?.participants[socketId];
+  if (p) p.desktop = desktop === true;
 }
 
 /** Someone's Cloudflare connection + tracks, created on first use. */

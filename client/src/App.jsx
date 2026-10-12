@@ -37,6 +37,9 @@ import AloneReminder from './AloneReminder.jsx';
 import Tour from './Tour.jsx';
 import { hasSeenTour, useTour } from './useTour.js';
 import TourButton from './TourButton.jsx';
+import RecBadge from './RecBadge.jsx';
+import { canRecord, isPhoneOrTablet, useRecorder } from './recorder.js';
+import { rememberRecording } from './myRecordings.js';
 
 // How long the "You left the meeting" screen offers Rejoin — the same minute
 // the server keeps the rejoin pass for.
@@ -68,8 +71,10 @@ import {
   Minimize,
   People,
   Phone,
+  RecordIcon,
   Screen,
   SpotlightView,
+  StopRecordIcon,
   Unlock,
   X,
 } from './icons.jsx';
@@ -159,6 +164,8 @@ export default function App() {
   const [rejoining, setRejoining] = useState(false);
   // The meeting we just left (its name, or code), for the review form.
   const [leftMeeting, setLeftMeeting] = useState('');
+  // Its latest recording, if it was recorded — the screen links to it.
+  const [leftRecording, setLeftRecording] = useState(null);
 
   // --- the Join button while the server answers ---------------------------
   // true from the Join click until the server answers ("Joining…"), and
@@ -471,6 +478,12 @@ export default function App() {
     }
     // Which meeting this was — shown with their review, if they write one.
     setLeftMeeting(state?.title || state?.roomId || roomId);
+    // Recorded? The chat's "… started recording" notes carry the id.
+    setLeftRecording(
+      state?.recording?.id ??
+        chat.filter((m) => m.kind === 'note' && m.recording).at(-1)?.recording ??
+        null,
+    );
     setLeft(true);
   }
 
@@ -532,6 +545,7 @@ export default function App() {
         onHome={goHome}
         name={name.trim()}
         meeting={leftMeeting}
+        recordingId={leftRecording}
       />
     );
   }
@@ -874,6 +888,65 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
 
   const presenting = screenTiles.length > 0;
 
+  // --- recording the meeting (recorder.js, EVENTS.REC_*) ------------------
+  // `recording` is on for everyone while the meeting is being recorded; one
+  // browser — `recorderId`, picked by the server — does the recording.
+  const recording = state?.recording?.id ? state.recording : null;
+  const iRecord = Boolean(recording) && recording.recorderId === selfId;
+
+  // Tell the server if this is a laptop (a better recorder than a phone),
+  // and whether this browser can record at all.
+  useEffect(() => {
+    if (selfId) socket.emit(EVENTS.DEVICE, { desktop: !isPhoneOrTablet(), canRecord: canRecord() });
+  }, [selfId]);
+
+  // Remember it for "Your recordings" on the home screen.
+  const recordingId = recording?.id;
+  useEffect(() => {
+    if (recordingId) rememberRecording(recordingId, state?.title || state?.roomId);
+  }, [recordingId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // What the recording shows: everyone's camera (or their initials), or the
+  // screen share. Only people allowed to talk are heard — never a listener.
+  useRecorder({
+    id: recording?.id,
+    part: recording?.part,
+    active: iRecord,
+    scene: {
+      tiles: cameraTiles.map((t) => ({
+        key: t.key,
+        stream: t.stream,
+        name: t.key === 'me' ? (self?.name ?? 'You') : (peerOf(t.key)?.name ?? 'Guest'),
+        camOff: t.key === 'me' ? !camOn : !camOf(t.key),
+        speaking: t.speaking,
+        // My own tile is muted on MY screen (no echo), but my voice belongs
+        // in the recording unless I'm a listener.
+        audible: t.key === 'me' ? !isListener : !t.muted,
+      })),
+      screen: screenTiles[0] ? { key: screenTiles[0].key, stream: screenTiles[0].stream } : null,
+    },
+  });
+
+  // Host / co-host: start or stop it (confirming first).
+  async function startRecording() {
+    const ok = await confirmDialog({
+      title: 'Record this meeting?',
+      message:
+        'Everyone will see that it’s being recorded and can watch it afterwards. It’s deleted a day after the meeting ends.',
+      confirmLabel: 'Start recording',
+    });
+    if (ok) emit(EVENTS.REC_START);
+  }
+  async function stopRecording() {
+    const ok = await confirmDialog({
+      title: 'Stop recording?',
+      message: 'What’s been recorded so far stays available to everyone in the call.',
+      confirmLabel: 'Stop recording',
+      danger: true,
+    });
+    if (ok) emit(EVENTS.REC_STOP);
+  }
+
   // Google-Meet-style: only one presenter at a time. If someone else already
   // has the floor, starting your own share interrupts theirs — so confirm
   // first rather than silently cutting them off.
@@ -1213,6 +1286,11 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
       title: 'Share your screen',
       text: 'Show everyone your screen, a window or a browser tab.',
     },
+    isModerator && {
+      target: '.cs-rec-btn',
+      title: 'Record',
+      text: 'Records the meeting. Everyone sees it’s being recorded and can watch it afterwards, for a day.',
+    },
     {
       target: '.cs-controls-center button[aria-label^="Switch to"]',
       title: 'Change the view',
@@ -1286,6 +1364,9 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
             micOf,
             camOf,
             cohostId,
+            recording,
+            startRecording,
+            stopRecording,
             act: {
               changeMode,
               toggleLock,
@@ -1336,6 +1417,8 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
             <ThemeToggle />
             {/* replays the step-by-step tour */}
             <TourButton onClick={tour.start} />
+            {/* "● Recording 12:34" for everyone while it's being recorded */}
+            {recording && <RecBadge recording={recording} />}
             {isHost && (
               <ModeSwitch
                 moderated={moderated}
@@ -1568,6 +1651,17 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
                 title={sharingScreen ? 'Stop sharing' : 'Share screen'}
               >
                 <Screen />
+              </button>
+            )}
+            {/* Host / co-host: record the meeting (red while recording). */}
+            {isModerator && (
+              <button
+                className={`cs-rec-btn${recording ? ' on' : ''}`}
+                onClick={recording ? stopRecording : startRecording}
+                aria-label={recording ? 'Stop recording' : 'Record the meeting'}
+                title={recording ? 'Stop recording' : 'Record the meeting'}
+              >
+                {recording ? <StopRecordIcon /> : <RecordIcon />}
               </button>
             )}
             <button

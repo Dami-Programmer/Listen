@@ -16,6 +16,8 @@
 import { useEffect, useState } from 'react';
 import Logo from './Logo.jsx';
 import { SIGNALING_URL } from './socket.js';
+import { recordingLink } from './meeting.js';
+import { RecordIcon } from './icons.jsx';
 import useIsMobile from './useIsMobile.js';
 
 const REVIEW_MAX = 2000; // same cap as the server
@@ -30,8 +32,19 @@ const REVIEW_MAX = 2000; // same cap as the server
  *                                  being written)
  * @param {string}  [props.name]    who's writing — sent with the review
  * @param {string}  [props.meeting] the meeting they left — sent with it too
+ * @param {string}  [props.recordingId] the meeting's recording, if it was
+ *                                  recorded — linked here (it may still be
+ *                                  going: the others are still in the call)
  */
-export default function LeftScreen({ seconds, busy, onRejoin, onHome, name, meeting }) {
+export default function LeftScreen({
+  seconds,
+  busy,
+  onRejoin,
+  onHome,
+  name,
+  meeting,
+  recordingId,
+}) {
   const isMobile = useIsMobile();
   const [left, setLeft] = useState(seconds);
 
@@ -130,6 +143,23 @@ export default function LeftScreen({ seconds, busy, onRejoin, onHome, name, meet
             Return to home screen
           </button>
         </div>
+
+        {/* Recorded: the link to watch it (also kept under "Your recordings"
+            on the home screen, in this browser). */}
+        {recordingId && (
+          <a
+            className="left-rec"
+            href={recordingLink(recordingId)}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <RecordIcon aria-hidden="true" />
+            <span>
+              <b>This meeting was recorded</b>
+              Watch it any time in the next day
+            </span>
+          </a>
+        )}
 
         {/* The review. Once sent, the box turns into a thank-you. */}
         {status === 'sent' ? (

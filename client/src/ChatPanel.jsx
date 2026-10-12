@@ -28,6 +28,7 @@ import { formatBytes, prepareFile } from './chatFiles.js';
 import ImageViewer from './ImageViewer.jsx';
 import Avatar from './Avatar.jsx';
 import { confirmDialog } from './ConfirmDialog.jsx';
+import { recordingLink } from './meeting.js';
 import {
   Download,
   FileDoc,
@@ -467,6 +468,25 @@ export default function ChatPanel({ messages, typers, selfId, participants = [] 
         {visible.length === 0 && <p className="cp-empty">No messages yet. Say hi 👋</p>}
 
         {groups.map((g) => {
+          // Lines from Listen itself ("Sam started recording"), centred, with
+          // a link to the recording.
+          if (g.items[0].kind === 'note') {
+            return (
+              <div key={g.items[0].id} className="cp-notes">
+                {g.items.map((m) => (
+                  <p key={m.id} className={`cp-note${initialIds.has(m.id) ? '' : ' chat-new'}`}>
+                    {m.recording && <span className="rec-dot" aria-hidden="true" />}
+                    {m.text} · {timeOf(m.ts)}
+                    {m.recording && (
+                      <a href={recordingLink(m.recording)} target="_blank" rel="noreferrer">
+                        Open recording
+                      </a>
+                    )}
+                  </p>
+                ))}
+              </div>
+            );
+          }
           const mine = g.from === selfId;
           const lastTs = g.items[g.items.length - 1].ts;
           // Every message in this group is being unsent -> fade the whole

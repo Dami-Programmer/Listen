@@ -179,6 +179,27 @@ export const EVENTS = {
   SFU_ANSWER: 'sfu-answer',
   SFU_CLOSE: 'sfu-close',
 
+  // Recording the meeting (host / co-host start and stop it).
+  // One person's browser — the "recorder" — draws the whole meeting into a
+  // video and streams it to the server, which saves it (R2). If the recorder
+  // leaves, the server picks someone else (laptops first) and the recording
+  // carries on as a new PART; it ends when stopped or when everyone has left.
+  // The snapshot's `recording` is { id, startedAt, recorderId, part } while a
+  // recording is on (null otherwise): everyone shows "● Recording", the
+  // recorder records part `part`, and anyone can open the recording page
+  // (?rec=<id>). It's deleted RECORDING_KEEP_MS after the meeting ends.
+  //   REC_START {} : moderator -> server. Start recording.    -> { ok, id }
+  //   REC_STOP {}  : moderator -> server. Stop recording.     -> { ok }
+  //   REC_CHUNK { id, part, type, data, final } : the recorder -> server, about
+  //     once a second: the next piece of the video file (`data` is binary,
+  //     `type` its format, e.g. 'video/mp4'). `final` on the last one.  -> { ok }
+  //   DEVICE { desktop } : every client, once in the call — whether it's a
+  //     laptop / desktop (a better recorder than a phone).
+  REC_START: 'rec-start',
+  REC_STOP: 'rec-stop',
+  REC_CHUNK: 'rec-chunk',
+  DEVICE: 'device',
+
   // Reconnecting after a network drop (Google-Meet style).
   // When someone's internet drops, the server does NOT remove them straight
   // away: it marks them "away" (everyone sees "Reconnecting…" on their tile)
@@ -217,6 +238,10 @@ export const RECONNECT_GRACE_MS = 60 * 1000;
 // How long "You left the meeting — Rejoin" works after pressing Leave (the
 // server keeps the rejoin pass this long; the screen counts down the same).
 export const REJOIN_WINDOW_MS = 60 * 1000;
+
+// How long a meeting's recording is kept after the meeting ends, then it's
+// deleted for good (see server/src/recordings.js).
+export const RECORDING_KEEP_MS = 24 * 60 * 60 * 1000;
 
 // Every participant has exactly one role.
 //   host     — created the room / promoted on host leave. Full control. One only.

@@ -33,6 +33,8 @@ import cors from 'cors';
 import { Server } from 'socket.io';
 import { CHAT_FILE_MAX_BYTES, EVENTS, MODES, RECONNECT_GRACE_MS, STICKERS } from '@listen/shared';
 import * as sfu from './sfu.js';
+import * as recordings from './recordings.js';
+import { checkStorage, getObject } from './storage.js';
 import {
   addChatMessage,
   addParticipant,
@@ -60,6 +62,8 @@ import {
   removeWaiting,
   reorderQueue,
   revokeFloor,
+  roomOf,
+  setDevice,
   setLock,
   setCam,
   setMic,
@@ -171,6 +175,85 @@ app.use(express.json());
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true, phase: 7, time: new Date().toISOString() });
+});
+
+// --- Watching a recording (the ?rec=<id> page, RecordingPage.jsx) -----------
+// Recordings are stored in R2, but every viewer gets them from here — some
+// networks can't reach R2 directly. The long random id in the link is the
+// only key; it stops working once the recording is deleted.
+
+// About a recording: title, times, whether it's still going, and its parts.
+app.get('/recordings/:id', async (req, res) => {
+  try {
+    const m = await recordings.getManifest(req.params.id);
+    if (!m) return res.status(404).json({ ok: false, error: 'not found' });
+    const expiresAt = recordings.expiryOf(m);
+    if (expiresAt && expiresAt <= Date.now()) {
+      return res.status(410).json({ ok: false, error: 'expired' });
+    }
+    res.json({
+      ok: true,
+      title: m.title,
+      startedAt: m.startedAt,
+      endedAt: m.endedAt,
+      expiresAt,
+      recording: !m.endedAt && !expiresAt, // still being recorded
+      parts: m.parts.map(({ n, type, size, startedAt, endedAt }) => ({
+        n,
+        type,
+        size,
+        startedAt,
+        endedAt,
+      })),
+    });
+  } catch (err) {
+    console.error('[rec] reading a recording failed:', err.message);
+    res.status(500).json({ ok: false, error: 'Couldn’t load the recording.' });
+  }
+});
+
+// One part's video. Supports byte ranges (how players skip ahead), and
+// ?download=1 to save it as a file.
+app.get('/recordings/:id/parts/:n', async (req, res) => {
+  try {
+    const m = await recordings.getManifest(req.params.id);
+    const expiresAt = m && recordings.expiryOf(m);
+    const found = m && recordings.partKey(m, Number(req.params.n));
+    if (!found || (expiresAt && expiresAt <= Date.now())) return res.sendStatus(404);
+    const { key, part } = found;
+
+    const match = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range ?? '');
+    const range = match
+      ? { start: Number(match[1]), end: match[2] ? Number(match[2]) : null }
+      : null;
+    if (range && range.start >= part.size) {
+      return res.status(416).set('Content-Range', `bytes */${part.size}`).end();
+    }
+    const file = await getObject(key, range);
+    if (!file) return res.sendStatus(404);
+
+    res.status(file.status);
+    res.set({
+      'Content-Type': part.type,
+      'Content-Length': String(file.end - file.start + 1),
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'private, max-age=3600',
+    });
+    if (file.status === 206)
+      res.set('Content-Range', `bytes ${file.start}-${file.end}/${file.size}`);
+    if (req.query.download) {
+      const ext = part.type === 'video/webm' ? 'webm' : 'mp4';
+      const name = `${m.title || 'Listen'} - recording part ${part.n}`.replace(/[^\w .-]/g, '_');
+      res.set('Content-Disposition', `attachment; filename="${name}.${ext}"`);
+    }
+    file.body.on('error', () => res.destroy());
+    req.on('close', () => file.body.destroy());
+    file.body.pipe(res);
+  } catch (err) {
+    console.error('[rec] sending a recording failed:', err.message);
+    if (!res.headersSent) res.sendStatus(500);
+    else res.destroy();
+  }
 });
 
 // --- Reviews from the "You left the meeting" screen -------------------------
@@ -302,12 +385,18 @@ function finishLeave(socketId) {
   clearTimeout(awayTimers.get(socketId));
   awayTimers.delete(socketId);
 
+  // (Looked up before they're removed: the room may close with them.)
+  const before = roomOf(socketId)?.room;
+  const wasRecorder = Boolean(before?.recording) && before.recording.recorderId === socketId;
+
   const result = removeParticipant(socketId);
   if (!result) return;
 
   const { roomId, room, admitted } = result;
   if (room === null) {
     console.log(`[room ${roomId}] closed (empty)`);
+    // The last person has gone: the recording (if any) is finished.
+    if (before?.recording) endRecording(before);
     return;
   }
 
@@ -326,11 +415,82 @@ function finishLeave(socketId) {
     console.log(`[room ${roomId}] host left; ${admitted} let in from the waiting room as host`);
   }
 
+  // The recorder left: someone else carries on the recording.
+  if (wasRecorder) handOver(roomId, room);
+
   console.log(
     `[room ${roomId}] - ${socketId} — ${Object.keys(room.participants).length} left,` +
       ` host is ${room.hostId}`,
   );
   broadcastRoom(roomId);
+}
+
+// --- Recording the meeting (see EVENTS.REC_* and recordings.js) -------------
+// One browser in the call records; the server keeps track of which one.
+
+// Who should record: someone connected right now (not reconnecting) whose
+// browser can record — a laptop / desktop over a phone (much lighter work for
+// it), the host and co-host first. `prefer` (whoever pressed Record) wins if
+// they're on a laptop, or if nobody is.
+function pickRecorder(room, prefer = null) {
+  const can = (id) =>
+    Boolean(id) &&
+    Boolean(room.participants[id]) &&
+    !room.away[id] &&
+    room.participants[id].canRecord !== false &&
+    io.sockets.sockets.has(id);
+  const desktop = (id) => room.participants[id].desktop === true;
+  if (can(prefer) && desktop(prefer)) return prefer;
+  const everyone = [room.hostId, room.cohostId, ...Object.keys(room.participants)].filter(
+    (id, i, all) => can(id) && all.indexOf(id) === i,
+  );
+  return everyone.find(desktop) ?? (can(prefer) ? prefer : everyone[0]) ?? null;
+}
+
+// The recording moves to a (new) recorder: the old recorder's part is closed —
+// after a moment for its last second of video when `drain` (they're still
+// here) — and the new one starts the next part. Nobody able: it waits for
+// someone to (re)connect (see handleResume).
+function handOver(roomId, room, { prefer = null, drain = false } = {}) {
+  const rec = room.recording;
+  if (!rec?.id) return;
+  recordings.endPart(rec.id, { drain }).catch(() => {});
+  const next = pickRecorder(room, prefer);
+  rec.recorderId = next;
+  rec.part = next ? recordings.newPart(rec.id, next) : null;
+  console.log(
+    next
+      ? `[room ${roomId}] ${next} records part ${rec.part}`
+      : `[room ${roomId}] recording paused — nobody can record right now`,
+  );
+}
+
+// The recording is over (stopped, or the room emptied).
+function endRecording(room) {
+  const rec = room.recording;
+  room.recording = null;
+  if (!rec?.id) return;
+  // Still connected? Give the recorder a moment to send its last second.
+  const drain = Boolean(rec.recorderId) && io.sockets.sockets.has(rec.recorderId);
+  recordings.finishRecording(rec.id, { drain }).catch((err) => {
+    console.error(`[rec ${rec.id}] finishing failed:`, err.message);
+  });
+}
+
+// A line from Listen itself in the chat ("Sam started recording"), with the
+// recording's id so the chat can link to it.
+function postNote(roomId, room, text, recording) {
+  const message = {
+    id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    from: null,
+    name: 'Listen',
+    ts: Date.now(),
+    kind: 'note',
+    text,
+    recording,
+  };
+  addChatMessage(room, message);
+  io.to(roomId).emit(EVENTS.CHAT_MESSAGE, message);
 }
 
 // Per-socket rate limits (see `allow` in the connection handler). Generous for
@@ -351,6 +511,11 @@ const RATE_LIMITS = {
   [EVENTS.SFU_PULL]: { max: 60, perMs: 10_000 },
   [EVENTS.SFU_ANSWER]: { max: 60, perMs: 10_000 },
   [EVENTS.SFU_CLOSE]: { max: 60, perMs: 10_000 },
+  // Recording: about one chunk a second from the recorder.
+  [EVENTS.REC_START]: { max: 5, perMs: 60_000 },
+  [EVENTS.REC_STOP]: { max: 5, perMs: 60_000 },
+  [EVENTS.REC_CHUNK]: { max: 40, perMs: 10_000 },
+  [EVENTS.DEVICE]: { max: 10, perMs: 60_000 },
 };
 
 // Last line of defence: log anything that slipped past the handler wrapper
@@ -360,6 +525,12 @@ process.on('unhandledRejection', (err) => console.error('[server] unhandled reje
 
 // Send the current snapshot of a room to everyone in it.
 function broadcastRoom(roomId) {
+  // A recording nobody could take over (everyone was reconnecting): someone
+  // is back or has joined — give it to them.
+  const room = getRoom(roomId);
+  if (room?.recording?.id && !room.recording.recorderId && pickRecorder(room)) {
+    handOver(roomId, room);
+  }
   enforceMedia(roomId);
   const state = snapshot(roomId);
   if (state) io.to(roomId).emit(EVENTS.ROOM_STATE, state);
@@ -1052,6 +1223,71 @@ io.on('connection', (socket) => {
     });
   });
 
+  // --- Recording (see EVENTS.REC_* / DEVICE, and the helpers above) ---------
+
+  // Laptop or phone, and whether this browser can record at all.
+  on(EVENTS.DEVICE, ({ desktop, canRecord } = {}) => {
+    const room = getRoom(joinedRoomId);
+    if (!room?.participants[socket.id]) return;
+    setDevice(room, socket.id, desktop);
+    room.participants[socket.id].canRecord = canRecord !== false;
+  });
+
+  // Host / co-host: start recording. The recorder may be someone else (a
+  // laptop beats a phone) — see pickRecorder.
+  on(EVENTS.REC_START, async (_payload, ack) => {
+    const room = requireModeratorRoom(ack);
+    if (!room) return;
+    if (room.recording) return ack?.({ ok: false, error: 'already recording' });
+    const roomId = joinedRoomId;
+    const name = room.participants[socket.id].name;
+    // Claimed straight away, so a double click can't start two.
+    room.recording = { id: null, startedAt: Date.now(), recorderId: null, part: null };
+    let id;
+    try {
+      id = await recordings.startRecording({ title: room.title || roomId });
+    } catch (err) {
+      room.recording = null;
+      console.error(`[room ${roomId}] couldn't start recording:`, err.message);
+      return ack?.({ ok: false, error: 'Couldn’t start recording — please try again.' });
+    }
+    // Stopped, or everyone left, while storage was answering.
+    if (getRoom(roomId) !== room || !room.recording) {
+      recordings.finishRecording(id).catch(() => {});
+      return ack?.({ ok: false, error: 'not recording' });
+    }
+    room.recording.id = id;
+    handOver(roomId, room, { prefer: socket.id });
+    console.log(`[room ${roomId}] recording ${id} started by ${socket.id}`);
+    postNote(roomId, room, `${name} started recording`, id);
+    ack?.({ ok: true, id });
+    broadcastRoom(roomId);
+  });
+
+  on(EVENTS.REC_STOP, (_payload, ack) => {
+    const room = requireModeratorRoom(ack);
+    if (!room) return;
+    const id = room.recording?.id;
+    if (!id) return ack?.({ ok: false, error: 'not recording' });
+    endRecording(room);
+    console.log(`[room ${joinedRoomId}] recording ${id} stopped by ${socket.id}`);
+    postNote(joinedRoomId, room, `${room.participants[socket.id].name} stopped recording`, id);
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  // The next second of video from the recorder. recordings.addChunk checks
+  // it's really from the person recording that part.
+  on(EVENTS.REC_CHUNK, ({ id, part, type, data, final } = {}, ack) => {
+    if (!getRoom(joinedRoomId)?.participants[socket.id]) return ack?.({ ok: false });
+    const ok =
+      Buffer.isBuffer(data) &&
+      data.length <= 8 * 1024 * 1024 &&
+      Number.isInteger(part) &&
+      recordings.addChunk(id, part, type, data, final === true, socket.id);
+    ack?.({ ok });
+  });
+
   // --- Cloudflare SFU: the video desk (see EVENTS.SFU_* and sfu.js) --------
   // The browser does the WebRTC side; these make the matching Cloudflare API
   // calls (they need the app secret) after checking the request is allowed.
@@ -1241,6 +1477,9 @@ io.on('connection', (socket) => {
     if (!DELIBERATE.has(reason) && room?.participants[socket.id]) {
       markAway(room, socket.id);
       const id = socket.id;
+      // They were recording: someone else takes over right away (no waiting
+      // to see if they come back — the meeting would go unrecorded).
+      if (room.recording?.recorderId === id) handOver(joinedRoomId, room);
       awayTimers.set(
         id,
         setTimeout(() => {
@@ -1271,3 +1510,9 @@ io.on('connection', (socket) => {
 server.listen(PORT, () => {
   console.log(`[server] listening on http://localhost:${PORT}`);
 });
+
+// Recordings: check storage works (the log says where they're saved), and
+// delete expired ones now and every hour.
+checkStorage();
+recordings.sweep();
+setInterval(() => recordings.sweep(), 60 * 60 * 1000).unref();

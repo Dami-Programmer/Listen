@@ -61,6 +61,12 @@ top of the Phase 2 call:
   each track sent once (`client/src/sfu.js`, `server/src/sfu.js`). The server
   makes every Cloudflare call and enforces who may send what (a listener's
   audio is cut off). Without the keys, calls fall back to the mesh.
+- **Recording:** the host or co-host records the meeting. One browser in the
+  call draws it into a video (`client/src/recorder.js`) and streams it to the
+  server, which saves it in Cloudflare R2 (`server/src/recordings.js`,
+  `storage.js`). If that person leaves, someone else carries on as a new part,
+  until everyone has left. Everyone in the call gets the link (`?rec=<id>`,
+  `RecordingPage.jsx`); it's deleted a day after the meeting ends.
 - **Phase 3 (roles):** every participant is `host | speaker | listener`.
   `setRole` in `rooms.js` is the single place roles change. Participant list is
   sorted host-first with coloured role pills; each video tile shows its role.

@@ -257,3 +257,18 @@ export const Minimize = (p) => (
     <path d="M9 4v4a1 1 0 0 1-1 1H4M20 9h-4a1 1 0 0 1-1-1V4M15 20v-4a1 1 0 0 1 1-1h4M4 15h4a1 1 0 0 1 1 1v4" />
   </svg>
 );
+
+// Recording: a dot in a ring (start), and a square in a ring (stop).
+export const RecordIcon = (p) => (
+  <svg {...s} {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <circle cx="12" cy="12" r="4" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+export const StopRecordIcon = (p) => (
+  <svg {...s} {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <rect x="8.5" y="8.5" width="7" height="7" rx="1.2" fill="currentColor" stroke="none" />
+  </svg>
+);
