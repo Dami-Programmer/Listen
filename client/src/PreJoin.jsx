@@ -13,7 +13,6 @@ import Logo from './Logo.jsx';
 import ProfileCard, { PROFILE } from './ProfileCard.jsx';
 import { SIGNALING_URL } from './socket.js';
 import { cameraConstraints } from './webrtc.js';
-import MyRecordings from './MyRecordings.jsx';
 
 // A link with ?profile in it (https://your-site/?profile) opens the creator card.
 const wantsProfile = () => new URLSearchParams(window.location.search).has('profile');
@@ -366,8 +365,7 @@ export default function PreJoin({
           {wakingNote}
           {error && <p className="err">{error}</p>}
         </form>
-        {/* Recent recordings from meetings you were in (this browser). */}
-        <MyRecordings />
+
       </main>
     );
   }
@@ -545,8 +543,6 @@ export default function PreJoin({
             {wakingNote}
             {error && <p className="err">{error}</p>}
           </form>
-          {/* Recent recordings from meetings you were in (this browser). */}
-          <MyRecordings />
         </section>
       </div>
     </main>

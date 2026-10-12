@@ -6767,7 +6767,7 @@ body:has(.mc) {
 }
 
 /* =========================================================================
-   Recording (recorder.js, RecBadge.jsx, RecordingPage.jsx, MyRecordings.jsx)
+   Recording (recorder.js, RecBadge.jsx, RecordingPage.jsx)
    ========================================================================= */
 
 /* the pulsing red dot: badge, chat notes, the recording page */
@@ -6992,62 +6992,6 @@ body:has(.mc) {
 }
 .left-rec:hover {
   background: rgba(255, 59, 71, 0.14);
-}
-
-/* "Your recordings" on the home screen */
-.my-recs {
-  margin-top: 24px;
-  width: 100%;
-}
-.my-recs h2 {
-  margin: 0 0 10px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-muted, #8d98a5);
-}
-.my-recs ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.my-recs a {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.1);
-  color: var(--text, #f5f7fa);
-  text-decoration: none;
-}
-.my-recs a:hover {
-  background: rgba(var(--ink, 255, 255, 255), 0.05);
-}
-.my-recs-icon {
-  flex-shrink: 0;
-  color: #ff5a64;
-}
-.my-recs-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 600;
-  font-size: 14px;
-}
-.my-recs-when {
-  flex-shrink: 0;
-  font-size: 12px;
-  color: var(--text-muted, #8d98a5);
-}
-.my-recs-note {
-  margin: 8px 0 0;
-  font-size: 12px;
-  color: var(--text-muted, #8d98a5);
 }
 
 /* --- the recording page (?rec=<id>) ------------------------------------- */

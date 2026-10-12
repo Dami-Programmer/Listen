@@ -39,7 +39,6 @@ import { hasSeenTour, useTour } from './useTour.js';
 import TourButton from './TourButton.jsx';
 import RecBadge from './RecBadge.jsx';
 import { canRecord, isPhoneOrTablet, useRecorder } from './recorder.js';
-import { rememberRecording } from './myRecordings.js';
 
 // How long the "You left the meeting" screen offers Rejoin — the same minute
 // the server keeps the rejoin pass for.
@@ -899,12 +898,6 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
   useEffect(() => {
     if (selfId) socket.emit(EVENTS.DEVICE, { desktop: !isPhoneOrTablet(), canRecord: canRecord() });
   }, [selfId]);
-
-  // Remember it for "Your recordings" on the home screen.
-  const recordingId = recording?.id;
-  useEffect(() => {
-    if (recordingId) rememberRecording(recordingId, state?.title || state?.roomId);
-  }, [recordingId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // What the recording shows: everyone's camera (or their initials), or the
   // screen share. Only people allowed to talk are heard — never a listener.

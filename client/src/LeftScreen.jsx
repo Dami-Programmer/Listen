@@ -144,8 +144,7 @@ export default function LeftScreen({
           </button>
         </div>
 
-        {/* Recorded: the link to watch it (also kept under "Your recordings"
-            on the home screen, in this browser). */}
+        {/* Recorded: the link to watch it. */}
         {recordingId && (
           <a
             className="left-rec"
