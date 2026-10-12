@@ -6995,17 +6995,19 @@ body:has(.mc) {
 }
 
 /* --- the recording page (?rec=<id>) ------------------------------------- */
+/* Laid out like the call screen: the same side margins, and the video as
+   big as the call's main tile — as wide as the window allows, but never
+   taller than it (16:9, leaving room for the logo and title above). */
 .recp {
   min-height: 100vh;
   min-height: 100dvh;
-  padding: 20px 16px 40px;
+  padding: 16px 40px 40px;
   background: var(--bg, #10161c);
   color: var(--text, #f5f7fa);
   box-sizing: border-box;
 }
 .recp-top {
-  max-width: 960px;
-  margin: 0 auto 20px;
+  margin: 0 0 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -7014,8 +7016,14 @@ body:has(.mc) {
   display: inline-flex;
 }
 .recp-card {
-  max-width: 960px;
+  width: min(100%, calc((100dvh - 230px) * 16 / 9));
+  min-width: min(100%, 640px);
   margin: 0 auto;
+}
+@media (max-width: 560px) {
+  .recp {
+    padding: 16px 16px 32px;
+  }
 }
 .recp-head h1 {
   margin: 0;
@@ -7042,7 +7050,7 @@ body:has(.mc) {
   width: 100%;
   margin-top: 18px;
   aspect-ratio: 16 / 9;
-  border-radius: 16px;
+  border-radius: 20px;
   background: #000;
 }
 .recp-empty {
