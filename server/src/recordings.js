@@ -62,7 +62,8 @@ export async function startRecording({ title }) {
   };
   // part: the part being received right now (see addChunk); expected: the
   // number of the part the current recorder was given (newPart).
-  live.set(id, { manifest, part: null, nextPart: 1, expected: null });
+  // saving: parts whose files are still being finished (closePart).
+  live.set(id, { manifest, part: null, nextPart: 1, expected: null, saving: new Set() });
   await saveManifest(manifest);
   return id;
 }
@@ -129,7 +130,7 @@ function closePart(rec) {
   rec.part = null;
   clearTimeout(part.timer);
   const m = rec.manifest;
-  return part.queue
+  const saving = part.queue
     .then(async () => {
       if (part.failed || !part.size) {
         await part.upload.abort().catch(() => {});
@@ -149,7 +150,13 @@ function closePart(rec) {
       console.log(`[rec ${m.id}] part ${part.n} saved (${Math.round(size / 1024)} KB)`);
     })
     .catch((err) => console.error(`[rec ${m.id}] closing part ${part.n} failed:`, err.message))
-    .finally(() => part.closed?.());
+    .finally(() => {
+      rec.saving.delete(saving);
+      part.closed?.();
+    });
+  // (finishRecording waits for these, so the final manifest has every part.)
+  rec.saving.add(saving);
+  return saving;
 }
 
 /**
@@ -176,6 +183,8 @@ export async function finishRecording(id, { drain = false } = {}) {
   const rec = live.get(id);
   if (!rec) return;
   await endPart(id, { drain });
+  // An earlier recorder's part may still be uploading: let it land first.
+  await Promise.all([...rec.saving]);
   const m = rec.manifest;
   m.endedAt = Date.now();
   m.expiresAt = m.endedAt + KEEP_MS;
