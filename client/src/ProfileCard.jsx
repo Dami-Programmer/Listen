@@ -13,7 +13,7 @@ import { X } from './icons.jsx';
 // ---- edit your details here -------------------------------------------------
 export const PROFILE = {
   name: 'Newtz',
-  role: 'Creator of Listen',
+  role: 'Creator of Turnly',
   about: 'A platform designed for better conversation, where everyone gets a chance to speak.',
   photo: '/creator-newtz.jpg',
   status: 'Available for work', // set to '' to hide the green-dot line

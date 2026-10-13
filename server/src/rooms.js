@@ -828,12 +828,23 @@ export function mediaOf(room, socketId) {
   return room.media[socketId];
 }
 
-/** The track with this snapshot key: { ownerId, kind, sessionId, trackName }, or null. */
+/**
+ * The track with this snapshot key: { ownerId, kind, sessionId, trackName,
+ * simulcast }, or null.
+ */
 export function findTrack(room, key) {
   if (typeof key !== 'string') return null;
   for (const [ownerId, m] of Object.entries(room.media)) {
     for (const [kind, t] of Object.entries(m.tracks)) {
-      if (t.key === key) return { ownerId, kind, sessionId: m.sessionId, trackName: t.trackName };
+      if (t.key === key) {
+        return {
+          ownerId,
+          kind,
+          sessionId: m.sessionId,
+          trackName: t.trackName,
+          simulcast: t.simulcast === true,
+        };
+      }
     }
   }
   return null;

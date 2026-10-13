@@ -162,15 +162,23 @@ export const EVENTS = {
   // All are client -> server with an ack:
   //   SFU_SESSION {} : start (or start over with) my Cloudflare connection.
   //     Anything I was sending before is dropped.            -> { ok }
-  //   SFU_PUBLISH { sdp, tracks: [{ mid, kind }] } : send these tracks.
-  //     kind is 'audio' | 'video' | 'screen' | 'screenAudio'.
+  //   SFU_PUBLISH { sdp, tracks: [{ mid, kind, simulcast? }] } : send these
+  //     tracks. kind is 'audio' | 'video' | 'screen' | 'screenAudio'.
+  //     simulcast: true = a camera sent in three sizes ("layers") at once:
+  //     'a' full, 'b' half, 'c' quarter — so each viewer can get the size
+  //     that suits them (see SFU_LAYERS).
   //                                                        -> { ok, sdp (answer) }
-  //   SFU_PULL { keys: [...] } : receive these tracks (keys come from the
-  //     snapshot's `media` map).
+  //   SFU_PULL { keys: [...], rids?: { key: layer } } : receive these tracks
+  //     (keys come from the snapshot's `media` map); `rids` picks the size
+  //     of simulcast cameras (default 'b').
   //       -> { ok, sdp (offer) | null, tracks: [{ key, mid, error? }] }
   //   SFU_ANSWER { sdp } : my answer to the offer SFU_PULL returned. -> { ok }
   //   SFU_CLOSE { mids: [...], sdp (offer) } : stop sending / receiving the
   //     tracks on these mids.                              -> { ok, sdp (answer) }
+  //   SFU_LAYERS { changes: [{ key, mid, rid }] } : switch simulcast cameras
+  //     I'm receiving to another size — e.g. someone moved to the big tile.
+  //     Cloudflare also steps down by itself when my connection is weak.
+  //                                          -> { ok, sdp (offer, rarely) }
   // The snapshot's `media` is { socketId: { audio?, video?, screen?,
   // screenAudio? } } — an opaque key for each track that person is sending.
   SFU_SESSION: 'sfu-session',
@@ -178,6 +186,7 @@ export const EVENTS = {
   SFU_PULL: 'sfu-pull',
   SFU_ANSWER: 'sfu-answer',
   SFU_CLOSE: 'sfu-close',
+  SFU_LAYERS: 'sfu-layers',
 
   // Recording the meeting (host / co-host start and stop it).
   // One person's browser — the "recorder" — draws the whole meeting into a

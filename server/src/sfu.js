@@ -82,10 +82,28 @@ export async function publish(sessionId, offerSdp, tracks) {
   return { sdp: data.sessionDescription?.sdp ?? null, tracks: data.tracks ?? [] };
 }
 
+// --- Simulcast: a camera sent in several sizes at once ---------------------
+// A camera can be published in three versions ("layers"), named so that
+// alphabetical order is best-first: 'a' full size, 'b' half, 'c' quarter.
+// Each viewer asks for the one that suits how big that person is on their
+// screen, and gets exactly that (priorityOrdering 'none': Cloudflare's own
+// switching would also move people UP to full size whenever their
+// connection allows — a waste of mobile data for a thumbnail). A viewer's
+// weak connection is handled by the viewer asking for smaller layers (see
+// client/src/sfu.js). If the asked-for layer isn't being sent at all (the
+// sender's own connection is weak), Cloudflare falls back to the next one.
+export const LAYERS = ['a', 'b', 'c'];
+const layer = (rid) => ({
+  preferredRid: rid,
+  priorityOrdering: 'none',
+  ridNotAvailable: 'asciibetical',
+});
+
 /**
  * Start receiving other people's tracks. `sources` is
- * [{ sessionId (the sender's), trackName }]. Cloudflare answers with an OFFER
- * for the browser (or none if nothing changed), plus each track's mid.
+ * [{ sessionId (the sender's), trackName, rid? }] — `rid` (a layer, see
+ * LAYERS) only for a simulcast camera. Cloudflare answers with an OFFER for
+ * the browser (or none if nothing changed), plus each track's mid.
  * Returns { sdp, renegotiate, tracks }.
  */
 export async function pull(sessionId, sources) {
@@ -94,11 +112,33 @@ export async function pull(sessionId, sources) {
       location: 'remote',
       sessionId: s.sessionId,
       trackName: s.trackName,
+      ...(s.rid ? { simulcast: layer(s.rid) } : {}),
     })),
   });
   return {
     sdp: data.sessionDescription?.sdp ?? null,
     renegotiate: Boolean(data.requiresImmediateRenegotiation),
+    tracks: data.tracks ?? [],
+  };
+}
+
+/**
+ * Switch simulcast cameras already being received to another layer.
+ * `changes` is [{ sessionId (the sender's), trackName, mid (the receiving
+ * one), rid }]. Returns { sdp (an offer to answer, rarely), tracks }.
+ */
+export async function setLayers(sessionId, changes) {
+  const data = await call('PUT', `/sessions/${sessionId}/tracks/update`, {
+    tracks: changes.map((c) => ({
+      location: 'remote',
+      sessionId: c.sessionId,
+      trackName: c.trackName,
+      mid: String(c.mid),
+      simulcast: layer(c.rid),
+    })),
+  });
+  return {
+    sdp: data.requiresImmediateRenegotiation ? (data.sessionDescription?.sdp ?? null) : null,
     tracks: data.tracks ?? [],
   };
 }

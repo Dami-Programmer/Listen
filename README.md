@@ -1,6 +1,7 @@
-# Listen
+# Turnly
 
-Moderated group video-call app. See [ROADMAP.md](./ROADMAP.md) for the plan.
+Every voice gets a turn: a moderated group video-call app (formerly "Listen";
+the repo and folder keep the old name). See [ROADMAP.md](./ROADMAP.md) for the plan.
 
 ## Layout
 
@@ -60,7 +61,8 @@ top of the Phase 2 call:
   through Cloudflare's SFU instead of the mesh — one connection per browser,
   each track sent once (`client/src/sfu.js`, `server/src/sfu.js`). The server
   makes every Cloudflare call and enforces who may send what (a listener's
-  audio is cut off). Without the keys, calls fall back to the mesh.
+  audio is cut off). Cameras are simulcast: each viewer gets the size that
+  fits the tile. Without the keys, calls fall back to the mesh.
 - **Recording:** the host or co-host records the meeting. One browser in the
   call draws it into a video (`client/src/recorder.js`) and streams it to the
   server, which saves it in Cloudflare R2 (`server/src/recordings.js`,

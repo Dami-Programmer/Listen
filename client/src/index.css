@@ -618,13 +618,15 @@ button.ghost.danger:hover:not(:disabled) {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  justify-content: center; /* level with the meeting title next to it */
+  height: 92px;
   flex-shrink: 0;
 }
-/* the SVG is a 512² square with lots of padding — crop to the mark */
+/* the logo is a wide image (mark + name + tagline): fix its height, the
+   width follows — tall enough for "Every voice gets a turn." to be read */
 .cs-logo {
-  width: 124px;
-  height: 92px;
-  object-fit: cover;
+  height: 60px;
+  width: auto;
   display: block;
 }
 .cs-title-row {
@@ -6324,8 +6326,7 @@ body:has(.mc) {
   display: flex;
 }
 .pjm-logo .cs-logo {
-  width: 78px;
-  height: 58px;
+  height: 44px;
 }
 
 /* --- don't crop a camera into the wrong shape ------------------------------

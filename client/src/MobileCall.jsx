@@ -1135,8 +1135,8 @@ function InviteSheet({ roomId, title, locked, onClose }) {
   async function share() {
     try {
       await navigator.share({
-        title: title || 'Listen meeting',
-        text: title ? `Join "${title}" on Listen` : 'Join my meeting on Listen',
+        title: title || 'Turnly meeting',
+        text: title ? `Join "${title}" on Turnly` : 'Join my meeting on Turnly',
         url: link,
       });
     } catch {

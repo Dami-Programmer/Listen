@@ -1,11 +1,12 @@
-// The Listen logo. The original is drawn for a dark page (white halo, pale
-// waves), so light mode swaps in logo-light.svg: a halo the color of the page
-// and deeper blues. Both are in the page; CSS shows the one for the theme.
+// The Turnly logo (the T-and-speech-bubble mark + the name). There's a version
+// for each theme — the page shows the one that matches (see .logo-dark /
+// .logo-light in index.css). Both are wide images with see-through
+// backgrounds; .cs-logo sets their height and the width follows.
 export default function Logo() {
   return (
     <>
-      <img className="cs-logo logo-dark" src="/logo.svg" alt="Listen" />
-      <img className="cs-logo logo-light" src="/logo-light.svg" alt="Listen" />
+      <img className="cs-logo logo-dark" src="/turnly-logo-dark.webp" alt="Turnly" />
+      <img className="cs-logo logo-light" src="/turnly-logo-light.webp" alt="Turnly" />
     </>
   );
 }

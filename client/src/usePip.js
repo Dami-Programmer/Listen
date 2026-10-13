@@ -38,7 +38,7 @@ export function usePip() {
         height: 480,
       });
       copyStyles(win);
-      win.document.title = 'Listen';
+      win.document.title = 'Turnly';
       win.document.body.className = 'pip-body';
       win.addEventListener('pagehide', () => setPipWin(null));
       setPipWin(win);

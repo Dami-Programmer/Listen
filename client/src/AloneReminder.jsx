@@ -43,7 +43,7 @@ export default function AloneReminder({ seconds, onStay, onLeave }) {
   // Say it in the tab title too; put the old title back afterwards.
   useEffect(() => {
     const before = document.title;
-    document.title = 'Are you still there? · Listen';
+    document.title = 'Are you still there? · Turnly';
     return () => {
       document.title = before;
     };

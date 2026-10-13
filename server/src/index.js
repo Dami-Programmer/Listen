@@ -243,7 +243,7 @@ app.get('/recordings/:id/parts/:n', async (req, res) => {
       res.set('Content-Range', `bytes ${file.start}-${file.end}/${file.size}`);
     if (req.query.download) {
       const ext = part.type === 'video/webm' ? 'webm' : 'mp4';
-      const name = `${m.title || 'Listen'} - recording part ${part.n}`.replace(/[^\w .-]/g, '_');
+      const name = `${m.title || 'Turnly'} - recording part ${part.n}`.replace(/[^\w .-]/g, '_');
       res.set('Content-Disposition', `attachment; filename="${name}.${ext}"`);
     }
     file.body.on('error', () => res.destroy());
@@ -311,7 +311,7 @@ app.post('/feedback', async (req, res) => {
   const browser = oneLine(req.get('user-agent'), 300);
   const when = new Date().toUTCString();
 
-  const subject = `Listen review from ${name}`;
+  const subject = `Turnly review from ${name}`;
   const text = [
     comment,
     '',
@@ -335,7 +335,7 @@ app.post('/feedback', async (req, res) => {
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: process.env.FEEDBACK_FROM || 'Listen <onboarding@resend.dev>',
+        from: process.env.FEEDBACK_FROM || 'Turnly <onboarding@resend.dev>',
         to: [to],
         subject,
         text, // plain text only — nothing from the browser is treated as HTML
@@ -483,7 +483,7 @@ function postNote(roomId, room, text, recording) {
   const message = {
     id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     from: null,
-    name: 'Listen',
+    name: 'Turnly',
     ts: Date.now(),
     kind: 'note',
     text,
@@ -511,6 +511,7 @@ const RATE_LIMITS = {
   [EVENTS.SFU_PULL]: { max: 60, perMs: 10_000 },
   [EVENTS.SFU_ANSWER]: { max: 60, perMs: 10_000 },
   [EVENTS.SFU_CLOSE]: { max: 60, perMs: 10_000 },
+  [EVENTS.SFU_LAYERS]: { max: 30, perMs: 10_000 },
   // Recording: about one chunk a second from the recorder.
   [EVENTS.REC_START]: { max: 5, perMs: 60_000 },
   [EVENTS.REC_STOP]: { max: 5, perMs: 60_000 },
@@ -1365,10 +1366,12 @@ io.on('connection', (socket) => {
       if (m.tracks[kind]) return ack?.({ ok: false, error: `already sending ${kind}` });
     }
 
-    const named = tracks.map(({ mid, kind }) => ({
+    const named = tracks.map(({ mid, kind, simulcast }) => ({
       mid,
       kind,
       trackName: `${kind}-${randomUUID()}`,
+      // The camera in three sizes (see sfu.LAYERS) — cameras only.
+      simulcast: kind === 'video' && simulcast === true,
     }));
     const sessionId = m.sessionId;
     const res = await sfu.publish(sessionId, sdp, named);
@@ -1380,13 +1383,23 @@ io.on('connection', (socket) => {
     for (const t of named) {
       const result = res.tracks.find((r) => r.trackName === t.trackName);
       if (result?.errorCode) failed.push(t.kind);
-      else m.tracks[t.kind] = { key: randomUUID(), trackName: t.trackName, mid: t.mid };
+      else {
+        m.tracks[t.kind] = {
+          key: randomUUID(),
+          trackName: t.trackName,
+          mid: t.mid,
+          simulcast: t.simulcast,
+        };
+      }
     }
     ack?.({ ok: true, sdp: res.sdp, failed });
     broadcastRoom(joinedRoomId); // everyone else pulls the new tracks
   });
 
-  sfuHandler(EVENTS.SFU_PULL, async ({ keys } = {}, ack) => {
+  // A layer (size) a viewer may ask for, or the middle one by default.
+  const layerOf = (rid) => (sfu.LAYERS.includes(rid) ? rid : 'b');
+
+  sfuHandler(EVENTS.SFU_PULL, async ({ keys, rids } = {}, ack) => {
     const room = sfuRoom(ack);
     const m = room && mySession(room, ack);
     if (!m) return;
@@ -1402,7 +1415,13 @@ io.on('connection', (socket) => {
       if (!t || t.ownerId === socket.id || !maySend(room, t.ownerId, t.kind)) {
         results.push({ key, error: 'unavailable' });
       } else {
-        sources.push({ key, sessionId: t.sessionId, trackName: t.trackName });
+        sources.push({
+          key,
+          sessionId: t.sessionId,
+          trackName: t.trackName,
+          // A simulcast camera: the size the viewer asked for.
+          rid: t.simulcast ? layerOf(rids?.[key]) : undefined,
+        });
       }
     }
     if (!sources.length) return ack?.({ ok: true, sdp: null, tracks: results });
@@ -1410,6 +1429,11 @@ io.on('connection', (socket) => {
     const res = await sfu.pull(m.sessionId, sources);
     for (const s of sources) {
       const r = res.tracks.find((x) => x.trackName === s.trackName && x.sessionId === s.sessionId);
+      if (!r || r.errorCode || r.mid == null) {
+        console.warn(
+          `[sfu] couldn't hand ${socket.id} a track: ${r?.errorCode ?? 'no result'} ${r?.errorDescription ?? ''}`,
+        );
+      }
       results.push(
         r && !r.errorCode && r.mid != null
           ? { key: s.key, mid: String(r.mid) }
@@ -1417,6 +1441,34 @@ io.on('connection', (socket) => {
       );
     }
     ack?.({ ok: true, sdp: res.sdp, tracks: results });
+  });
+
+  // Switch cameras I'm receiving to another size (layer). `changes` is
+  // [{ key, mid (where I receive it), rid }]. Only simulcast cameras that
+  // are still on offer; anything else is skipped.
+  sfuHandler(EVENTS.SFU_LAYERS, async ({ changes } = {}, ack) => {
+    const room = sfuRoom(ack);
+    const m = room && mySession(room, ack);
+    if (!m) return;
+    if (!Array.isArray(changes) || changes.length < 1 || changes.length > 64) {
+      return ack?.({ ok: false, error: 'bad changes' });
+    }
+    const valid = [];
+    for (const c of changes) {
+      const t = findTrack(room, c?.key);
+      if (
+        t?.simulcast &&
+        t.ownerId !== socket.id &&
+        maySend(room, t.ownerId, t.kind) &&
+        isMid(c.mid) &&
+        sfu.LAYERS.includes(c.rid)
+      ) {
+        valid.push({ sessionId: t.sessionId, trackName: t.trackName, mid: c.mid, rid: c.rid });
+      }
+    }
+    if (!valid.length) return ack?.({ ok: true, sdp: null });
+    const res = await sfu.setLayers(m.sessionId, valid);
+    ack?.({ ok: true, sdp: res.sdp });
   });
 
   sfuHandler(EVENTS.SFU_ANSWER, async ({ sdp } = {}, ack) => {

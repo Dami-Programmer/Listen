@@ -72,7 +72,7 @@ export default function RecordingPage({ id }) {
   }, [id]);
 
   useEffect(() => {
-    document.title = info?.title ? `Recording · ${info.title} · Listen` : 'Recording · Listen';
+    document.title = info?.title ? `Recording · ${info.title} · Turnly` : 'Recording · Turnly';
   }, [info?.title]);
 
   const parts = info?.parts ?? [];
@@ -189,7 +189,7 @@ export default function RecordingPage({ id }) {
   return (
     <main className="recp">
       <div className="recp-top">
-        <a href={window.location.pathname} aria-label="Listen home">
+        <a href={window.location.pathname} aria-label="Turnly home">
           <Logo />
         </a>
         <ThemeToggle />

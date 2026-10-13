@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Listen</title>
+    <title>Turnly</title>
     <!-- Pick light or dark BEFORE the page paints, so a light-mode user never
          sees a flash of dark while the app loads. Same rule as theme.js: the
          saved choice ('light' / 'dark'), or else the device's own setting.
@@ -22,9 +22,10 @@
         document.documentElement.dataset.theme = choice;
       })();
     </script>
-    <!-- Tab icon: SVG where supported, the PNG export elsewhere. -->
-    <link rel="icon" type="image/png" sizes="512x512" href="/logo.png" />
-    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <!-- Tab icon (the Turnly mark), and the icon for "Add to Home Screen". -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/favicon-512.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

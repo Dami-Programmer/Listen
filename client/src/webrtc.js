@@ -111,6 +111,7 @@ function friendlyMediaError(err) {
  * @param {boolean}    [args.sfu]          media goes through Cloudflare's SFU
  *                                         (sfu.js) instead of the mesh
  * @param {object}     [args.sfuMedia]     room-state `media` (the SFU's tracks)
+ * @param {boolean}    [args.recording]    this browser is recording the meeting
  */
 export function useCall({
   selfId,
@@ -122,6 +123,7 @@ export function useCall({
   iceServers,
   sfu = false,
   sfuMedia,
+  recording = false,
 }) {
   const myRole = participants.find((p) => p.id === selfId)?.role ?? null;
   const isListener = myRole === ROLES.LISTENER;
@@ -860,6 +862,7 @@ export function useCall({
     isListener,
     screenStream,
     iceServers,
+    recording,
   });
 
   // --- split each peer's streams into camera vs screen --------------------

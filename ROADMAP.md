@@ -1,4 +1,4 @@
-# Listen — Roadmap
+# Turnly — Roadmap
 
 A moderated group video-call app. Google Meet base layer + host-authoritative
 moderation on top. Everything about who may speak lives on the server; the client
@@ -392,9 +392,10 @@ Jakarta Sans), a floating white shell:
 ## Known constraints
 
 - Mesh WebRTC scales to ~5-6 video participants. Larger rooms now go through
-  Cloudflare's SFU when it's configured (one upload per track). Every viewer
-  still receives every camera at full quality (no simulcast yet), so very large
-  rooms on weak connections are the next limit.
+  Cloudflare's SFU when it's configured (one upload per track). Cameras are
+  simulcast (full / half / quarter size): each viewer gets the size that fits
+  how big that person is on their screen, one size smaller while their
+  connection is losing packets.
 - Everything host-authoritative lives on the server; the client never decides its
   own permissions.
 - **Single process, all in memory.** One Node process holds every room in a
