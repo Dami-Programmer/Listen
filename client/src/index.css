@@ -1200,6 +1200,10 @@ button.cs-mode-badge:hover {
   opacity: 0;
   pointer-events: none;
 }
+/* the ▲ above the column points up (it's the same chevron, turned over) */
+.cs-side-prev svg {
+  transform: rotate(180deg);
+}
 
 /* The chat panel's styles are in the "Chat panel" section at the end. */
 
@@ -3729,8 +3733,8 @@ img.pj-initials {
 }
 
 /* --- full screen for screen-share viewers (App.jsx, .cs-fullscreen-btn) ----
-   A glass button in the stage's top-right corner. Like "Pass the mic" it sits
-   faded until you hover the stage, so it never covers the shared screen. */
+   A glass button in the stage's top-right corner, always easy to spot (fully
+   solid while you hover the stage). */
 .cs-fullscreen-btn {
   position: absolute;
   top: 16px;
@@ -3748,7 +3752,7 @@ img.pj-initials {
   backdrop-filter: blur(10px);
   color: #fff;
   cursor: pointer;
-  opacity: 0.55;
+  opacity: 0.9;
   box-shadow: 0 6px 18px -6px rgba(0, 0, 0, 0.6);
 }
 .cs-main-tile:hover .cs-fullscreen-btn,
@@ -5653,55 +5657,6 @@ img.pj-initials {
   mask-image: none;
 }
 
-/* --- presenting on desktop / tablet: share on top, people in a row of four
-   underneath that scrolls sideways (was a column on the right) ------------ */
-.cs-body.presenting {
-  flex-direction: column;
-}
-.cs-body.presenting .cs-side {
-  width: auto;
-  flex-direction: row;
-  align-items: center;
-  gap: 10px;
-}
-.cs-body.presenting .cs-side-list {
-  flex-direction: row;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scroll-snap-type: x mandatory;
-  overscroll-behavior-x: contain;
-}
-.cs-body.presenting .cs-side-tile {
-  flex: 0 0 calc((100% - 30px) / 4);
-  width: calc((100% - 30px) / 4);
-  max-height: 22vh;
-}
-/* four or fewer: centred under the share */
-.cs-body.presenting .cs-side-tile:first-child {
-  margin-left: auto;
-}
-.cs-body.presenting .cs-side-tile:last-child {
-  margin-right: auto;
-}
-.cs-body.presenting .cs-side-more {
-  display: grid;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-}
-.cs-body.presenting .cs-side-more svg {
-  transform: rotate(-90deg);
-}
-.cs-body.presenting .cs-side-more.hidden {
-  display: none;
-}
-@media (max-width: 720px) {
-  .cs-body.presenting .cs-side-tile {
-    flex-basis: calc((100% - 30px) / 4);
-    width: calc((100% - 30px) / 4);
-  }
-}
-
 /* Full-screen view while someone presents: stack instead of overlap —
    header, then the shared screen, then the row of people, then the chat and
    the buttons. Nothing covers the presentation. */
@@ -5754,23 +5709,6 @@ img.pj-initials {
     animation: none;
   }
 }
-/* ‹ on the left of the row, › on the right; hidden buttons keep their space
-   so the row doesn't jump when one appears */
-.cs-body.presenting .cs-side-prev svg {
-  transform: rotate(90deg);
-}
-.cs-body.presenting .cs-side-next svg {
-  transform: rotate(-90deg);
-}
-.cs-body.presenting .cs-side-more.hidden {
-  display: grid;
-  visibility: hidden;
-}
-.cs-body.presenting .cs-side-list {
-  flex: 1;
-  min-width: 0;
-}
-
 /* pop-out (floating video) button, next to the layout swap */
 .mc .mc-popout {
   flex-shrink: 0;

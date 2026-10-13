@@ -2034,21 +2034,31 @@ function JoinRequest({ knocker: incoming, extra, onAdmit, onDeny }) {
   );
 }
 
-// Everyone's camera in a row under a screen share: four across, scrolling
-// sideways when there are more. The ‹ and › buttons move one tile at a time
-// and each only shows while there's more on its side.
+// Everyone's camera beside a screen share: a column on the right, scrolling
+// up and down when there are more than fit. The ▲ and ▼ buttons move one
+// tile at a time and each only shows while there's more that way. (On a
+// narrow window the CSS turns the column into a row under the share — the
+// same buttons then work sideways.)
 function SideStrip({ tiles, sinkId }) {
   const listRef = useRef(null);
-  const [canLeft, setCanLeft] = useState(false);
-  const [canRight, setCanRight] = useState(false);
+  const [canLeft, setCanLeft] = useState(false); // more above (or to the left)
+  const [canRight, setCanRight] = useState(false); // more below (or to the right)
+
+  // Is the list laid out sideways right now (narrow window)?
+  const sideways = (el) => getComputedStyle(el).flexDirection === 'row';
 
   useEffect(() => {
     const el = listRef.current;
     if (!el) return;
-    // People sit in a sideways row under the share: anything off either side?
+    // Anything scrolled out of view at either end?
     const check = () => {
-      setCanLeft(el.scrollLeft > 2);
-      setCanRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 2);
+      if (sideways(el)) {
+        setCanLeft(el.scrollLeft > 2);
+        setCanRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 2);
+      } else {
+        setCanLeft(el.scrollTop > 2);
+        setCanRight(el.scrollTop + el.clientHeight < el.scrollHeight - 2);
+      }
     };
     check();
     el.addEventListener('scroll', check, { passive: true });
@@ -2060,14 +2070,21 @@ function SideStrip({ tiles, sinkId }) {
     };
   }, [tiles.length]);
 
-  // Move one tile left (-1) or right (+1).
+  // Move one tile back (-1) or on (+1).
   function page(dir) {
     const el = listRef.current;
     const tile = el?.firstElementChild;
     if (!tile) return;
-    const step =
-      tile.getBoundingClientRect().width + parseFloat(getComputedStyle(el).columnGap || 0);
-    el.scrollBy({ left: dir * step, behavior: 'smooth' });
+    const box = tile.getBoundingClientRect();
+    const gaps = getComputedStyle(el);
+    if (sideways(el)) {
+      el.scrollBy({
+        left: dir * (box.width + parseFloat(gaps.columnGap || 0)),
+        behavior: 'smooth',
+      });
+    } else {
+      el.scrollBy({ top: dir * (box.height + parseFloat(gaps.rowGap || 0)), behavior: 'smooth' });
+    }
   }
 
   return (

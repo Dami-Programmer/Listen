@@ -232,13 +232,18 @@ export function openUpload(key, type) {
     uploadId = xmlValues(await res.text(), 'UploadId')[0];
     if (!uploadId) throw new Error('R2 did not start the upload');
   }
-  async function sendPart() {
+  // Send one part. R2 insists every part except the LAST is exactly the same
+  // size, so a middle part is cut at exactly PART_BYTES and whatever is left
+  // over waits for the next one; the last part (`last`) takes everything.
+  async function sendPart(last = false) {
     if (!pendingBytes) return;
     await start();
     const n = parts.length + 1;
-    const body = Buffer.concat(pending);
-    pending = [];
-    pendingBytes = 0;
+    const all = Buffer.concat(pending);
+    const body = last ? all : all.subarray(0, PART_BYTES);
+    const rest = last ? Buffer.alloc(0) : all.subarray(PART_BYTES);
+    pending = rest.length ? [rest] : [];
+    pendingBytes = rest.length;
     const res = await call(
       objectUrl(key, `?partNumber=${n}&uploadId=${encodeURIComponent(uploadId)}`),
       {
@@ -254,7 +259,7 @@ export function openUpload(key, type) {
       pending.push(buf);
       pendingBytes += buf.length;
       size += buf.length;
-      if (pendingBytes >= PART_BYTES) await sendPart();
+      while (pendingBytes >= PART_BYTES) await sendPart();
     },
     async finish() {
       if (!uploadId && pendingBytes < PART_BYTES) {
@@ -262,7 +267,7 @@ export function openUpload(key, type) {
         await putObject(key, Buffer.concat(pending), type);
         return size;
       }
-      await sendPart();
+      await sendPart(true);
       const xml =
         '<CompleteMultipartUpload>' +
         parts
