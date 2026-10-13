@@ -628,6 +628,12 @@ button.ghost.danger:hover:not(:disabled) {
   height: 60px;
   width: auto;
   display: block;
+  /* never stretched by the page around it (a column would otherwise widen
+     it to the full page and squash it flat) — always its own shape */
+  align-self: flex-start;
+  flex-shrink: 0;
+  max-width: 100%;
+  object-fit: contain;
 }
 .cs-title-row {
   display: flex;

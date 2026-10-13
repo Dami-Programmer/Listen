@@ -19,10 +19,13 @@ import { socket } from './socket.js';
 const WIDTH = 1280;
 const HEIGHT = 720;
 const FPS = 24;
-// ~1.3 Mbit/s in total — about 600 MB an hour: sharp enough for faces and
-// slides, light enough for the recorder's upload.
-const VIDEO_BITRATE = 1_200_000;
-const AUDIO_BITRATE = 96_000;
+// ~0.75 Mbit/s in total — about 340 MB an hour. The recorder uploads this ON
+// TOP of their own camera (and screen, if they're sharing), and home / mobile
+// upload is small: much more and it clogs their connection — the call's own
+// messages then queue behind it and the video connection restarts. Still
+// clear for faces and slides at 720p (a meeting grid barely moves).
+const VIDEO_BITRATE = 700_000;
+const AUDIO_BITRATE = 64_000;
 // How often a piece is sent (ms).
 const CHUNK_MS = 1000;
 // An MP4 can only be cut into pieces at a "key frame" (a full picture). A
@@ -289,9 +292,19 @@ export function useRecorder({ id, part, active, scene }) {
     recorder.ondataavailable = (e) => {
       const final = stopping && recorder.state === 'inactive';
       if (!e.data.size && !final) return;
+      // ONE piece on the wire at a time: the next waits until the server has
+      // this one. A slow upload then can't pile seconds of video into the
+      // connection ahead of the call's own messages (which would time out
+      // and restart everyone's video) — the backlog waits here instead.
+      // While disconnected, pieces are dropped: someone else has taken over
+      // the recording by then (see the server's handOver).
       sending = sending.then(async () => {
         const data = await e.data.arrayBuffer();
-        socket.emit(EVENTS.REC_CHUNK, { id, part, type, data, final });
+        if (!socket.connected) return;
+        await socket
+          .timeout(30_000)
+          .emitWithAck(EVENTS.REC_CHUNK, { id, part, type, data, final })
+          .catch(() => {});
       });
     };
     recorder.onerror = (e) => console.warn('[rec] recorder error', e.error ?? e);
