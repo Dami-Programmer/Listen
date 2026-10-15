@@ -13,6 +13,9 @@ import Logo from './Logo.jsx';
 import ProfileCard, { PROFILE } from './ProfileCard.jsx';
 import { SIGNALING_URL } from './socket.js';
 import { cameraConstraints } from './webrtc.js';
+import ClaimRoom from './ClaimRoom.jsx';
+import ScheduleMeeting from './ScheduleMeeting.jsx';
+import ScheduledBanner from './ScheduledBanner.jsx';
 
 // A link with ?profile in it (https://your-site/?profile) opens the creator card.
 const wantsProfile = () => new URLSearchParams(window.location.search).has('profile');
@@ -85,6 +88,37 @@ export default function PreJoin({
   slowJoin = false, // ...and it's taking a while (the server is waking up)
 }) {
   const isMobile = useIsMobile();
+  // Under the form: "Get a permanent link for your group" (ClaimRoom.jsx) and
+  // "Schedule a meeting" (ScheduleMeeting.jsx).
+  const [claimOpen, setClaimOpen] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const claimLink = (
+    <div className="pj-extras">
+      <button type="button" className="pj-claim" onClick={() => setClaimOpen(true)}>
+        🔗 Get a permanent link for your group
+      </button>
+      <button type="button" className="pj-claim" onClick={() => setScheduleOpen(true)}>
+        📅 Schedule a meeting
+      </button>
+    </div>
+  );
+  const claimDialog = (
+    <>
+      {claimOpen && (
+        <ClaimRoom
+          onClose={() => setClaimOpen(false)}
+          onUse={(room, groupTitle) => {
+            onRoomId(room);
+            if (groupTitle) onTitle?.(groupTitle);
+            setClaimOpen(false);
+          }}
+        />
+      )}
+      {scheduleOpen && (
+        <ScheduleMeeting onClose={() => setScheduleOpen(false)} defaultTitle={title} />
+      )}
+    </>
+  );
 
   // Wake the server up while people are still typing their name. On Render's
   // free plan it falls asleep after ~15 idle minutes and takes up to a minute
@@ -98,7 +132,7 @@ export default function PreJoin({
   // Shown under the form while a slow join is waiting.
   const wakingNote = slowJoin && (
     <p className="pj-note" role="status">
-      Waking up the server — this can take up to a minute the first time…
+      Waking up the server. The first time can take up to a minute…
     </p>
   );
   const videoRef = useRef(null);
@@ -283,6 +317,7 @@ export default function PreJoin({
         {profileOpen && <ProfileCard onClose={closeProfile} />}
 
         <form className="pjm-body" onSubmit={handleSubmit}>
+          {invited && <ScheduledBanner roomId={roomId} />}
           <div className="pjm-preview">
             <video
               ref={videoRef}
@@ -365,7 +400,8 @@ export default function PreJoin({
           {wakingNote}
           {error && <p className="err">{error}</p>}
         </form>
-
+        {!invited && claimLink}
+        {claimDialog}
       </main>
     );
   }
@@ -511,6 +547,8 @@ export default function PreJoin({
               ? 'You’ve been invited to a meeting. Check your camera and mic, then hop in.'
               : 'Check your camera and mic, then hop in.'}
           </p>
+          {/* A scheduled meeting's link: when it's on, + add to calendar. */}
+          {invited && <ScheduledBanner roomId={roomId} />}
 
           {note && <p className="pj-note">{note}</p>}
 
@@ -543,6 +581,8 @@ export default function PreJoin({
             {wakingNote}
             {error && <p className="err">{error}</p>}
           </form>
+          {!invited && claimLink}
+          {claimDialog}
         </section>
       </div>
     </main>

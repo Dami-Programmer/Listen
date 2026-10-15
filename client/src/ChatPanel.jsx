@@ -134,7 +134,13 @@ function groupMessages(messages) {
  * @param {object[]} [props.participants] who's in the call now (for their
  *                                   profile pictures)
  */
-export default function ChatPanel({ messages, typers, selfId, participants = [] }) {
+export default function ChatPanel({
+  messages,
+  typers,
+  selfId,
+  participants = [],
+  onOpenQuestions,
+}) {
   const [text, setText] = useState('');
   const [picker, setPicker] = useState(null); // 'emoji' | 'sticker' | null
   const [attachError, setAttachError] = useState(null);
@@ -481,6 +487,11 @@ export default function ChatPanel({ messages, typers, selfId, participants = [] 
                       <a href={recordingLink(m.recording)} target="_blank" rel="noreferrer">
                         Open recording
                       </a>
+                    )}
+                    {m.question && onOpenQuestions && (
+                      <button type="button" className="cp-note-link" onClick={onOpenQuestions}>
+                        View
+                      </button>
                     )}
                   </p>
                 ))}

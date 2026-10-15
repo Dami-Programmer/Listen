@@ -209,6 +209,67 @@ export const EVENTS = {
   REC_CHUNK: 'rec-chunk',
   DEVICE: 'device',
 
+  // Reactions: tap 👍 👏 🙏 … and it floats up for everyone, so listeners can
+  // respond without unmuting. Never stored.
+  //   REACT { emoji } : client -> server (one of REACTIONS).
+  //   REACTION { id, name, emoji } : server -> everyone in the room.
+  REACT: 'react',
+  REACTION: 'reaction',
+
+  // Questions: anyone types a question; everyone can upvote; the most-voted
+  // rise to the top; a moderator answers one (or gives its asker the floor)
+  // and closes it. Kept in the snapshot's `questions`, most votes first:
+  //   [{ id, from, name, text, ts, votes: [socketId, …] }]
+  //   Q_ASK { text }  : anyone -> server.                     -> { ok }
+  //   Q_VOTE { id }   : anyone -> server, toggles my vote.    -> { ok }
+  //   Q_CLOSE { id }  : moderator -> server, answered / dismissed (or the
+  //                     asker withdrawing their own).           -> { ok }
+  Q_ASK: 'q-ask',
+  Q_VOTE: 'q-vote',
+  Q_CLOSE: 'q-close',
+
+  // Polls: a moderator asks a question with 2-6 answers; everyone picks one
+  // (and may change it while it's open); results show live as bars. One poll
+  // at a time, in the snapshot's `poll`:
+  //   { id, question, options: [{ text, votes }], total, open, by }
+  // Votes are anonymous — nobody sees who picked what.
+  //   POLL_START { question, options: [text, …] } : moderator.  -> { ok }
+  //   POLL_VOTE { id, option }  : anyone (option = its index).  -> { ok }
+  //   POLL_END { id }   : moderator — stop voting, keep the results up.
+  //   POLL_CLEAR { id } : moderator — take it off everyone's screen.
+  POLL_START: 'poll-start',
+  POLL_VOTE: 'poll-vote',
+  POLL_END: 'poll-end',
+  POLL_CLEAR: 'poll-clear',
+
+  // The meeting report (moderators): who came, when, who spoke and for how
+  // long, hands raised and turns given.
+  //   REPORT_GET {} -> { ok, report: { title, startedAt, now, people: [{
+  //     name, firstJoined, lastLeft, present, talkMs, hands, turns }] } }
+  REPORT_GET: 'report-get',
+
+  // Breakout rooms: the host splits everyone (but the host and co-host)
+  // into small rooms for a while, then everyone comes back.
+  //   BREAKOUT_START { rooms, minutes, assign? } : moderator, in the main
+  //     room. minutes 0 = until ended by hand. Without `assign` people are
+  //     shuffled at random; with it, the host chose: { [personId]: room
+  //     index (0 = Room 1) } — anyone not in it stays in the main room. -> { ok }
+  //   BREAKOUT_MOVE { id, to } : moderator, in the main room, while they run —
+  //     move one person to room index `to` (0 = Room 1), or -1 = the main
+  //     room. Works for late joiners too (they start in the main room). -> { ok }
+  //   BREAKOUT_END {} : moderator — everyone back now.            -> { ok }
+  //   BREAKOUT_MESSAGE { text } : moderator — a line in every room's chat.
+  //   MOVED { selfId, state, chat, ticket } : server -> someone who was just
+  //     moved into another room (into a breakout, or back): their new room.
+  // The main room's snapshot has `breakouts` { endsAt, rooms: [{ id, name,
+  // people: [{ id, name }] }] } while they run; a breakout room's has `breakout` { name,
+  // endsAt } (endsAt null = until the host ends them).
+  BREAKOUT_START: 'breakout-start',
+  BREAKOUT_END: 'breakout-end',
+  BREAKOUT_MOVE: 'breakout-move',
+  BREAKOUT_MESSAGE: 'breakout-message',
+  MOVED: 'moved',
+
   // Reconnecting after a network drop (Google-Meet style).
   // When someone's internet drops, the server does NOT remove them straight
   // away: it marks them "away" (everyone sees "Reconnecting…" on their tile)
@@ -269,6 +330,14 @@ export const ROLES = {
 // The sticker set for in-call chat. The server checks a 'sticker' message's
 // text against this exact list, so the picker and the validation can never
 // drift apart. Plain emoji so there are no image assets to host or licence.
+// The reactions anyone can send (see EVENTS.REACT).
+export const REACTIONS = ['👍', '👏', '🙏', '❤️', '😂', '🎉'];
+
+// Questions and polls (see EVENTS.Q_ASK / POLL_START).
+export const QUESTION_MAX_CHARS = 280;
+export const POLL_MAX_OPTIONS = 6;
+export const POLL_TEXT_MAX_CHARS = 140;
+
 export const STICKERS = [
   '🎉',
   '👍',

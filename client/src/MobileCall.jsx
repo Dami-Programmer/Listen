@@ -12,7 +12,7 @@
 //
 // All the call logic lives in <CallView/> (App.jsx); this file only draws it.
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { EVENTS, MODES, ROLES } from '@listen/shared';
 import { socket } from './socket.js';
 import Avatar from './Avatar.jsx';
@@ -44,11 +44,23 @@ import Tour from './Tour.jsx';
 import { hasSeenTour, useTour } from './useTour.js';
 import TourButton from './TourButton.jsx';
 import RecBadge from './RecBadge.jsx';
+import NextUp from './NextUp.jsx';
+import { ReactionButton } from './Reactions.jsx';
+import NoiseToggle from './NoiseToggle.jsx';
+import { BreakoutBanner } from './Breakouts.jsx';
+import TabSwap from './TabSwap.jsx';
+import { strongNoiseSupported } from './webrtc.js';
+import QuestionsPanel from './QuestionsPanel.jsx';
+import PollPanel from './PollPanel.jsx';
+import { ReportDialog } from './MeetingReport.jsx';
 
-const ROLE_LABEL = { host: 'Host', cohost: 'Co-host', speaker: 'Speaker', listener: 'Listener' };
+const ROLE_LABEL = { host: 'Host', cohost: 'Cohost', speaker: 'Speaker', listener: 'Listener' };
 const ROLE_RANK = { host: 0, cohost: 1, speaker: 2, listener: 3 };
 
 export default function MobileCall({ call }) {
+  // The meeting report pop-up (moderators, from the people sheet).
+  const [reportOpen, setReportOpen] = useState(false);
+  const closeReport = useCallback(() => setReportOpen(false), []);
   const {
     state,
     chat,
@@ -80,6 +92,8 @@ export default function MobileCall({ call }) {
     toggleCam,
     devices,
     switchDevice,
+    strongNoise,
+    setStrongNoise,
     startShare,
     presentStream,
     stopShare,
@@ -91,6 +105,7 @@ export default function MobileCall({ call }) {
     recording,
     startRecording,
     stopRecording,
+    openBreakouts,
     act,
   } = call;
 
@@ -126,7 +141,10 @@ export default function MobileCall({ call }) {
   // instead of vanishing: `sheetClosing` plays the slide-down (CSS), and
   // when that ends the sheet is actually removed (closeSheetNow).
   const [sheetClosing, setSheetClosing] = useState(false);
-  const openSheet = () => {
+  // Which tab the sheet opens on (a question note's "View" opens Questions).
+  const [sheetTab, setSheetTab] = useState('people');
+  const openSheet = (tab = 'people') => {
+    setSheetTab(typeof tab === 'string' ? tab : 'people');
     setSheet(true);
     setSheetClosing(false); // reopening mid-slide-out cancels it
   };
@@ -336,7 +354,7 @@ export default function MobileCall({ call }) {
       title: 'Leave the call?',
       message:
         isHost && others > 0
-          ? 'You’re the host — someone else takes over, unless you rejoin within a minute.'
+          ? 'You’re the host. Someone else takes over unless you rejoin within a minute.'
           : 'You’ll have a minute to rejoin.',
       confirmLabel: 'Leave',
       cancelLabel: 'Stay',
@@ -562,7 +580,7 @@ export default function MobileCall({ call }) {
               type="button"
               className={`mc-mode${moderated ? ' is-mod' : ''}`}
               onClick={() => act.changeMode(moderated ? MODES.OPEN : MODES.MODERATED)}
-              aria-label={moderated ? 'Moderated — tap to open the room' : 'Open — tap to moderate'}
+              aria-label={moderated ? 'Moderated. Tap to open the room' : 'Open. Tap to moderate'}
             >
               <SwapLabel on={moderated} off="Open" onLabel="Moderated" />
             </button>
@@ -616,7 +634,7 @@ export default function MobileCall({ call }) {
               type="button"
               className={`mc-lock${locked ? '' : ' is-open'}`}
               onClick={act.toggleLock}
-              aria-label={locked ? 'Door locked — tap to open' : 'Door open — tap to lock'}
+              aria-label={locked ? 'Door locked. Tap to open' : 'Door open. Tap to lock'}
             >
               <span className="mc-lock-icon" aria-hidden="true">
                 {locked ? <Lock /> : <Unlock />}
@@ -741,7 +759,7 @@ export default function MobileCall({ call }) {
                   type="button"
                   className="mc-gtile mc-gmore"
                   onClick={openSheet}
-                  aria-label={`${gridHidden.length} more people — show everyone`}
+                  aria-label={`${gridHidden.length} more people. Show everyone`}
                 >
                   <span className="mc-gmore-faces" aria-hidden="true">
                     {gridHidden.slice(0, 3).map((t) => (
@@ -800,6 +818,7 @@ export default function MobileCall({ call }) {
         held={msgMenu?.id}
         onHold={setMsgMenu}
         onView={setViewing}
+        onOpenQuestions={() => openSheet('qa')}
       />
 
       {presentation && (
@@ -829,6 +848,12 @@ export default function MobileCall({ call }) {
         </div>
       )}
       {presentError && <p className="mc-toast">{presentError}</p>}
+
+      {/* Moderated room: who's next in line for the floor. */}
+      <div className="mc-nextup">
+        <BreakoutBanner state={state} onManage={isModerator ? openBreakouts : undefined} />
+        <NextUp queue={queue} participants={participants} selfId={selfId} moderated={moderated} />
+      </div>
 
       {canPassMic && (
         <button
@@ -901,7 +926,7 @@ export default function MobileCall({ call }) {
                   className={`mc-btn mc-mic${micOn && !isListener ? '' : ' off'}${isListener ? ' locked' : ''}`}
                   label={
                     isListener
-                      ? 'Listening only — raise your hand to speak'
+                      ? 'Listening only. Raise your hand to speak'
                       : micOn
                         ? 'Mute (hold for more microphones)'
                         : 'Unmute'
@@ -980,7 +1005,7 @@ export default function MobileCall({ call }) {
             <p className="mc-menu-note">
               {shareSupported
                 ? 'Slides or Word files? Save them as a PDF first.'
-                : 'Phones can’t share the whole screen, but you can show photos or a PDF — swipe the big screen to flip pages. Slides or Word files? Save them as a PDF first.'}
+                : 'Phones can’t share the whole screen, but you can show photos or a PDF, then swipe the big screen to flip pages. Slides or Word files? Save them as a PDF first.'}
             </p>
           </div>
         </div>
@@ -1059,6 +1084,10 @@ export default function MobileCall({ call }) {
           current={devices[deviceMenu]}
           onPick={(id) => switchDevice(deviceMenu, id)}
           onClose={() => setDeviceMenu(null)}
+          extra={
+            deviceMenu === 'audio' &&
+            strongNoiseSupported && <NoiseToggle on={strongNoise} onChange={setStrongNoise} />
+          }
         />
       )}
 
@@ -1085,9 +1114,23 @@ export default function MobileCall({ call }) {
             myQueuePos,
             cohostId,
             act,
+            initialTab: sheetTab,
+            questions: state?.questions ?? [],
+            poll: state?.poll ?? null,
+            onReport: () => {
+              closeSheetNow();
+              setReportOpen(true);
+            },
+            onBreakouts: state?.breakout
+              ? null
+              : () => {
+                  closeSheetNow();
+                  openBreakouts();
+                },
           }}
         />
       )}
+      {reportOpen && <ReportDialog onClose={closeReport} />}
       {viewing && (
         <ImageViewer src={viewing.src} alt={viewing.name} onClose={() => setViewing(null)} />
       )}
@@ -1423,7 +1466,8 @@ function HoldButton({ className, label, onTap, onHold, children }) {
 
 // The list that pops up after a long press: every camera (or mic) the phone
 // reports, with a check on the one in use.
-function DeviceMenu({ kind, current, onPick, onClose }) {
+// `extra`: shown under the list (the mic's noise-reduction switch).
+function DeviceMenu({ kind, current, onPick, onClose, extra = null }) {
   const [list, setList] = useState(null);
   useEffect(() => {
     const want = kind === 'video' ? 'videoinput' : 'audioinput';
@@ -1458,6 +1502,7 @@ function DeviceMenu({ kind, current, onPick, onClose }) {
           </button>
         ))}
         {list && list.length < 2 && <p className="mc-menu-note">No other {noun} found.</p>}
+        {extra}
       </div>
     </div>
   );
@@ -1554,6 +1599,8 @@ function Composer() {
       >
         <Paperclip />
       </button>
+      {/* 👍 👏 🙏 … for everyone, without unmuting */}
+      <ReactionButton className="mc-attach mc-react" />
       <input ref={photoRef} type="file" accept="image/*" hidden onChange={onPick} />
       <input
         ref={cameraRef}
@@ -1598,7 +1645,17 @@ function Composer() {
 // dropped — scroll up and the faded history is all there. While you're
 // reading back, new messages don't yank you down; a "New messages" pill
 // counts them and takes you back to the live edge.
-function ChatFeed({ chat, typers, selfId, participants, narrow, held, onHold, onView }) {
+function ChatFeed({
+  chat,
+  typers,
+  selfId,
+  participants,
+  narrow,
+  held,
+  onHold,
+  onView,
+  onOpenQuestions,
+}) {
   const [joins, setJoins] = useState([]);
   const seen = useRef(null);
   useEffect(() => {
@@ -1697,13 +1754,18 @@ function ChatFeed({ chat, typers, selfId, participants, narrow, held, onHold, on
           if (m.kind === 'note') {
             // From Listen itself: "Sam started recording · Open recording".
             return (
-              <p key={m.id} className={`mc-join mc-note${enter}`}>
+              <p key={m.id} className={`mc-join mc-sysnote${enter}`}>
                 {m.recording && <span className="rec-dot" aria-hidden="true" />}
                 {m.text}
                 {m.recording && (
                   <a href={recordingLink(m.recording)} target="_blank" rel="noreferrer">
                     Open recording
                   </a>
+                )}
+                {m.question && (
+                  <button type="button" className="cp-note-link" onClick={onOpenQuestions}>
+                    View
+                  </button>
                 )}
               </p>
             );
@@ -1857,7 +1919,14 @@ function PeopleSheet({
   myQueuePos,
   cohostId,
   act,
+  questions,
+  poll,
+  onReport,
+  onBreakouts,
+  initialTab = 'people',
 }) {
+  // People, questions or the poll.
+  const [tab, setTab] = useState(initialTab);
   const ordered = [...participants].sort(
     (a, b) => (ROLE_RANK[a.role] ?? 9) - (ROLE_RANK[b.role] ?? 9) || a.name.localeCompare(b.name),
   );
@@ -1873,139 +1942,196 @@ function PeopleSheet({
         }}
       >
         <div className="mc-sheet-head">
-          <h2>People ({participants.length})</h2>
+          <div
+            className="mc-tabs"
+            role="tablist"
+            // the sliding highlight (see .mc-tabs::before): 3 options, which is on
+            style={{ '--n': 3, '--i': ['people', 'qa', 'poll'].indexOf(tab) }}
+          >
+            {[
+              ['people', `People (${participants.length})`, 0],
+              ['qa', 'Questions', questions.length],
+              ['poll', 'Poll', poll?.open ? '•' : 0],
+            ].map(([key, label, badge]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={tab === key}
+                className={`mc-tab${tab === key ? ' on' : ''}`}
+                onClick={() => setTab(key)}
+              >
+                {label}
+                {badge ? <b className="cp-tab-badge">{badge}</b> : null}
+              </button>
+            ))}
+          </div>
           <button type="button" className="mc-sheet-x" onClick={onClose} aria-label="Close">
             <X />
           </button>
         </div>
 
-        <button type="button" className="mc-invite" onClick={onInvite}>
-          <ShareIcon />
-          Invite people
-        </button>
+        {/* slides in from the side you switched to (TabSwap) */}
+        <TabSwap tab={tab} order={['people', 'qa', 'poll']}>
+          {tab === 'qa' && (
+            <QuestionsPanel
+              questions={questions}
+              participants={participants}
+              selfId={selfId}
+              isModerator={isModerator}
+              moderated={moderated}
+            />
+          )}
+          {tab === 'poll' && <PollPanel poll={poll} isModerator={isModerator} />}
 
-        {isListener && (
-          <p className="mc-note">
-            🎧 Listening only —{' '}
-            {handRaised
-              ? `you're #${myQueuePos + 1} in line for the floor.`
-              : 'raise your hand to ask for the floor.'}
-          </p>
-        )}
-
-        {isModerator && waiting.length > 0 && (
-          <>
-            <h3>Waiting to join ({waiting.length})</h3>
-            {waiting.map((w) => (
-              <div className="mc-person" key={w.id}>
-                <Avatar name={w.name} src={w.avatar} size={36} />
-                <span className="mc-pname">{w.name}</span>
-                <span className="mc-pacts">
-                  <button type="button" className="go" onClick={() => act.admit(w.id)}>
-                    Admit
-                  </button>
-                  <button type="button" onClick={() => act.deny(w.id)}>
-                    Deny
-                  </button>
-                </span>
-              </div>
-            ))}
-          </>
-        )}
-
-        {isModerator && moderated && (
-          <>
-            <h3>
-              Raised hands ({queued.length})
-              {participants.some((p) => p.role === ROLES.SPEAKER) && (
-                <button type="button" className="mc-link" onClick={act.clearFloor}>
-                  Clear floor
+          {tab === 'people' && (
+            <>
+              {isModerator && onBreakouts && (
+                <button type="button" className="cp-report-btn" onClick={onBreakouts}>
+                  🧩 Breakout rooms: split into small groups
                 </button>
               )}
-            </h3>
-            {queued.length === 0 && <p className="mc-note">No one’s waiting for the floor.</p>}
-            {queued.map((p, i) => (
-              <div className="mc-person" key={p.id}>
-                <span className="mc-qpos">{i + 1}</span>
-                <span className="mc-pname">{p.name}</span>
-                <span className="mc-pacts">
-                  <button
-                    type="button"
-                    disabled={i === 0}
-                    onClick={() => act.moveInQueue(p.id, -1)}
-                    aria-label={`Move ${p.name} up`}
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    disabled={i === queued.length - 1}
-                    onClick={() => act.moveInQueue(p.id, 1)}
-                    aria-label={`Move ${p.name} down`}
-                  >
-                    ↓
-                  </button>
-                  <button type="button" className="go" onClick={() => act.grantFloor(p.id)}>
-                    Grant
-                  </button>
-                  <button type="button" onClick={() => act.dismissHand(p.id)}>
-                    Dismiss
-                  </button>
-                </span>
-              </div>
-            ))}
-          </>
-        )}
+              {isModerator && (
+                <button type="button" className="cp-report-btn" onClick={onReport}>
+                  📊 Meeting report: who spoke, and for how long
+                </button>
+              )}
+              <button type="button" className="mc-invite" onClick={onInvite}>
+                <ShareIcon />
+                Invite people
+              </button>
 
-        <h3>In the call</h3>
-        {ordered.map((p) => {
-          const canMod = isModerator && p.id !== selfId && p.role !== ROLES.HOST;
-          const hostControls = isHost && p.id !== selfId && p.role !== ROLES.HOST;
-          return (
-            <div className="mc-person" key={p.id}>
-              <Avatar name={p.name} src={p.avatar} size={36} />
-              <span className="mc-pname">
-                {p.name}
-                {p.id === selfId ? ' (you)' : ''}
-                <small className={`mc-role ${p.role}`}>{ROLE_LABEL[p.role] ?? p.role}</small>
-              </span>
-              <span className="mc-pacts">
-                {canMod && moderated && p.role === ROLES.LISTENER && (
-                  <button type="button" className="go" onClick={() => act.grantFloor(p.id)}>
-                    Grant
-                  </button>
-                )}
-                {canMod && moderated && p.role === ROLES.SPEAKER && (
-                  <button type="button" onClick={() => act.revokeFloor(p.id)}>
-                    Revoke
-                  </button>
-                )}
-                {hostControls &&
-                  (p.id === cohostId ? (
-                    <button type="button" onClick={() => act.dropCohost(p)}>
-                      Remove co-host
-                    </button>
-                  ) : (
-                    <button type="button" onClick={() => act.makeCohost(p)}>
-                      Make co-host
-                    </button>
+              {isListener && (
+                <p className="mc-note">
+                  🎧 Listening only:{' '}
+                  {handRaised
+                    ? `you're #${myQueuePos + 1} in line for the floor.`
+                    : 'raise your hand to ask for the floor.'}
+                </p>
+              )}
+
+              {isModerator && waiting.length > 0 && (
+                <>
+                  <h3>Waiting to join ({waiting.length})</h3>
+                  {waiting.map((w) => (
+                    <div className="mc-person" key={w.id}>
+                      <Avatar name={w.name} src={w.avatar} size={36} />
+                      <span className="mc-pname">{w.name}</span>
+                      <span className="mc-pacts">
+                        <button type="button" className="go" onClick={() => act.admit(w.id)}>
+                          Admit
+                        </button>
+                        <button type="button" onClick={() => act.deny(w.id)}>
+                          Deny
+                        </button>
+                      </span>
+                    </div>
                   ))}
-                {/* Moderated rooms run the mic through Grant / Revoke
+                </>
+              )}
+
+              {isModerator && moderated && (
+                <>
+                  <h3>
+                    Raised hands ({queued.length})
+                    {participants.some((p) => p.role === ROLES.SPEAKER) && (
+                      <button type="button" className="mc-link" onClick={act.clearFloor}>
+                        Clear floor
+                      </button>
+                    )}
+                  </h3>
+                  {queued.length === 0 && (
+                    <p className="mc-note">No one’s waiting for the floor.</p>
+                  )}
+                  {queued.map((p, i) => (
+                    <div className="mc-person" key={p.id}>
+                      <span className="mc-qpos">{i + 1}</span>
+                      <span className="mc-pname">{p.name}</span>
+                      <span className="mc-pacts">
+                        <button
+                          type="button"
+                          disabled={i === 0}
+                          onClick={() => act.moveInQueue(p.id, -1)}
+                          aria-label={`Move ${p.name} up`}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          disabled={i === queued.length - 1}
+                          onClick={() => act.moveInQueue(p.id, 1)}
+                          aria-label={`Move ${p.name} down`}
+                        >
+                          ↓
+                        </button>
+                        <button type="button" className="go" onClick={() => act.grantFloor(p.id)}>
+                          Grant
+                        </button>
+                        <button type="button" onClick={() => act.dismissHand(p.id)}>
+                          Dismiss
+                        </button>
+                      </span>
+                    </div>
+                  ))}
+                </>
+              )}
+
+              <h3>In the call</h3>
+              {ordered.map((p) => {
+                const canMod = isModerator && p.id !== selfId && p.role !== ROLES.HOST;
+                const hostControls = isHost && p.id !== selfId && p.role !== ROLES.HOST;
+                return (
+                  <div className="mc-person" key={p.id}>
+                    <Avatar name={p.name} src={p.avatar} size={36} />
+                    <span className="mc-pname">
+                      {p.name}
+                      {p.id === selfId ? ' (you)' : ''}
+                      <small className={`mc-role ${p.role}`}>{ROLE_LABEL[p.role] ?? p.role}</small>
+                    </span>
+                    <span className="mc-pacts">
+                      {canMod && moderated && p.role === ROLES.LISTENER && (
+                        <button type="button" className="go" onClick={() => act.grantFloor(p.id)}>
+                          Grant
+                        </button>
+                      )}
+                      {canMod && moderated && p.role === ROLES.SPEAKER && (
+                        <button type="button" onClick={() => act.revokeFloor(p.id)}>
+                          Revoke
+                        </button>
+                      )}
+                      {hostControls &&
+                        (p.id === cohostId ? (
+                          <button type="button" onClick={() => act.dropCohost(p)}>
+                            Remove cohost
+                          </button>
+                        ) : (
+                          <button type="button" onClick={() => act.makeCohost(p)}>
+                            Make cohost
+                          </button>
+                        ))}
+                      {/* Moderated rooms run the mic through Grant / Revoke
                     (listeners are silent anyway), so no Mute there. */}
-                {canMod && !moderated && (
-                  <button type="button" onClick={() => act.forceMute(p.id)}>
-                    Mute
-                  </button>
-                )}
-                {canMod && (
-                  <button type="button" className="bad" onClick={() => act.removeParticipant(p)}>
-                    Remove
-                  </button>
-                )}
-              </span>
-            </div>
-          );
-        })}
+                      {canMod && !moderated && (
+                        <button type="button" onClick={() => act.forceMute(p.id)}>
+                          Mute
+                        </button>
+                      )}
+                      {canMod && (
+                        <button
+                          type="button"
+                          className="bad"
+                          onClick={() => act.removeParticipant(p)}
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </TabSwap>
       </div>
     </div>
   );

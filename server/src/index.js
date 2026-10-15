@@ -31,9 +31,39 @@ import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import { Server } from 'socket.io';
-import { CHAT_FILE_MAX_BYTES, EVENTS, MODES, RECONNECT_GRACE_MS, STICKERS } from '@listen/shared';
+import {
+  CHAT_FILE_MAX_BYTES,
+  EVENTS,
+  MODES,
+  REACTIONS,
+  RECONNECT_GRACE_MS,
+  STICKERS,
+} from '@listen/shared';
 import * as sfu from './sfu.js';
 import * as recordings from './recordings.js';
+import {
+  claimName,
+  isHostKey,
+  lookupName,
+  mightBeClaimed,
+  publicInfo,
+  scheduleMeeting,
+  scheduleOnName,
+  sweepNames,
+  validName,
+  validSchedule,
+} from './names.js';
+import {
+  askerOf,
+  askQuestion,
+  clearPoll,
+  closeQuestion,
+  endPoll,
+  meetingReport,
+  startPoll,
+  voteQuestion,
+  votePoll,
+} from './activities.js';
 import { checkStorage, getObject } from './storage.js';
 import {
   addChatMessage,
@@ -49,10 +79,12 @@ import {
   findTrack,
   getRoom,
   grantFloor,
+  makeHost,
   isAway,
   lowerHand,
   markAway,
   maySend,
+  moveParticipant,
   mediaOf,
   passFloor,
   promoteCohost,
@@ -177,6 +209,108 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, phase: 7, time: new Date().toISOString() });
 });
 
+// --- Fixed room links (names.js) ----------------------------------------------
+// The home page checks a name is free as you type it, then claims it. A claim
+// hands back the host key ONCE — it's never shown again.
+const CLAIM_LIMIT = { max: 5, perMs: 60 * 60 * 1000 }; // per IP: 5 an hour
+const claimHits = new Map(); // ip -> timestamps inside the window
+
+app.get('/names/:name', async (req, res) => {
+  const name = String(req.params.name ?? '').toLowerCase();
+  if (!validName(name)) return res.json({ ok: true, valid: false, available: false });
+  try {
+    const taken = Boolean(await lookupName(name)) || Boolean(getRoom(name));
+    res.json({ ok: true, valid: true, available: !taken });
+  } catch (err) {
+    console.error('[names] lookup failed:', err.message);
+    res.status(500).json({ ok: false, error: 'Couldn’t check that name. Try again.' });
+  }
+});
+
+app.post('/names', async (req, res) => {
+  const now = Date.now();
+  const recent = (claimHits.get(req.ip) ?? []).filter((t) => now - t < CLAIM_LIMIT.perMs);
+  if (recent.length >= CLAIM_LIMIT.max) {
+    return res.status(429).json({ ok: false, error: 'Too many new names. Try again later.' });
+  }
+  const name = String(req.body?.name ?? '').toLowerCase();
+  if (!validName(name)) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Use 3-30 lowercase letters, numbers or hyphens (like grace-church).',
+    });
+  }
+  // A meeting already running under that code can't be taken over.
+  if (getRoom(name)) return res.status(409).json({ ok: false, error: 'That name is taken.' });
+  try {
+    const result = await claimName(name, req.body?.title);
+    if (!result.ok) {
+      return res.status(409).json({ ok: false, error: 'That name is taken.' });
+    }
+    recent.push(now);
+    claimHits.set(req.ip, recent);
+    console.log(`[names] "${name}" claimed`);
+    res.json({ ok: true, name, hostKey: result.hostKey });
+  } catch (err) {
+    console.error('[names] claim failed:', err.message);
+    res.status(500).json({ ok: false, error: 'Couldn’t save that name. Try again.' });
+  }
+});
+
+// What anyone may know about a fixed / scheduled room: its title and when
+// it's on (the lobby shows "Scheduled: Sunday 4:00 pm").
+app.get('/names/:name/info', async (req, res) => {
+  const name = String(req.params.name ?? '').toLowerCase();
+  try {
+    const record = mightBeClaimed(name) ? await lookupName(name) : null;
+    if (!record) return res.status(404).json({ ok: false });
+    res.json({ ok: true, ...publicInfo(record) });
+  } catch (err) {
+    console.error('[names] info failed:', err.message);
+    res.status(500).json({ ok: false });
+  }
+});
+
+// Schedule a meeting: on a fresh meeting code, or on a name you own (with
+// its host key). Returns the room (and, for a fresh one, its host key —
+// shown once).
+app.post('/schedules', async (req, res) => {
+  const now = Date.now();
+  const recent = (claimHits.get(req.ip) ?? []).filter((t) => now - t < CLAIM_LIMIT.perMs);
+  if (recent.length >= CLAIM_LIMIT.max) {
+    return res.status(429).json({ ok: false, error: 'Too many new meetings. Try again later.' });
+  }
+  const startsAt = Number(req.body?.startsAt);
+  const durationMin = Number(req.body?.durationMin);
+  if (!validSchedule(startsAt, durationMin)) {
+    return res.status(400).json({ ok: false, error: 'Pick a date and time in the next year.' });
+  }
+  const title = req.body?.title;
+  try {
+    const name = req.body?.name ? String(req.body.name).toLowerCase() : null;
+    const result = name
+      ? await scheduleOnName(name, req.body?.hostKey, title, startsAt, durationMin)
+      : await scheduleMeeting(title, startsAt, durationMin);
+    if (!result.ok) {
+      return res
+        .status(403)
+        .json({ ok: false, error: 'You can only schedule on a link you’re the host of.' });
+    }
+    recent.push(now);
+    claimHits.set(req.ip, recent);
+    console.log(`[names] meeting scheduled in ${result.room}`);
+    res.json({ ok: true, room: result.room, hostKey: result.hostKey ?? null });
+  } catch (err) {
+    console.error('[names] scheduling failed:', err.message);
+    res.status(500).json({ ok: false, error: 'Couldn’t schedule it. Try again.' });
+  }
+});
+
+// Guests who opened a fixed room's link before its host arrived: they wait
+// here (room id -> socketId -> { name, avatar }) until the host joins, then
+// knock like anyone else (the host lets them in).
+const awaitingHost = new Map();
+
 // --- Watching a recording (the ?rec=<id> page, RecordingPage.jsx) -----------
 // Recordings are stored in R2, but every viewer gets them from here — some
 // networks can't reach R2 directly. The long random id in the link is the
@@ -291,7 +425,7 @@ app.post('/feedback', async (req, res) => {
   const now = Date.now();
   const recent = (feedbackHits.get(req.ip) ?? []).filter((t) => now - t < FEEDBACK_LIMIT.perMs);
   if (recent.length >= FEEDBACK_LIMIT.max) {
-    return res.status(429).json({ ok: false, error: 'Too many reviews — try again later.' });
+    return res.status(429).json({ ok: false, error: 'Too many reviews. Try again later.' });
   }
   recent.push(now);
   feedbackHits.set(req.ip, recent);
@@ -348,7 +482,7 @@ app.post('/feedback', async (req, res) => {
   } catch (err) {
     // Keep the review even if the email failed.
     console.error('[feedback] email failed:', err.message, `\n${subject}\n${text}`);
-    res.status(502).json({ ok: false, error: 'Couldn’t send right now — please try again.' });
+    res.status(502).json({ ok: false, error: 'Couldn’t send right now. Please try again.' });
   }
 });
 
@@ -477,9 +611,10 @@ function endRecording(room) {
   });
 }
 
-// A line from Listen itself in the chat ("Sam started recording"), with the
-// recording's id so the chat can link to it.
-function postNote(roomId, room, text, recording) {
+// A line from Turnly itself in the chat ("Sam started recording"), with the
+// recording's id so the chat can link to it. `extra` adds other fields
+// (`question`: the id of a question it announces).
+function postNote(roomId, room, text, recording, extra = {}) {
   const message = {
     id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     from: null,
@@ -488,9 +623,159 @@ function postNote(roomId, room, text, recording) {
     kind: 'note',
     text,
     recording,
+    ...extra,
   };
   addChatMessage(room, message);
   io.to(roomId).emit(EVENTS.CHAT_MESSAGE, message);
+}
+
+// --- Breakout rooms ---------------------------------------------------------
+// The main room's breakout rooms are "<main>~1", "<main>~2", … Moving
+// someone (relocate) keeps their seat: ticket, mic / camera, Cloudflare
+// media (rooms.js moveParticipant). Their own socket is told (EVENTS.MOVED)
+// and switches Socket.IO rooms; a dropped one finds its seat on resume.
+
+// main room id -> { timers: [...] } (the 1-minute warning and the end)
+const breakoutTimers = new Map();
+const BREAKOUT_MAX_ROOMS = 20;
+
+function relocate(socketId, fromId, toId, create) {
+  const fromRoom = getRoom(fromId);
+  const wasRecorder = fromRoom?.recording?.recorderId === socketId;
+  const to = moveParticipant(fromId, toId, socketId, create);
+  if (!to) return null;
+  // The main room's recorder went off to a breakout: someone else records.
+  if (wasRecorder && getRoom(fromId)) handOver(fromId, getRoom(fromId));
+  const sock = io.sockets.sockets.get(socketId);
+  if (sock) {
+    sock.leave(fromId);
+    sock.join(toId);
+    sock.data.setRoom?.(toId);
+    sock.emit(EVENTS.MOVED, {
+      selfId: socketId,
+      state: snapshot(toId),
+      chat: [...to.chat],
+      ticket: ticketOf(to, socketId),
+    });
+  }
+  return to;
+}
+
+// What a breakout room is made of, if it has to be (re)created: the first
+// person sent there, or the next one after it emptied out.
+function breakoutRoomInfo(mainId, k) {
+  const main = getRoom(mainId);
+  return {
+    title: `${main?.title || mainId} · Room ${k + 1}`,
+    breakoutOf: { main: mainId, name: `Room ${k + 1}`, endsAt: main?.breakouts?.endsAt ?? null },
+  };
+}
+
+// Split everyone but the host and co-host into `count` rooms: at random, or
+// as the host chose (`assign`: { personId: room index }; anyone left out
+// stays in the main room).
+function startBreakouts(mainId, count, minutes, assign = null) {
+  const main = getRoom(mainId);
+  const people = Object.keys(main.participants).filter(
+    (id) => id !== main.hostId && id !== main.cohostId,
+  );
+  for (let i = people.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [people[i], people[j]] = [people[j], people[i]];
+  }
+  // The host's choice keeps every room they asked for (some may start empty);
+  // a shuffle never makes more rooms than people.
+  const n = assign
+    ? Math.max(1, Math.min(count, BREAKOUT_MAX_ROOMS))
+    : Math.max(1, Math.min(count, people.length, BREAKOUT_MAX_ROOMS));
+  const endsAt = minutes > 0 ? Date.now() + minutes * 60_000 : null;
+  const ids = Array.from({ length: n }, (_, i) => `${mainId}~${i + 1}`);
+  main.breakouts = { ids, endsAt };
+  people.forEach((id, i) => {
+    const k = assign ? assign[id] : i % n;
+    if (!Number.isInteger(k) || k < 0 || k >= n) return; // stays in the main room
+    relocate(id, mainId, ids[k], breakoutRoomInfo(mainId, k));
+  });
+  for (const [i, id] of ids.entries()) {
+    const room = getRoom(id);
+    if (!room) continue;
+    postNote(
+      id,
+      room,
+      endsAt
+        ? `Welcome to Room ${i + 1}! You'll all go back to the main room in ${minutes} minutes.`
+        : `Welcome to Room ${i + 1}! The host will bring everyone back.`,
+      null,
+    );
+    broadcastRoom(id);
+  }
+  // Timers: a 1-minute warning, then everyone back.
+  const timers = [];
+  if (endsAt) {
+    if (minutes > 1) {
+      timers.push(
+        setTimeout(
+          () => {
+            for (const id of ids) {
+              const room = getRoom(id);
+              if (room) postNote(id, room, '⏳ 1 minute left, then back to the main room.', null);
+            }
+          },
+          (minutes - 1) * 60_000,
+        ),
+      );
+    }
+    timers.push(setTimeout(() => endBreakouts(mainId), minutes * 60_000));
+  }
+  breakoutTimers.set(mainId, { timers });
+  console.log(`[room ${mainId}] breakouts: ${people.length} people into ${n} rooms`);
+}
+
+// The host moved one person: into room `to` (index), or -1 = the main room.
+// They can be in the main room (a late joiner, or left out) or any breakout.
+function moveBreakoutPerson(mainId, personId, to, byName) {
+  const main = getRoom(mainId);
+  const ids = main?.breakouts?.ids ?? [];
+  const fromId = [mainId, ...ids].find((id) => getRoom(id)?.participants[personId]);
+  if (!fromId) return 'They’re not in this meeting any more.';
+  if (personId === main.hostId || personId === main.cohostId) {
+    return 'The host and cohost stay in the main room.';
+  }
+  const toId = to === -1 ? mainId : ids[to];
+  if (!toId) return 'Pick a room.';
+  if (toId === fromId) return null; // already there
+  const name = getRoom(fromId).participants[personId].name;
+  const target = relocate(
+    personId,
+    fromId,
+    toId,
+    to === -1 ? { title: main.title ?? '' } : breakoutRoomInfo(mainId, to),
+  );
+  if (!target) return 'Couldn’t move them. Try again.';
+  postNote(toId, target, `🧩 ${byName} moved ${name} here.`, null);
+  for (const id of new Set([fromId, toId, mainId])) if (getRoom(id)) broadcastRoom(id);
+  return null;
+}
+
+// Everyone back to the main room.
+function endBreakouts(mainId) {
+  for (const t of breakoutTimers.get(mainId)?.timers ?? []) clearTimeout(t);
+  breakoutTimers.delete(mainId);
+  const main = getRoom(mainId);
+  const ids = main?.breakouts?.ids ?? [];
+  const title = main?.title ?? '';
+  for (const id of ids) {
+    const room = getRoom(id);
+    for (const pid of Object.keys(room?.participants ?? {})) {
+      relocate(pid, id, mainId, { title });
+    }
+  }
+  const back = getRoom(mainId);
+  if (back) {
+    back.breakouts = null;
+    broadcastRoom(mainId);
+  }
+  console.log(`[room ${mainId}] breakouts ended`);
 }
 
 // Per-socket rate limits (see `allow` in the connection handler). Generous for
@@ -517,6 +802,20 @@ const RATE_LIMITS = {
   [EVENTS.REC_STOP]: { max: 5, perMs: 60_000 },
   [EVENTS.REC_CHUNK]: { max: 40, perMs: 10_000 },
   [EVENTS.DEVICE]: { max: 10, perMs: 60_000 },
+  // Reactions, questions, polls, the report.
+  [EVENTS.REACT]: { max: 15, perMs: 10_000 },
+  [EVENTS.Q_ASK]: { max: 5, perMs: 30_000 },
+  [EVENTS.Q_VOTE]: { max: 30, perMs: 10_000 },
+  [EVENTS.Q_CLOSE]: { max: 20, perMs: 10_000 },
+  [EVENTS.POLL_START]: { max: 5, perMs: 30_000 },
+  [EVENTS.POLL_VOTE]: { max: 20, perMs: 10_000 },
+  [EVENTS.POLL_END]: { max: 10, perMs: 10_000 },
+  [EVENTS.POLL_CLEAR]: { max: 10, perMs: 10_000 },
+  [EVENTS.REPORT_GET]: { max: 10, perMs: 10_000 },
+  [EVENTS.BREAKOUT_START]: { max: 5, perMs: 30_000 },
+  [EVENTS.BREAKOUT_END]: { max: 5, perMs: 30_000 },
+  [EVENTS.BREAKOUT_MOVE]: { max: 30, perMs: 30_000 },
+  [EVENTS.BREAKOUT_MESSAGE]: { max: 10, perMs: 30_000 },
 };
 
 // Last line of defence: log anything that slipped past the handler wrapper
@@ -580,6 +879,10 @@ io.on('connection', (socket) => {
   // Remember which room this socket joined so disconnect can clean up and,
   // when the host leaves, we can tell the room who was promoted.
   let joinedRoomId = null;
+  // Breakout rooms move people between rooms (relocate, above).
+  socket.data.setRoom = (id) => {
+    joinedRoomId = id;
+  };
 
   // Every event goes through `on` instead of `socket.on`. Anyone can send
   // anything, so a handler must never throw: an exception inside a Socket.IO
@@ -624,16 +927,40 @@ io.on('connection', (socket) => {
   }
 
   // Wait for the TURN login (instant after the first few seconds of uptime).
-  on(EVENTS.JOIN_ROOM, (payload, ack) => iceReady.then(() => handleJoin(payload, ack)), {
-    max: 5,
-    perMs: 10_000,
-  });
+  // (A fixed room's name is looked up first — see handleJoin.)
+  on(
+    EVENTS.JOIN_ROOM,
+    async (payload, ack) => {
+      await iceReady;
+      const asked = String(payload.roomId || '')
+        .trim()
+        .toLowerCase();
+      let record = null;
+      try {
+        // (a fixed room's name, or a scheduled meeting's code)
+        record = mightBeClaimed(asked) ? await lookupName(asked) : null;
+      } catch (err) {
+        console.error('[names] lookup failed:', err.message);
+        return ack?.({ ok: false, error: 'Couldn’t open that room. Try again.' });
+      }
+      handleJoin(payload, ack, record);
+    },
+    { max: 5, perMs: 10_000 },
+  );
 
-  function handleJoin({ roomId, name, avatar, title } = {}, ack) {
+  // `record`: the claimed name, if the room is a fixed one (names.js).
+  function handleJoin({ roomId, name, avatar, title, hostKey } = {}, ack, record = null) {
     if (socket.disconnected) return; // left while we waited
-    const id = String(roomId || '')
-      .trim()
-      .slice(0, 64);
+    // A fixed room's id is its name, always in lowercase.
+    const id = record
+      ? record.name
+      : String(roomId || '')
+          .trim()
+          .slice(0, 64);
+    // Joined with the name's host key: the host, every time.
+    const owner = isHostKey(record, hostKey);
+    // Breakout rooms ("<main>~2") are only entered by being sent there.
+    if (id.includes('~')) return ack?.({ ok: false, error: 'That meeting isn’t available.' });
     if (!id) {
       socket.emit(EVENTS.ERROR, { message: 'roomId is required' });
       ack?.({ ok: false, error: 'roomId is required' });
@@ -649,7 +976,18 @@ io.on('connection', (socket) => {
     // moderator. Waiters aren't in the Socket.IO room, so they get nothing
     // until they're admitted.
     const existing = getRoom(id);
-    if (existing && existing.locked && Object.keys(existing.participants).length > 0) {
+
+    // A fixed room whose host hasn't arrived: wait for them.
+    if (record && !owner && !existing) {
+      joinedRoomId = id;
+      if (!awaitingHost.has(id)) awaitingHost.set(id, new Map());
+      awaitingHost.get(id).set(socket.id, { name, avatar });
+      console.log(`[room ${id}] ~ ${socket.id} waiting for the host to arrive`);
+      ack?.({ ok: true, waiting: true, forHost: true, selfId: socket.id, iceServers });
+      return;
+    }
+
+    if (!owner && existing && existing.locked && Object.keys(existing.participants).length > 0) {
       joinedRoomId = id;
       addWaiting(existing, socket.id, name, avatar);
       console.log(`[room ${id}] ~ ${socket.id} knocking (${existing.waiting[socket.id].name})`);
@@ -660,7 +998,23 @@ io.on('connection', (socket) => {
 
     joinedRoomId = id;
     socket.join(id);
-    const room = addParticipant(id, socket.id, name, avatar, title);
+    // (A fixed room is always titled with the name it was claimed under.)
+    const room = addParticipant(
+      id,
+      socket.id,
+      name,
+      avatar,
+      record ? record.title || title : title,
+    );
+    if (owner) {
+      makeHost(room, socket.id); // even if a guest got here first
+      // Anyone who was waiting for the host now knocks (the host lets them in).
+      const early = awaitingHost.get(id);
+      awaitingHost.delete(id);
+      for (const [sid, who] of early ?? []) {
+        if (io.sockets.sockets.has(sid)) addWaiting(room, sid, who.name, who.avatar);
+      }
+    }
     console.log(
       `[room ${id}] + ${socket.id} (${room.participants[socket.id].name})` +
         `${room.hostId === socket.id ? ' [host]' : ''} — ${Object.keys(room.participants).length} in room`,
@@ -1224,6 +1578,178 @@ io.on('connection', (socket) => {
     });
   });
 
+  // --- Reactions, questions, polls, the meeting report (activities.js) -----
+
+  // The room + me, if I'm a full participant (not knocking).
+  function myRoom(ack) {
+    const room = getRoom(joinedRoomId);
+    if (!room?.participants[socket.id]) {
+      ack?.({ ok: false, error: 'not in a room' });
+      return null;
+    }
+    return room;
+  }
+
+  // 👍 👏 🙏 … floats up for everyone. Not stored.
+  on(EVENTS.REACT, ({ emoji } = {}) => {
+    const room = myRoom();
+    if (!room || !REACTIONS.includes(emoji)) return;
+    io.to(joinedRoomId).emit(EVENTS.REACTION, {
+      id: socket.id,
+      name: room.participants[socket.id].name,
+      emoji,
+    });
+  });
+
+  on(EVENTS.Q_ASK, ({ text } = {}, ack) => {
+    const room = myRoom(ack);
+    if (!room) return;
+    const q = askQuestion(room, socket.id, room.participants[socket.id].name, text);
+    if (!q) return ack?.({ ok: false, error: 'Write a question first.' });
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+    // Everyone hears about it: a line in the chat (desktop also pops it up
+    // in the corner), with "View" opening the questions.
+    postNote(joinedRoomId, room, `${q.name} asked: “${q.text}”`, null, { question: q.id });
+  });
+
+  on(EVENTS.Q_VOTE, ({ id } = {}, ack) => {
+    const room = myRoom(ack);
+    if (!room) return;
+    if (!voteQuestion(room, socket.id, id)) return ack?.({ ok: false, error: 'not found' });
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  // A moderator closes any question (answered / dismissed); anyone may
+  // withdraw their own.
+  on(EVENTS.Q_CLOSE, ({ id } = {}, ack) => {
+    const room = myRoom(ack);
+    if (!room) return;
+    if (!isModerator() && askerOf(room, id) !== socket.id) {
+      return ack?.({ ok: false, error: 'only a moderator can do that' });
+    }
+    if (!closeQuestion(room, id)) return ack?.({ ok: false, error: 'not found' });
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  on(EVENTS.POLL_START, ({ question, options } = {}, ack) => {
+    const room = requireModeratorRoom(ack);
+    if (!room) return;
+    const poll = startPoll(room, room.participants[socket.id].name, question, options);
+    if (!poll)
+      return ack?.({ ok: false, error: 'A poll needs a question and at least two answers.' });
+    console.log(`[room ${joinedRoomId}] poll started by ${socket.id}`);
+    // A line in the chat too, so everyone notices ("Ada started a poll: …").
+    postNote(joinedRoomId, room, `${poll.by} started a poll: ${poll.question}`, null);
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  on(EVENTS.POLL_VOTE, ({ id, option } = {}, ack) => {
+    const room = myRoom(ack);
+    if (!room) return;
+    if (!votePoll(room, socket.id, id, option)) return ack?.({ ok: false, error: 'poll closed' });
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  on(EVENTS.POLL_END, ({ id } = {}, ack) => {
+    const room = requireModeratorRoom(ack);
+    if (!room) return;
+    if (!endPoll(room, id)) return ack?.({ ok: false, error: 'not found' });
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  on(EVENTS.POLL_CLEAR, ({ id } = {}, ack) => {
+    const room = requireModeratorRoom(ack);
+    if (!room) return;
+    if (!clearPoll(room, id)) return ack?.({ ok: false, error: 'not found' });
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  // Moderators: who came, who spoke and for how long (see meetingReport).
+  on(EVENTS.REPORT_GET, (_payload, ack) => {
+    const room = requireModeratorRoom(ack);
+    if (!room) return;
+    ack?.({ ok: true, report: meetingReport(room) });
+  });
+
+  // --- Breakout rooms (see EVENTS.BREAKOUT_* and startBreakouts above) ------
+  on(EVENTS.BREAKOUT_START, ({ rooms: count, minutes, assign } = {}, ack) => {
+    const room = requireModeratorRoom(ack);
+    if (!room) return;
+    if (room.breakoutOf) return ack?.({ ok: false, error: 'Already in a breakout room.' });
+    if (room.breakouts) return ack?.({ ok: false, error: 'Breakout rooms are already running.' });
+    const n = Number(count);
+    const mins = Number(minutes);
+    const others = Object.keys(room.participants).filter(
+      (id) => id !== room.hostId && id !== room.cohostId,
+    );
+    if (!Number.isInteger(n) || n < 1 || n > BREAKOUT_MAX_ROOMS) {
+      return ack?.({ ok: false, error: 'Pick how many rooms.' });
+    }
+    if (!Number.isInteger(mins) || mins < 0 || mins > 180) {
+      return ack?.({ ok: false, error: 'Pick how long.' });
+    }
+    // The host chose the rooms: keep only real people and real rooms.
+    let chosen = null;
+    if (assign && typeof assign === 'object') {
+      chosen = {};
+      for (const id of others) {
+        const k = assign[id];
+        if (Number.isInteger(k) && k >= 0 && k < n) chosen[id] = k;
+      }
+      if (!Object.keys(chosen).length) {
+        return ack?.({ ok: false, error: 'Put at least one person in a room.' });
+      }
+    } else if (others.length < 2) {
+      return ack?.({ ok: false, error: 'You need at least 2 other people.' });
+    }
+    startBreakouts(joinedRoomId, n, mins, chosen);
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  on(EVENTS.BREAKOUT_END, (_payload, ack) => {
+    const room = requireModeratorRoom(ack);
+    if (!room) return;
+    if (!room.breakouts) return ack?.({ ok: false, error: 'No breakout rooms running.' });
+    endBreakouts(joinedRoomId);
+    ack?.({ ok: true });
+  });
+
+  on(EVENTS.BREAKOUT_MOVE, ({ id, to } = {}, ack) => {
+    const room = requireModeratorRoom(ack);
+    if (!room) return;
+    if (!room.breakouts) return ack?.({ ok: false, error: 'No breakout rooms running.' });
+    const k = Number(to);
+    if (typeof id !== 'string' || !Number.isInteger(k) || k < -1) {
+      return ack?.({ ok: false, error: 'Pick a room.' });
+    }
+    const error = moveBreakoutPerson(joinedRoomId, id, k, room.participants[socket.id].name);
+    ack?.(error ? { ok: false, error } : { ok: true });
+  });
+
+  on(EVENTS.BREAKOUT_MESSAGE, ({ text } = {}, ack) => {
+    const room = requireModeratorRoom(ack);
+    if (!room) return;
+    const body = String(text ?? '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 300);
+    if (!body || !room.breakouts) return ack?.({ ok: false, error: 'Nothing to send.' });
+    const from = room.participants[socket.id].name;
+    for (const id of room.breakouts.ids) {
+      const r = getRoom(id);
+      if (r) postNote(id, r, `📣 ${from}: ${body}`, null);
+    }
+    ack?.({ ok: true });
+  });
+
   // --- Recording (see EVENTS.REC_* / DEVICE, and the helpers above) ---------
 
   // Laptop or phone, and whether this browser can record at all.
@@ -1250,7 +1776,7 @@ io.on('connection', (socket) => {
     } catch (err) {
       room.recording = null;
       console.error(`[room ${roomId}] couldn't start recording:`, err.message);
-      return ack?.({ ok: false, error: 'Couldn’t start recording — please try again.' });
+      return ack?.({ ok: false, error: 'Couldn’t start recording. Please try again.' });
     }
     // Stopped, or everyone left, while storage was answering.
     if (getRoom(roomId) !== room || !room.recording) {
@@ -1514,6 +2040,13 @@ io.on('connection', (socket) => {
       socket.to(joinedRoomId).emit(EVENTS.CHAT_TYPING, { id: socket.id, typing: false });
     }
 
+    // Waiting for a fixed room's host to arrive? Just stop waiting.
+    const early = awaitingHost.get(joinedRoomId);
+    if (early?.delete(socket.id)) {
+      if (!early.size) awaitingHost.delete(joinedRoomId);
+      return;
+    }
+
     // Was this socket only knocking? Drop it from the waiting list and refresh
     // the moderators' view.
     const waitingRoom = removeWaiting(socket.id);
@@ -1568,3 +2101,6 @@ server.listen(PORT, () => {
 checkStorage();
 recordings.sweep();
 setInterval(() => recordings.sweep(), 60 * 60 * 1000).unref();
+// …and one-off scheduled meetings, a day after they end.
+sweepNames();
+setInterval(() => sweepNames(), 60 * 60 * 1000).unref();

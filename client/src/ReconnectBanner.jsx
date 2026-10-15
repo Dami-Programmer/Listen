@@ -32,7 +32,7 @@ export default function ReconnectBanner({ onLeave }) {
       <span className="reconnect-text">
         <strong>You lost your connection</strong>
         <span>
-          {online ? 'Trying to reconnect…' : 'Check your internet — we’ll rejoin when it’s back.'}
+          {online ? 'Trying to reconnect…' : 'Check your internet. We’ll rejoin when it’s back.'}
         </span>
       </span>
       <button type="button" className="reconnect-leave" onClick={onLeave}>

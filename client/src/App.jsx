@@ -11,10 +11,10 @@
 // Remove / Grant / Revoke and queue reordering — all in <CallView/>. Every
 // button here is advisory: the server re-checks that the caller is the host.
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { EVENTS, MODES, RECONNECT_GRACE_MS, REJOIN_WINDOW_MS, ROLES } from '@listen/shared';
 import { socket } from './socket.js';
-import { useCall } from './webrtc.js';
+import { strongNoiseSupported, useCall } from './webrtc.js';
 import VideoTile from './VideoTile.jsx';
 import ChatPanel from './ChatPanel.jsx';
 import PreJoin from './PreJoin.jsx';
@@ -28,6 +28,7 @@ import Logo from './Logo.jsx';
 import { PipView } from './Pip.jsx';
 import { usePip } from './usePip.js';
 import { newMeetingCode } from './meeting.js';
+import { hostKeyFor, readRoomFromUrl } from './roomNames.js';
 import MobileCall from './MobileCall.jsx';
 import useIsMobile from './useIsMobile.js';
 import { playKnock } from './knockSound.js';
@@ -37,7 +38,16 @@ import AloneReminder from './AloneReminder.jsx';
 import Tour from './Tour.jsx';
 import { hasSeenTour, useTour } from './useTour.js';
 import TourButton from './TourButton.jsx';
+import NoiseToggle from './NoiseToggle.jsx';
+import { BreakoutBanner, BreakoutPanel } from './Breakouts.jsx';
+import TabSwap from './TabSwap.jsx';
 import RecBadge from './RecBadge.jsx';
+import NextUp from './NextUp.jsx';
+import { ReactionButton, ReactionsLayer } from './Reactions.jsx';
+import QuestionsPanel from './QuestionsPanel.jsx';
+import PollPanel from './PollPanel.jsx';
+import { ReportDialog } from './MeetingReport.jsx';
+import { fetchReport } from './report.js';
 import { canRecord, isPhoneOrTablet, useRecorder } from './recorder.js';
 
 // How long the "You left the meeting" screen offers Rejoin — the same minute
@@ -98,7 +108,7 @@ const ROLE_RANK = {
 
 const ROLE_LABEL = {
   [ROLES.HOST]: '★ host',
-  [ROLES.COHOST]: '★ co-host',
+  [ROLES.COHOST]: '★ cohost',
   [ROLES.SPEAKER]: 'speaker',
   [ROLES.LISTENER]: 'listener',
 };
@@ -108,10 +118,8 @@ function RolePill({ role }) {
   return <span className={`pill pill-${role}`}>{ROLE_LABEL[role] ?? role}</span>;
 }
 
-// Room id lives in the URL (?room=…). No accounts, no persistence.
-function readRoomFromUrl() {
-  return new URLSearchParams(window.location.search).get('room') ?? '';
-}
+// The room lives in the URL (?room=…, or /name for a fixed room — see
+// roomNames.js). No accounts.
 
 export default function App() {
   const [roomId, setRoomId] = useState(readRoomFromUrl);
@@ -132,6 +140,8 @@ export default function App() {
   // true while we're in the locked room's waiting area, before a moderator lets
   // us in.
   const [waiting, setWaiting] = useState(false);
+  // ...and the room is a fixed one whose host isn't there yet.
+  const [waitingForHost, setWaitingForHost] = useState(false);
   // Safety timers so a typer disappears even if their "stopped" ping is lost.
   const typerTimersRef = useRef({});
   // Set when the host kicks us OR turns us away at the door — shown on the join
@@ -165,6 +175,8 @@ export default function App() {
   const [leftMeeting, setLeftMeeting] = useState('');
   // Its latest recording, if it was recorded — the screen links to it.
   const [leftRecording, setLeftRecording] = useState(null);
+  // The meeting report, if we were the host / co-host (see CallView's leave).
+  const [leftReport, setLeftReport] = useState(null);
 
   // --- the Join button while the server answers ---------------------------
   // true from the Join click until the server answers ("Joining…"), and
@@ -272,6 +284,14 @@ export default function App() {
       setWaiting(false);
       setJoined(true);
     }
+    // Breakout rooms: the server moved us into another room (EVENTS.MOVED).
+    // Same call screen — just a new room's people, chat and ticket.
+    function onMoved({ selfId: id, state: snap, chat: history, ticket }) {
+      ticketRef.current = ticket ?? null;
+      setSelfId(id);
+      setState(snap);
+      setChat(history ?? []);
+    }
     function onDenied() {
       setWaiting(false);
       setRemovedNote('The host didn’t let you into the room.');
@@ -336,6 +356,7 @@ export default function App() {
     socket.on(EVENTS.ERROR, onRoomError);
     socket.on(EVENTS.REMOVED, onRemoved);
     socket.on(EVENTS.ADMITTED, onAdmitted);
+    socket.on(EVENTS.MOVED, onMoved);
     socket.on(EVENTS.DENIED, onDenied);
     socket.on(EVENTS.CHAT_MESSAGE, onChatMessage);
     socket.on(EVENTS.CHAT_EDITED, onChatEdited);
@@ -349,6 +370,7 @@ export default function App() {
       socket.off(EVENTS.ERROR, onRoomError);
       socket.off(EVENTS.REMOVED, onRemoved);
       socket.off(EVENTS.ADMITTED, onAdmitted);
+      socket.off(EVENTS.MOVED, onMoved);
       socket.off(EVENTS.DENIED, onDenied);
       socket.off(EVENTS.CHAT_MESSAGE, onChatMessage);
       socket.off(EVENTS.CHAT_EDITED, onChatEdited);
@@ -398,7 +420,14 @@ export default function App() {
     if (!socket.connected) socket.connect();
     socket.emit(
       EVENTS.JOIN_ROOM,
-      { roomId: id, name: name.trim(), avatar, title: title.trim() },
+      {
+        roomId: id,
+        name: name.trim(),
+        avatar,
+        title: title.trim(),
+        // A fixed room this device owns: its host key (roomNames.js).
+        hostKey: hostKeyFor(id) ?? undefined,
+      },
       (ack) => {
         // An answer to an attempt we already gave up on — ignore it.
         if (joinAttemptRef.current !== attempt) return;
@@ -406,7 +435,9 @@ export default function App() {
         if (ack?.ok) setIceServers(ack.iceServers ?? null);
         if (ack?.ok && ack.waiting) {
           // Locked room — sit in the lobby until a moderator admits us.
+          // (`forHost`: a fixed room whose host hasn't arrived yet.)
           setSelfId(ack.selfId);
+          setWaitingForHost(Boolean(ack.forHost));
           setWaiting(true);
         } else if (ack?.ok) {
           ticketRef.current = ack.ticket ?? null; // our way back in after a drop
@@ -478,6 +509,7 @@ export default function App() {
     // Which meeting this was — shown with their review, if they write one.
     setLeftMeeting(state?.title || state?.roomId || roomId);
     // Recorded? The chat's "… started recording" notes carry the id.
+    setLeftReport(devices?.report ?? null);
     setLeftRecording(
       state?.recording?.id ??
         chat.filter((m) => m.kind === 'note' && m.recording).at(-1)?.recording ??
@@ -528,11 +560,14 @@ export default function App() {
     setInvited(false);
     const url = new URL(window.location.href);
     url.searchParams.delete('room');
+    // back to the app's home screen (not the landing page at /), dropping a
+    // fixed room's short /name form too
+    url.pathname = '/start';
     window.history.replaceState({}, '', url);
   }
 
   if (waiting) {
-    return <WaitingScreen roomId={roomId} onCancel={handleLeave} />;
+    return <WaitingScreen roomId={roomId} forHost={waitingForHost} onCancel={handleLeave} />;
   }
 
   if (left) {
@@ -545,6 +580,7 @@ export default function App() {
         name={name.trim()}
         meeting={leftMeeting}
         recordingId={leftRecording}
+        report={leftReport}
       />
     );
   }
@@ -589,7 +625,12 @@ export default function App() {
 }
 
 // --- the locked-room lobby -----------------------------------------------
-function WaitingScreen({ roomId, onCancel }) {
+// `forHost`: a fixed room whose host hasn't arrived — "Waiting for the host
+// to start". (When they arrive, it's the usual knock: they let you in.)
+function WaitingScreen({ roomId, forHost = false, onCancel }) {
+  const line = forHost
+    ? 'Waiting for the host to start this meeting.'
+    : 'Waiting for the host to let you in.';
   const isMobile = useIsMobile();
   // Phones: same white page as the mobile lobby.
   if (isMobile) {
@@ -601,8 +642,8 @@ function WaitingScreen({ roomId, onCancel }) {
             <i />
             <i />
           </div>
-          <h1>Knock knock 👋</h1>
-          <p>Waiting for the host to let you in.</p>
+          <h1>{forHost ? 'Almost there 👋' : 'Knock knock 👋'}</h1>
+          <p>{line}</p>
           <code>{roomId}</code>
           <button type="button" className="pjm-wait-cancel" onClick={onCancel}>
             Cancel
@@ -618,10 +659,10 @@ function WaitingScreen({ roomId, onCancel }) {
 
       <div className="card join" aria-live="polite">
         <p>
-          <strong>Knock knock 👋</strong>
+          <strong>{forHost ? 'Almost there 👋' : 'Knock knock 👋'}</strong>
         </p>
         <p className="tagline">
-          Waiting for the host to let you into <code>{roomId}</code>…
+          {line} <code>{roomId}</code>
         </p>
         <button className="ghost" onClick={onCancel}>
           Cancel
@@ -670,7 +711,8 @@ function useExitable() {
 }
 
 // --- the in-call screen ----------------------------------------------------
-function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rejoined }) {
+// (Exported for the landing page's live demo too — demo/DemoApp.jsx.)
+export function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rejoined }) {
   const participants = state?.participants ?? [];
   const isMobile = useIsMobile();
   // Side panel (chat, participants, moderation) — toggled by the chat button,
@@ -681,6 +723,14 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
   // it hangs off — used to close it on a click anywhere outside. It also
   // animates out (folds back up into its button).
   const people = useExitable();
+  // The side panel's tab: chat, questions or the poll.
+  const [panelTab, setPanelTab] = useState('chat');
+  // The meeting report pop-up (moderators).
+  const [reportOpen, setReportOpen] = useState(false);
+  const closeReport = useCallback(() => setReportOpen(false), []);
+  // The breakout rooms pop-up (moderators).
+  const [breakoutOpen, setBreakoutOpen] = useState(false);
+  const closeBreakout = useCallback(() => setBreakoutOpen(false), []);
   const peopleOpen = people.open && !people.closing;
   const { setClosing: setPeopleClosing } = people; // stable setter, safe for the effect below
   const peopleRef = useRef(null);
@@ -756,6 +806,8 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
     toggleCam,
     devices,
     switchDevice,
+    strongNoise,
+    setStrongNoise,
     startShare,
     presentStream,
     stopShare,
@@ -778,7 +830,13 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
 
   // Leave the call, telling <App/> how the mic and camera were — so if you
   // hit Rejoin on the "You left the meeting" screen, they come back the same.
-  const leave = () => onLeave({ micOn, camOn });
+  // A host / co-host also takes the meeting report along (shown on the "You
+  // left" screen — once they're gone they can't ask for it any more). At
+  // most a moment's wait; without an answer they just leave.
+  const leave = async () => {
+    const report = isModerator ? await fetchReport(1500) : null;
+    onLeave({ micOn, camOn, report });
+  };
 
   // The floating mini-call shown while you're on another tab (Pip.jsx).
   const { pipWin } = usePip();
@@ -819,6 +877,8 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
   // Phase 5 — the speaker queue, straight from the snapshot (socketIds, oldest
   // first). The server owns it; we only render it.
   const queue = state?.queue ?? [];
+  // Open questions, most votes first (QuestionsPanel).
+  const questions = state?.questions ?? [];
   const myQueuePos = queue.indexOf(selfId); // -1 when my hand isn't raised
   const handRaised = myQueuePos !== -1;
 
@@ -1033,9 +1093,9 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
   const makeCohost = (p) => emit(EVENTS.PROMOTE_COHOST, { targetId: p.id });
   async function dropCohost(p) {
     const ok = await confirmDialog({
-      title: `Remove ${p.name} as co-host?`,
+      title: `Remove ${p.name} as cohost?`,
       message: 'They stay in the call.',
-      confirmLabel: 'Remove co-host',
+      confirmLabel: 'Remove cohost',
       danger: true,
       person: p,
     });
@@ -1246,7 +1306,7 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
     isHost && {
       target: '.cs-mode-badge',
       title: 'Open or Moderated',
-      text: 'Open: everyone can talk. Moderated: people listen until you or your co-host give them the floor.',
+      text: 'Open: everyone can talk. Moderated: people listen until you or your cohost give them the floor.',
     },
     isModerator && {
       target: '.cs-door-btn',
@@ -1350,6 +1410,8 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
             toggleCam,
             devices,
             switchDevice,
+            strongNoise,
+            setStrongNoise,
             startShare: handleStartShare,
             presentStream: handlePresent,
             stopShare,
@@ -1362,6 +1424,7 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
             recording,
             startRecording,
             stopRecording,
+            openBreakouts: () => setBreakoutOpen(true),
             act: {
               changeMode,
               toggleLock,
@@ -1384,6 +1447,8 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
         />
         <ConfirmHost />
         {aloneReminder}
+        <ReactionsLayer />
+        {breakoutOpen && <BreakoutPanel state={state} onClose={closeBreakout} />}
       </>
     );
   }
@@ -1414,6 +1479,11 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
             <TourButton onClick={tour.start} />
             {/* "● Recording 12:34" for everyone while it's being recorded */}
             {recording && <RecBadge recording={recording} />}
+            {/* breakout rooms: where you are / that they're running */}
+            <BreakoutBanner
+              state={state}
+              onManage={isModerator ? () => setBreakoutOpen(true) : undefined}
+            />
             {isHost && (
               <ModeSwitch
                 moderated={moderated}
@@ -1557,6 +1627,9 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
 
           {/* Whoever holds the floor gets "Pass the mic" right on the stage —
               faded until hovered, so it never gets in the way of the video. */}
+          {/* Moderated room: who's next in line for the floor. */}
+          <NextUp queue={queue} participants={participants} selfId={selfId} moderated={moderated} />
+
           {canPassMic && (
             <button
               className="cs-pass-mic"
@@ -1575,7 +1648,7 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
             <button
               className={`cs-door-btn${locked ? ' on' : ''}`}
               onClick={toggleLock}
-              aria-label={locked ? 'Door locked — click to open' : 'Door open — click to lock'}
+              aria-label={locked ? 'Door locked. Click to open' : 'Door open. Click to lock'}
               title={
                 locked
                   ? 'Door locked: new people must be admitted'
@@ -1597,7 +1670,14 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
                 {camOn ? <Cam /> : <CamOff />}
               </button>
             </DevicePicker>
-            <DevicePicker kind="audio" current={devices.audio} onSwitch={switchDevice}>
+            <DevicePicker
+              kind="audio"
+              current={devices.audio}
+              onSwitch={switchDevice}
+              extra={
+                strongNoiseSupported && <NoiseToggle on={strongNoise} onChange={setStrongNoise} />
+              }
+            >
               <button
                 onClick={toggleMic}
                 disabled={isListener}
@@ -1630,6 +1710,8 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
                 <Hand />
               </button>
             )}
+            {/* 👍 👏 🙏 … for everyone, without unmuting */}
+            <ReactionButton className="cs-react-btn" />
             <button
               className="cs-hangup"
               onClick={leave}
@@ -1855,6 +1937,31 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
                   </div>
                 )}
 
+                {isModerator && !state?.breakout && (
+                  <button
+                    type="button"
+                    className="cp-report-btn"
+                    onClick={() => {
+                      people.hide();
+                      setBreakoutOpen(true);
+                    }}
+                  >
+                    🧩 Breakout rooms: split into small groups
+                  </button>
+                )}
+                {isModerator && (
+                  <button
+                    type="button"
+                    className="cp-report-btn"
+                    onClick={() => {
+                      people.hide();
+                      setReportOpen(true);
+                    }}
+                  >
+                    📊 Meeting report: who spoke, and for how long
+                  </button>
+                )}
+
                 <div className="card">
                   <div className="row header">
                     <span>Participants ({participants.length})</span>
@@ -1882,11 +1989,11 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
                           {hostControls &&
                             (p.id === cohostId ? (
                               <button className="ghost small" onClick={() => dropCohost(p)}>
-                                Remove co-host
+                                Remove cohost
                               </button>
                             ) : (
                               <button className="ghost small" onClick={() => makeCohost(p)}>
-                                Make co-host
+                                Make cohost
                               </button>
                             ))}
                           {/* Moderated rooms run the mic through Grant / Revoke
@@ -1914,9 +2021,65 @@ function CallView({ state, chat, typers, selfId, onLeave, media, iceServers, rej
             )}
           </div>
 
-          <ChatPanel messages={chat} typers={typers} selfId={selfId} participants={participants} />
+          {/* Chat, questions and polls share the panel. */}
+          <div
+            className="cp-tabs"
+            role="tablist"
+            // the sliding highlight (see .cp-tabs::before): 3 options, which is on
+            style={{ '--n': 3, '--i': ['chat', 'qa', 'poll'].indexOf(panelTab) }}
+          >
+            {[
+              ['chat', 'Chat', 0],
+              ['qa', 'Questions', questions.length],
+              ['poll', 'Poll', state?.poll?.open ? '•' : 0],
+            ].map(([key, label, badge]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={panelTab === key}
+                className={`cp-tab${panelTab === key ? ' on' : ''}`}
+                onClick={() => setPanelTab(key)}
+              >
+                {label}
+                {badge ? <b className="cp-tab-badge">{badge}</b> : null}
+              </button>
+            ))}
+          </div>
+          {/* slides in from the side you switched to (TabSwap) */}
+          <TabSwap tab={panelTab} order={['chat', 'qa', 'poll']} className="cp-swap">
+            {panelTab === 'chat' && (
+              <ChatPanel
+                messages={chat}
+                typers={typers}
+                selfId={selfId}
+                participants={participants}
+                onOpenQuestions={() => setPanelTab('qa')}
+              />
+            )}
+            {panelTab === 'qa' && (
+              <div className="cp-tabbody">
+                <QuestionsPanel
+                  questions={questions}
+                  participants={participants}
+                  selfId={selfId}
+                  isModerator={isModerator}
+                  moderated={moderated}
+                />
+              </div>
+            )}
+            {panelTab === 'poll' && (
+              <div className="cp-tabbody">
+                <PollPanel poll={state?.poll ?? null} isModerator={isModerator} />
+              </div>
+            )}
+          </TabSwap>
         </aside>
       )}
+      {reportOpen && <ReportDialog onClose={closeReport} />}
+      {breakoutOpen && <BreakoutPanel state={state} onClose={closeBreakout} />}
+      {/* 👍 👏 🙏 … floating up from the bottom-left */}
+      <ReactionsLayer />
     </main>
   );
 }
@@ -1958,7 +2121,7 @@ function ModeSwitch({ moderated, onToggle }) {
       className={`cs-mode-badge${moderated ? ' moderated' : ''}`}
       onClick={onToggle}
       title="Switch room mode"
-      aria-label={`Room is ${moderated ? 'moderated' : 'open'} — click to switch`}
+      aria-label={`Room is ${moderated ? 'moderated' : 'open'}. Click to switch`}
     >
       <span ref={openRef} className={`cs-mode-label${moderated ? '' : ' active'}`}>
         Open

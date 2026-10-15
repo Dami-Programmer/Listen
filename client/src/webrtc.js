@@ -72,10 +72,32 @@ function constraintsFor(media) {
   };
 }
 
-// The deviceIds behind a stream's mic and camera tracks.
-function deviceIdsOf(stream) {
+// Strong noise reduction (noiseReduction.js): on or off, remembered on this
+// device. Off unless turned on — it costs a little battery.
+const STRONG_NOISE_KEY = 'turnly.strongNoise';
+function wantsStrongNoise() {
+  try {
+    return localStorage.getItem(STRONG_NOISE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+function saveStrongNoise(on) {
+  try {
+    localStorage.setItem(STRONG_NOISE_KEY, on ? '1' : '0');
+  } catch {
+    // not remembered past this visit
+  }
+}
+// Can this browser run it at all? (Web Audio worklets.)
+export const strongNoiseSupported =
+  typeof window !== 'undefined' && typeof window.AudioWorkletNode === 'function';
+
+// The deviceIds behind a stream's mic and camera tracks. `mic` is the mic
+// itself when what's sent is a cleaned copy (which has no device of its own).
+function deviceIdsOf(stream, mic = null) {
   return {
-    audio: stream.getAudioTracks()[0]?.getSettings().deviceId ?? '',
+    audio: (mic ?? stream.getAudioTracks()[0])?.getSettings().deviceId ?? '',
     video: stream.getVideoTracks()[0]?.getSettings().deviceId ?? '',
   };
 }
@@ -165,6 +187,36 @@ export function useCall({
   const roleAppliedRef = useRef(null);
   // Which mic / camera are live right now (deviceIds), for the settings menu.
   const [devices, setDevices] = useState({ audio: '', video: '' });
+
+  // Strong noise reduction. With it on, the stream's audio track is a
+  // CLEANED COPY of the mic (noiseReduction.js) — that's what's sent, muted,
+  // recorded and listened to for "speaking". `rawMicRef` is the mic itself;
+  // `cleanerRef` is the cleaning in use ({ track, stop }), if any.
+  const [strongNoise, setStrongNoiseState] = useState(wantsStrongNoise);
+  const strongRef = useRef(strongNoise);
+  const rawMicRef = useRef(null);
+  const cleanerRef = useRef(null);
+
+  // The track to send for this mic: a cleaned copy (strong noise reduction
+  // on) or the mic as it is. If the cleaning can't start (old browser,
+  // blocked download), the plain mic. It becomes the cleaning in use
+  // (cleanerRef) and hands back the PREVIOUS one, still running: stop that
+  // only once the new track has taken its place — a moment with no live mic
+  // in the stream would make the SFU stop sending your audio altogether.
+  const micOut = useCallback(async (mic) => {
+    const previous = cleanerRef.current;
+    let cleaner = null;
+    if (mic && strongRef.current && strongNoiseSupported) {
+      try {
+        const { cleanMic } = await import('./noiseReduction.js');
+        cleaner = await cleanMic(mic);
+      } catch (err) {
+        console.warn('[mic] strong noise reduction unavailable:', err);
+      }
+    }
+    cleanerRef.current = cleaner;
+    return { track: cleaner ? cleaner.track : mic, previous };
+  }, []);
 
   // Rebuild `peerMedia` from whatever streams the peers currently have, dropping
   // any stream whose tracks have all ended (e.g. a peer stopped screen sharing).
@@ -420,11 +472,23 @@ export function useCall({
           ? navigator.mediaDevices.getUserMedia(MEDIA_CONSTRAINTS)
           : Promise.reject(err),
       )
-      .then((stream) => {
+      .then(async (opened) => {
         if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
+          opened.getTracks().forEach((t) => t.stop());
           return;
         }
+        // Strong noise reduction on: send a cleaned copy of the mic.
+        const mic = opened.getAudioTracks()[0] ?? null;
+        rawMicRef.current = mic;
+        const out = mic ? (await micOut(mic)).track : null;
+        if (cancelled) {
+          opened.getTracks().forEach((t) => t.stop());
+          cleanerRef.current?.stop();
+          cleanerRef.current = null;
+          return;
+        }
+        const stream =
+          out && out !== mic ? new MediaStream([out, ...opened.getVideoTracks()]) : opened;
         const prefs = mediaRef.current;
         stream.getAudioTracks().forEach((t) => (t.enabled = prefs?.micOn !== false));
         stream.getVideoTracks().forEach((t) => {
@@ -438,7 +502,7 @@ export function useCall({
         });
         localStreamRef.current = stream;
         setLocalStream(stream);
-        setDevices(deviceIdsOf(stream));
+        setDevices(deviceIdsOf(stream, rawMicRef.current));
         setMicOn(stream.getAudioTracks()[0]?.enabled ?? false);
         setCamOn(stream.getVideoTracks()[0]?.enabled ?? false);
       })
@@ -450,10 +514,15 @@ export function useCall({
       cancelled = true;
       const stream = localStreamRef.current;
       if (stream) stream.getTracks().forEach((t) => t.stop());
+      // (the mic itself, when what was sent was a cleaned copy)
+      rawMicRef.current?.stop();
+      rawMicRef.current = null;
+      cleanerRef.current?.stop();
+      cleanerRef.current = null;
       localStreamRef.current = null;
       setLocalStream(null);
     };
-  }, [inCall]);
+  }, [inCall, micOut]);
 
   // --- effect B: the signaling wire + mesh teardown -------------------------
   // Start listening the moment we're in the call — NOT once the camera is
@@ -779,7 +848,7 @@ export function useCall({
     prefsAppliedRef.current = next;
     localStreamRef.current = next;
     setLocalStream(next);
-    setDevices(deviceIdsOf(next));
+    setDevices(deviceIdsOf(next, rawMicRef.current));
     setCamOn(true);
   }, []);
 
@@ -793,64 +862,119 @@ export function useCall({
   // the stream re-runs: the local preview tile and the speaking detector
   // (effect E), which is bound to the old mic track. Effect D is told this
   // stream is already handled, so it doesn't redo the join-time logic.
-  const switchDevice = useCallback(async (kind, deviceId) => {
-    const stream = localStreamRef.current;
-    const old = kind === 'audio' ? stream?.getAudioTracks()[0] : stream?.getVideoTracks()[0];
-    // Camera is off (released): don't switch it on — use this one next time.
-    if (kind === 'video' && old && old.readyState === 'ended') {
-      camDeviceRef.current = deviceId;
-      setDevices((d) => ({ ...d, video: deviceId }));
-      return;
-    }
-    if (!stream || !deviceId || old?.getSettings().deviceId === deviceId) return;
-
-    const open = (id) =>
-      navigator.mediaDevices
-        .getUserMedia(
-          kind === 'video'
-            ? { video: cameraConstraints(id) }
-            : { audio: { deviceId: { exact: id } } },
-        )
-        .then((s) => (kind === 'audio' ? s.getAudioTracks()[0] : s.getVideoTracks()[0]));
-
-    // Many phones/laptops can't run two cameras at once, so the old camera is
-    // released first. (Mics don't have that problem; keep the old one live
-    // until the new one is ready.)
-    if (kind === 'video') old?.stop();
-    let track;
-    try {
-      track = await open(deviceId);
-    } catch (err) {
-      setMediaError(friendlyMediaError(err));
-      if (kind !== 'video' || !old) return;
-      // Camera switch failed: bring the previous camera back.
-      try {
-        track = await open(old.getSettings().deviceId);
-      } catch {
+  const switchDevice = useCallback(
+    async (kind, deviceId) => {
+      const stream = localStreamRef.current;
+      const old = kind === 'audio' ? stream?.getAudioTracks()[0] : stream?.getVideoTracks()[0];
+      // Camera is off (released): don't switch it on — use this one next time.
+      if (kind === 'video' && old && old.readyState === 'ended') {
+        camDeviceRef.current = deviceId;
+        setDevices((d) => ({ ...d, video: deviceId }));
         return;
       }
-    }
-    if (localStreamRef.current !== stream) {
-      track.stop(); // left the call while the device was opening
-      return;
-    }
-    track.enabled = old ? old.enabled : true;
+      // (For the mic, compare the mic itself — what's sent may be a cleaned copy.)
+      const current = kind === 'audio' ? (rawMicRef.current ?? old) : old;
+      if (!stream || !deviceId || current?.getSettings().deviceId === deviceId) return;
 
-    for (const { pc } of peersRef.current.values()) {
-      // Exact match only: a screen share is another video sender.
-      const sender = old && pc.getSenders().find((s) => s.track === old);
-      if (sender) await sender.replaceTrack(track).catch(() => {});
-    }
+      const open = (id) =>
+        navigator.mediaDevices
+          .getUserMedia(
+            kind === 'video'
+              ? { video: cameraConstraints(id) }
+              : { audio: { deviceId: { exact: id } } },
+          )
+          .then((s) => (kind === 'audio' ? s.getAudioTracks()[0] : s.getVideoTracks()[0]));
 
-    const others = stream.getTracks().filter((t) => t !== old && t.kind !== kind);
-    const next = new MediaStream([...others, track]);
-    if (old && old.readyState !== 'ended') old.stop();
-    setMediaError(null);
-    prefsAppliedRef.current = next;
-    localStreamRef.current = next;
-    setLocalStream(next);
-    setDevices(deviceIdsOf(next));
-  }, []);
+      // Many phones/laptops can't run two cameras at once, so the old camera is
+      // released first. (Mics don't have that problem; keep the old one live
+      // until the new one is ready.)
+      if (kind === 'video') old?.stop();
+      let track;
+      // Stops what the new mic replaced (see the audio branch below).
+      let retire = () => {};
+      try {
+        track = await open(deviceId);
+      } catch (err) {
+        setMediaError(friendlyMediaError(err));
+        if (kind !== 'video' || !old) return;
+        // Camera switch failed: bring the previous camera back.
+        try {
+          track = await open(old.getSettings().deviceId);
+        } catch {
+          return;
+        }
+      }
+      if (localStreamRef.current !== stream) {
+        track.stop(); // left the call while the device was opening
+        return;
+      }
+      if (kind === 'audio') {
+        // The new mic replaces the old one; with strong noise reduction on,
+        // what's sent is a cleaned copy of it.
+        const previousMic = rawMicRef.current;
+        rawMicRef.current = track;
+        const made = await micOut(track);
+        track = made.track;
+        // (stopped once the new one is in place — below)
+        retire = () => {
+          made.previous?.stop();
+          if (previousMic && previousMic !== rawMicRef.current) previousMic.stop();
+        };
+      }
+      track.enabled = old ? old.enabled : true;
+
+      for (const { pc } of peersRef.current.values()) {
+        // Exact match only: a screen share is another video sender.
+        const sender = old && pc.getSenders().find((s) => s.track === old);
+        if (sender) await sender.replaceTrack(track).catch(() => {});
+      }
+
+      const others = stream.getTracks().filter((t) => t !== old && t.kind !== kind);
+      const next = new MediaStream([...others, track]);
+      if (old && old.readyState !== 'ended') old.stop();
+      setMediaError(null);
+      prefsAppliedRef.current = next;
+      localStreamRef.current = next;
+      setLocalStream(next);
+      setDevices(deviceIdsOf(next, rawMicRef.current));
+      retire();
+    },
+    [micOut],
+  );
+
+  // --- strong noise reduction on / off, mid-call ----------------------------
+  // Swaps what's sent — the mic as it is, or a cleaned copy — in place
+  // (replaceTrack; nobody reconnects). Muted stays muted.
+  const setStrongNoise = useCallback(
+    async (on) => {
+      saveStrongNoise(on);
+      strongRef.current = on;
+      setStrongNoiseState(on);
+      const stream = localStreamRef.current;
+      const mic = rawMicRef.current;
+      if (!stream || !mic) return; // not in a call: used next time the mic opens
+      const old = stream.getAudioTracks()[0];
+      const enabled = old ? old.enabled : true;
+      const { track: out, previous } = await micOut(mic);
+      if (localStreamRef.current !== stream) {
+        previous?.stop(); // left meanwhile
+        return;
+      }
+      out.enabled = enabled;
+      if (out !== mic) mic.enabled = true; // the copy does the muting
+      for (const { pc } of peersRef.current.values()) {
+        const sender = old && pc.getSenders().find((x) => x.track === old);
+        if (sender) await sender.replaceTrack(out).catch(() => {});
+      }
+      const next = new MediaStream([out, ...stream.getTracks().filter((t) => t.kind !== 'audio')]);
+      prefsAppliedRef.current = next;
+      localStreamRef.current = next;
+      setLocalStream(next);
+      // Only now, with the new one in place: stop the previous cleaning.
+      previous?.stop();
+    },
+    [micOut],
+  );
 
   // --- the SFU's media (when it's on) -------------------------------------
   const viaSfu = useSfu({
@@ -890,6 +1014,8 @@ export function useCall({
     toggleCam,
     devices,
     switchDevice,
+    strongNoise,
+    setStrongNoise,
     startShare,
     presentStream,
     stopShare,

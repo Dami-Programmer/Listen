@@ -18,6 +18,7 @@ import Logo from './Logo.jsx';
 import { SIGNALING_URL } from './socket.js';
 import { recordingLink } from './meeting.js';
 import { RecordIcon } from './icons.jsx';
+import { ReportTable } from './MeetingReport.jsx';
 import useIsMobile from './useIsMobile.js';
 
 const REVIEW_MAX = 2000; // same cap as the server
@@ -35,6 +36,8 @@ const REVIEW_MAX = 2000; // same cap as the server
  * @param {string}  [props.recordingId] the meeting's recording, if it was
  *                                  recorded — linked here (it may still be
  *                                  going: the others are still in the call)
+ * @param {object}  [props.report]  the meeting report, if you were the host /
+ *                                  co-host (MeetingReport.jsx)
  */
 export default function LeftScreen({
   seconds,
@@ -44,6 +47,7 @@ export default function LeftScreen({
   name,
   meeting,
   recordingId,
+  report,
 }) {
   const isMobile = useIsMobile();
   const [left, setLeft] = useState(seconds);
@@ -53,6 +57,8 @@ export default function LeftScreen({
   const [status, setStatus] = useState('idle'); // idle | sending | sent | error
   const [error, setError] = useState(null);
   const writing = review.trim().length > 0 && status !== 'sent';
+  // Reading the meeting report holds the page too.
+  const [readingReport, setReadingReport] = useState(false);
 
   // Tick once a second. The deadline is fixed when the screen opens, so a
   // tab that was in the background (where browsers slow timers down) still
@@ -69,8 +75,17 @@ export default function LeftScreen({
   // middle of a review (then they stay until they send it or leave).
   const timeUp = left === 0;
   useEffect(() => {
-    if (timeUp && !busy && !writing && status !== 'sending' && status !== 'sent') onHome();
-  }, [timeUp, busy, writing, status, onHome]);
+    if (
+      timeUp &&
+      !busy &&
+      !writing &&
+      !readingReport &&
+      status !== 'sending' &&
+      status !== 'sent'
+    ) {
+      onHome();
+    }
+  }, [timeUp, busy, writing, readingReport, status, onHome]);
 
   // Sent after the minute ran out: show the thank-you for a moment, then home.
   useEffect(() => {
@@ -97,11 +112,11 @@ export default function LeftScreen({
         }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.ok) throw new Error(data.error || 'Couldn’t send — please try again.');
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Couldn’t send. Please try again.');
       setStatus('sent');
     } catch (err) {
       setStatus('error');
-      setError(err.message || 'Couldn’t send — please try again.');
+      setError(err.message || 'Couldn’t send. Please try again.');
     }
   }
 
@@ -160,6 +175,14 @@ export default function LeftScreen({
           </a>
         )}
 
+        {/* Host / co-host: who came and who spoke (they can't ask later). */}
+        {report && (
+          <details className="left-report" onToggle={(e) => setReadingReport(e.currentTarget.open)}>
+            <summary>Meeting report: who spoke, and for how long</summary>
+            <ReportTable report={report} />
+          </details>
+        )}
+
         {/* The review. Once sent, the box turns into a thank-you. */}
         {status === 'sent' ? (
           <p className="left-thanks" role="status">
@@ -169,7 +192,7 @@ export default function LeftScreen({
           <form className="left-review" onSubmit={sendReview}>
             <label htmlFor="left-review-text">How was your call?</label>
             <span className="left-review-hint">
-              Tell us what to improve — anything about how it looks or how it works.
+              Tell us what to improve. Anything about how it looks or how it works.
             </span>
             <textarea
               id="left-review-text"

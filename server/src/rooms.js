@@ -22,6 +22,16 @@ import {
   cleanAvatar,
 } from '@listen/shared';
 import { sfuEnabled } from './sfu.js';
+import {
+  activityRekey,
+  activitySnapshot,
+  countHand,
+  countTurn,
+  statsJoin,
+  statsLeave,
+  talkStart,
+  talkStop,
+} from './activities.js';
 
 /**
  * roomId -> {
@@ -86,6 +96,15 @@ function createRoom() {
     away: {},
     media: {},
     recording: null, // { id, startedAt, recorderId, part } while recording
+    // Questions, the poll, and the meeting report's numbers (activities.js).
+    createdAt: Date.now(),
+    stats: {},
+    questions: [],
+    poll: null,
+    // Breakout rooms (moveParticipant): on the MAIN room while they run,
+    // { ids: [roomId…], endsAt }; on each breakout room, { main, name, endsAt }.
+    breakouts: null,
+    breakoutOf: null,
   };
 }
 
@@ -116,6 +135,7 @@ function attach(room, socketId, name, avatar) {
   // Their secret rejoin ticket, handed only to them (in the join / admit
   // payload) so they can get this seat back after a network drop.
   room.tickets[socketId] = randomUUID();
+  statsJoin(room, socketId, room.participants[socketId].name); // the meeting report
   return room.participants[socketId];
 }
 
@@ -139,6 +159,7 @@ export function markAway(room, socketId) {
   if (!room?.participants[socketId]) return;
   room.away[socketId] = Date.now();
   room.speaking = room.speaking.filter((id) => id !== socketId);
+  talkStop(room, socketId);
 }
 
 export function isAway(room, socketId) {
@@ -184,6 +205,8 @@ export function rekey(room, oldId, newId) {
   if (room.recording?.recorderId === oldId) room.recording.recorderId = newId;
   room.queue = room.queue.map((id) => (id === oldId ? newId : id));
   room.speaking = room.speaking.filter((id) => id !== oldId);
+  talkStop(room, oldId);
+  activityRekey(room, oldId, newId); // their stats, questions, votes
 
   // Plain socketId -> value maps: move the value across.
   // (`media` too: their Cloudflare connection can outlive a Socket.IO drop,
@@ -399,6 +422,7 @@ export function setRole(room, socketId, role) {
   // revoke-floor, clear-floor and the open -> moderated flip in one place.
   if (role === ROLES.LISTENER) {
     room.speaking = room.speaking.filter((id) => id !== socketId);
+    talkStop(room, socketId);
     delete room.sharing[socketId];
   }
 }
@@ -431,6 +455,22 @@ export function setMode(room, mode) {
 // The role a former host/co-host settles into for the current mode.
 function normalRole(room) {
   return room.mode === MODES.MODERATED ? ROLES.LISTENER : ROLES.SPEAKER;
+}
+
+/**
+ * A fixed room's owner arrived (they joined with its host key — names.js):
+ * they become the host, whoever had been standing in. The stand-in becomes
+ * a normal participant (or stays co-host if they were it). No-op if they're
+ * already host.
+ */
+export function makeHost(room, socketId) {
+  const me = room?.participants[socketId];
+  if (!me || room.hostId === socketId) return;
+  const stand = room.hostId;
+  if (room.cohostId === socketId) room.cohostId = null;
+  room.hostId = socketId;
+  me.role = ROLES.HOST;
+  if (stand && room.participants[stand]) setRole(room, stand, normalRole(room));
 }
 
 /**
@@ -483,6 +523,7 @@ export function raiseHand(room, socketId) {
   if (!participant || participant.role !== ROLES.LISTENER) return;
   if (room.queue.includes(socketId)) return;
   room.queue.push(socketId);
+  countHand(room, socketId);
 }
 
 /**
@@ -505,6 +546,7 @@ export function grantFloor(room, socketId) {
   if (!participant || participant.role !== ROLES.LISTENER) return;
   setRole(room, socketId, ROLES.SPEAKER); // no-op for the host
   room.queue = room.queue.filter((id) => id !== socketId);
+  countTurn(room, socketId);
 }
 
 /**
@@ -588,10 +630,12 @@ export function setSpeaking(room, socketId, on) {
   const listed = room.speaking.includes(socketId);
   if (on && !listed) {
     room.speaking.push(socketId);
+    talkStart(room, socketId);
     return true;
   }
   if (!on && listed) {
     room.speaking = room.speaking.filter((id) => id !== socketId);
+    talkStop(room, socketId);
     return true;
   }
   return false;
@@ -678,6 +722,86 @@ export function setSharing(room, socketId, on, streamId) {
 }
 
 /**
+ * Breakout rooms: move someone from one room to another, keeping their seat —
+ * their rejoin ticket (so a dropped connection finds them again), mic / camera
+ * state, and their Cloudflare connection (`media` — their video just shows up
+ * for the people in the new room). Creates the target room if needed
+ * (`create`: { title, breakoutOf }). In a breakout room the first one in is
+ * its host and everyone else a speaker; back in the main room people take the
+ * room's normal role. Returns the target room, or null.
+ */
+export function moveParticipant(fromId, toId, socketId, create = {}) {
+  const from = rooms.get(fromId);
+  const p = from?.participants[socketId];
+  if (!p) return null;
+  const carry = {
+    name: p.name,
+    avatar: p.avatar,
+    desktop: p.desktop,
+    canRecord: p.canRecord,
+    mic: from.mics[socketId],
+    cam: from.cams[socketId],
+    ticket: from.tickets[socketId],
+    media: from.media[socketId],
+    away: from.away[socketId],
+  };
+
+  // Out of the old room (like leaving, but no rejoin pass).
+  talkStop(from, socketId);
+  delete from.participants[socketId];
+  from.queue = from.queue.filter((id) => id !== socketId);
+  from.speaking = from.speaking.filter((id) => id !== socketId);
+  for (const map of [from.sharing, from.mics, from.cams, from.tickets, from.media, from.away]) {
+    delete map[socketId];
+  }
+  if (from.cohostId === socketId) from.cohostId = null;
+  const remaining = Object.keys(from.participants);
+  if (!remaining.length && !from.breakouts) {
+    rooms.delete(fromId);
+  } else if (from.hostId === socketId) {
+    from.hostId = remaining[0] ?? null;
+    if (from.hostId) from.participants[from.hostId].role = ROLES.HOST;
+  }
+
+  // Into the new one.
+  let to = rooms.get(toId);
+  if (!to) {
+    to = createRoom();
+    to.title = String(create.title ?? '').slice(0, 80);
+    to.locked = false; // a breakout room has no door
+    to.breakoutOf = create.breakoutOf ?? null;
+    rooms.set(toId, to);
+  }
+  const first = Object.keys(to.participants).length === 0;
+  if (first) to.hostId = socketId;
+  to.participants[socketId] = {
+    id: socketId,
+    name: carry.name,
+    role: first ? ROLES.HOST : normalRole(to),
+    avatar: carry.avatar,
+    ...(carry.desktop !== undefined ? { desktop: carry.desktop } : {}),
+    ...(carry.canRecord !== undefined ? { canRecord: carry.canRecord } : {}),
+  };
+  to.mics[socketId] = carry.mic ?? true;
+  to.cams[socketId] = carry.cam ?? true;
+  to.tickets[socketId] = carry.ticket ?? randomUUID();
+  if (carry.media) to.media[socketId] = carry.media;
+  if (carry.away) to.away[socketId] = carry.away;
+  if (!to.stats[socketId]) statsJoin(to, socketId, carry.name);
+  return to;
+}
+
+/** The room a breakout room belongs to, and all its breakout rooms' ids. */
+export function breakoutIdsOf(mainId) {
+  return rooms.get(mainId)?.breakouts?.ids ?? [];
+}
+
+/** All rooms' ids (for finding breakout rooms of a main room that closed). */
+export function allRoomIds() {
+  return [...rooms.keys()];
+}
+
+/**
  * Remove a participant from whatever room they're in.
  * If the host left, promote the next participant (co-host first).
  * If the room is now empty but someone is waiting, admit the oldest waiter as
@@ -691,6 +815,7 @@ export function removeParticipant(socketId) {
   for (const [roomId, room] of rooms) {
     if (!room.participants[socketId]) continue;
 
+    statsLeave(room, socketId); // (for the meeting report)
     delete room.participants[socketId];
     room.queue = room.queue.filter((id) => id !== socketId);
     room.speaking = room.speaking.filter((id) => id !== socketId);
@@ -774,7 +899,28 @@ export function snapshot(roomId) {
           part: room.recording.part,
         }
       : null,
+    // Breakout rooms running (main room): each room's name and who's in it.
+    breakouts: room.breakouts
+      ? {
+          endsAt: room.breakouts.endsAt,
+          rooms: room.breakouts.ids.map((id, i) => ({
+            id,
+            name: `Room ${i + 1}`,
+            // ids too, so the host can move someone (EVENTS.BREAKOUT_MOVE)
+            people: Object.values(rooms.get(id)?.participants ?? {}).map((p) => ({
+              id: p.id,
+              name: p.name,
+            })),
+          })),
+        }
+      : null,
+    // In a breakout room: which one, and when everyone goes back.
+    breakout: room.breakoutOf
+      ? { name: room.breakoutOf.name, endsAt: room.breakoutOf.endsAt }
+      : null,
     sfu: sfuEnabled(),
+    // Open questions (most votes first) and the current poll.
+    ...activitySnapshot(room),
     media: Object.fromEntries(
       Object.entries(room.media)
         .filter(([id]) => room.participants[id])

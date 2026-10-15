@@ -82,6 +82,32 @@ export async function putObject(key, body, type) {
   await call(objectUrl(key), { method: 'PUT', body, headers: { 'Content-Type': type } });
 }
 
+/**
+ * Save a small file only if there isn't one by that name yet (so two people
+ * can't claim the same thing at the same moment). Returns false if it exists.
+ */
+export async function putObjectIfNew(key, body, type) {
+  if (!usingR2()) {
+    await fsp.mkdir(path.dirname(diskPath(key)), { recursive: true });
+    try {
+      await fsp.writeFile(diskPath(key), body, { flag: 'wx' }); // fails if it exists
+      return true;
+    } catch (err) {
+      if (err.code === 'EEXIST') return false;
+      throw err;
+    }
+  }
+  const res = await r2().fetch(objectUrl(key), {
+    method: 'PUT',
+    body,
+    headers: { 'Content-Type': type, 'If-None-Match': '*' },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (res.status === 412) return false; // someone else's is already there
+  if (!res.ok) throw new Error(`R2 PUT failed: ${res.status} ${(await res.text()).slice(0, 200)}`);
+  return true;
+}
+
 /** A small file's text, or null if it isn't there. */
 export async function getText(key) {
   if (!usingR2()) {

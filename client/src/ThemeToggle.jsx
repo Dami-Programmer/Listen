@@ -28,7 +28,7 @@ export default function ThemeToggle() {
       type="button"
       className="theme-btn"
       onClick={cycle}
-      title={`${label} — click for ${next}`}
+      title={`${label}. Click for ${next}`}
       aria-label={`${label}. Click to switch to ${next}.`}
     >
       {/* key = the choice, so React swaps in a fresh icon each change and the

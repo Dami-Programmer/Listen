@@ -71,7 +71,7 @@ export default function RecBadge({ recording, compact = false, dotOnly = false }
         <div className="rec-card" role="dialog" aria-label="Recording">
           <p>
             This meeting is being recorded. Everyone in the call can watch it until a day after the
-            meeting ends — then it’s deleted.
+            meeting ends. After that it’s deleted.
           </p>
           <div className="rec-card-actions">
             <a className="rec-card-btn" href={link} target="_blank" rel="noreferrer">

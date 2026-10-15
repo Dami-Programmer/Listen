@@ -14,7 +14,8 @@ const KINDS = {
   video: { list: 'videoinput', label: 'Camera' },
 };
 
-export default function DevicePicker({ kind, current, onSwitch, children }) {
+// `extra`: something shown under the list (the mic's noise-reduction switch).
+export default function DevicePicker({ kind, current, onSwitch, extra = null, children }) {
   const { list: listKind, label } = KINDS[kind];
   const [open, setOpen] = useState(false);
   const [devices, setDevices] = useState([]);
@@ -98,6 +99,7 @@ export default function DevicePicker({ kind, current, onSwitch, children }) {
               {d.deviceId === current && <Check />}
             </button>
           ))}
+          {extra}
         </div>
       )}
     </div>

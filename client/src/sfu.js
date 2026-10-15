@@ -61,6 +61,9 @@ const CAMERA_LAYERS = [
 const FULL_FROM_PX = 700;
 const HALF_FROM_PX = 340;
 const LAYER_CHECK_MS = 2000;
+// A video only goes DOWN a size after its tile has been smaller for this many
+// checks in a row (~4 s) — see the size check below for why.
+const SHRINK_AFTER_CHECKS = 2;
 
 // A track Cloudflare couldn't hand over yet is asked for again — usually
 // someone who JUST joined: their track is listed before their video has
@@ -523,6 +526,8 @@ export function useSfu({
     // How much incoming video is getting lost — my connection struggling.
     // `step` is how many sizes everyone is dropped by right now (0-2).
     const health = { lost: 0, got: 0, step: 0, calm: 0 };
+    // camera key -> how many checks in a row it has wanted a smaller size
+    const shrinking = new Map();
     const updateHealth = async () => {
       const pc = connRef.current.pc;
       if (!pc || pc.connectionState !== 'connected') return;
@@ -573,8 +578,24 @@ export function useSfu({
         if (recordingRef.current) size = Math.min(size, 1); // (see `recording`)
         size = Math.min(2, size + health.step); // a struggling connection
         const rid = 'abc'[size];
-        if (layersRef.current.get(kinds.video) !== rid) {
-          layersRef.current.set(kinds.video, rid);
+        const key = kinds.video;
+        const now = layersRef.current.get(key);
+        // Bigger (or the first choice): straight away. Smaller: only once it
+        // has stayed smaller for SHRINK_AFTER_CHECKS checks in a row. A
+        // switched video shows nothing until its next full picture arrives
+        // (a second or more on a real network) — and a layout change (a
+        // share starting or stopping) puts everyone in brand-new tiles at
+        // the same moment, which have no old picture to show meanwhile.
+        // Shrinking straight away made everyone vanish for a moment.
+        const smaller = now && rid > now; // 'c' > 'b' > 'a'
+        if (smaller) {
+          const n = (shrinking.get(key) ?? 0) + 1;
+          shrinking.set(key, n);
+          if (n < SHRINK_AFTER_CHECKS) continue;
+        }
+        shrinking.delete(key);
+        if (now !== rid) {
+          layersRef.current.set(key, rid);
           changed = true;
         }
       }

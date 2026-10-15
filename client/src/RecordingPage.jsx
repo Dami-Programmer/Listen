@@ -94,7 +94,7 @@ export default function RecordingPage({ id }) {
       <div className="recp-msg">
         <h1>This recording isn’t available</h1>
         <p>
-          Recordings are deleted a day after the meeting ends — this one is gone, or the link is
+          Recordings are deleted a day after the meeting ends. This one is gone, or the link is
           wrong.
         </p>
       </div>
@@ -103,7 +103,7 @@ export default function RecordingPage({ id }) {
     body = (
       <div className="recp-msg">
         <p>
-          {slow ? 'Waking up the server — this can take up to a minute…' : 'Loading the recording…'}
+          {slow ? 'Waking up the server. This can take up to a minute…' : 'Loading the recording…'}
         </p>
         {error === 'failed' && <p className="err">Couldn’t reach the server. Trying again…</p>}
       </div>
@@ -126,7 +126,7 @@ export default function RecordingPage({ id }) {
           </p>
           {info.recording && (
             <p className="recp-live">
-              <span className="rec-dot" aria-hidden="true" /> Still recording — parts appear here as
+              <span className="rec-dot" aria-hidden="true" /> Still recording. Parts appear here as
               they’re saved.
             </p>
           )}

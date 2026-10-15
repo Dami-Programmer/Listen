@@ -7,7 +7,7 @@ export default function TourButton({ onClick }) {
       type="button"
       className="tour-replay"
       onClick={onClick}
-      aria-label="How Turnly works — show me around"
+      aria-label="How Turnly works: show me around"
       title="How Turnly works"
     >
       ?
