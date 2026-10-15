@@ -9,6 +9,10 @@
 //   camera/mic   getUserMedia returns a drawn "camera" (cameras.js) and a
 //                generated sound — the visitor's real camera and microphone
 //                are never asked for. Screen sharing shares a drawn slide.
+//   video links  the app's video connections (RTCPeerConnection) are the
+//                lightweight stand-in from fakePeer.js: the pretend people's
+//                drawn cameras go straight to the app, with no real video
+//                compressing / decompressing (that's what made the demo heavy).
 //   server       the app's Socket.IO connection is the in-page DemoSocket
 //                (demoSocket.js) and its plain HTTP calls (claim a name,
 //                schedule…) get pretend answers from demoFetch below.
@@ -16,6 +20,7 @@
 // Nothing here runs outside /demo.
 
 import { drawnCamera, drawnScreen, voiceTrack } from './cameras.js';
+import { DemoPeerConnection } from './fakePeer.js';
 
 let installed = false;
 
@@ -87,6 +92,9 @@ export function installDemoEnv({ theme } = {}) {
   ];
   md.addEventListener ??= () => {};
   md.removeEventListener ??= () => {};
+
+  // --- video connections: the lightweight stand-in (fakePeer.js) ---------
+  window.RTCPeerConnection = DemoPeerConnection;
 
   // --- the app's HTTP calls: pretend answers -------------------------------
   const realFetch = window.fetch.bind(window);

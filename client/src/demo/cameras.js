@@ -1,14 +1,21 @@
 // Drawn "cameras" and generated sound for the demo (see env.js / bots.js).
 //
-// Every person in the demo — the visitor and the pretend participants — sends
-// real video through real WebRTC connections, but the picture is drawn here:
-// a soft coloured backdrop with a head-and-shoulders figure that sways a
-// little, and talks (an animated mouth + rings) while that person has the
-// floor and is speaking. No real faces, no real camera.
+// Every person in the demo — the visitor and the pretend participants — has a
+// "camera" whose picture is drawn here: a soft coloured backdrop with a
+// head-and-shoulders figure that sways a little, and talks (an animated
+// mouth + rings) while that person has the floor and is speaking. No real
+// faces, no real camera. (The pictures reach the call screen through the
+// stand-in connection in fakePeer.js.)
 
+// The picture is laid out on a 640 x 360 sheet (all the numbers below), but
+// actually drawn at SCALE of that: the demo is shown shrunk inside the
+// landing page, so the tiles are small and a smaller picture looks the same
+// — at a quarter of the drawing work. FPS: how often it's redrawn; 10 still
+// moves smoothly enough for a sway and a talking mouth.
 const W = 640;
 const H = 360;
-const FPS = 15;
+const SCALE = 0.5;
+const FPS = 10;
 
 // Who's talking right now (the demo server keeps this up to date).
 const talking = new Set();
@@ -104,9 +111,10 @@ function camera(id, color) {
   let cam = cams.get(id);
   if (cam) return cam;
   const canvas = document.createElement('canvas');
-  canvas.width = W;
-  canvas.height = H;
+  canvas.width = W * SCALE;
+  canvas.height = H * SCALE;
   const ctx = canvas.getContext('2d');
+  ctx.scale(SCALE, SCALE); // draw in 640 x 360 numbers onto the smaller canvas
   const tick = () => drawPerson(ctx, performance.now(), color, talking.has(id));
   tick();
   setInterval(tick, 1000 / FPS);

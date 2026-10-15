@@ -61,16 +61,34 @@ function DemoScreen({ scene, phone, run, label, wide = false }) {
     return () => ro.disconnect();
   }, []);
 
-  // Run the app only near the screen; far away, it stops (and starts fresh
-  // when you come back).
+  // Run the app only while it's on the screen, so there's (almost) never more
+  // than one demo running at once:
+  //   - it STARTS once at least a third of it is showing (not before — it
+  //     used to start 300px early, so scrolling between two demos ran both)
+  //   - it STOPS only once it's gone completely (so a small scroll doesn't
+  //     restart it), and starts fresh when you come back
+  // And not before the landing page itself has finished loading: the demo at
+  // the top would otherwise compete with the page for the first few seconds.
   useEffect(() => {
     const el = box.current;
     if (!el) return undefined;
-    const io = new IntersectionObserver(([e]) => setNear(e.isIntersecting), {
-      rootMargin: '300px 0px',
-    });
-    io.observe(el);
-    return () => io.disconnect();
+    let io = null;
+    const watch = () => {
+      io = new IntersectionObserver(
+        ([e]) => {
+          if (e.intersectionRatio >= 1 / 3) setNear(true);
+          else if (!e.isIntersecting) setNear(false);
+        },
+        { threshold: [0, 1 / 3] },
+      );
+      io.observe(el);
+    };
+    if (document.readyState === 'complete') watch();
+    else window.addEventListener('load', watch, { once: true });
+    return () => {
+      window.removeEventListener('load', watch);
+      io?.disconnect();
+    };
   }, []);
 
   // Off the screen the app stops; coming back starts it again, so the
