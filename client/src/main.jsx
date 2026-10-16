@@ -5,6 +5,7 @@ import ErrorBoundary from './ErrorBoundary.jsx';
 import './index.css';
 import { installPressFx } from './pressFx.js';
 import { installErrorReporting } from './errorReport.js';
+import { installAnalytics } from './analytics.js';
 
 // Anything that goes wrong in the browser is reported to the server's logs
 // (errorReport.js) — first thing, so even a crash while starting up is caught.
@@ -64,6 +65,10 @@ if (IS_DEMO) {
 // ErrorBoundary: if the page crashes — or its code can't be downloaded, e.g.
 // right after a new version went live — "Something went wrong" instead of a
 // blank screen (ErrorBoundary.jsx).
+// Visitor counts (analytics.js — off unless Umami's website ID is set). The
+// privacy page counts as itself, not as "landing".
+installAnalytics(window.location.pathname === '/privacy' ? 'privacy' : kind);
+
 const render = () =>
   createRoot(document.getElementById('root')).render(
     <StrictMode>

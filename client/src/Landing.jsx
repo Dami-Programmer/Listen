@@ -12,6 +12,7 @@ import Logo from './Logo.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
 import { PROFILE } from './ProfileCard.jsx';
 import { FeatureTour, HeroDemo, HowItWorks } from './LandingDemos.jsx';
+import { trackEvent } from './analytics.js';
 
 const START = '/start'; // the app's home screen (start or join a meeting)
 
@@ -167,7 +168,11 @@ export default function Landing() {
           never turn into talking over each other.
         </p>
         <div className="ld-cta">
-          <a href={START} className="ld-btn">
+          <a
+            href={START}
+            className="ld-btn"
+            onClick={() => trackEvent('start clicked', { where: 'top' })}
+          >
             <span aria-hidden="true">▶</span> Start a meeting
           </a>
 
@@ -224,7 +229,11 @@ export default function Landing() {
       <section className="ld-final">
         <h2>Ready when you are.</h2>
         <p>Start a meeting and share the link. It takes a few seconds.</p>
-        <a href={START} className="ld-btn">
+        <a
+          href={START}
+          className="ld-btn"
+          onClick={() => trackEvent('start clicked', { where: 'bottom' })}
+        >
           Start a meeting
         </a>
       </section>

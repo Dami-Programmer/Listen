@@ -38,6 +38,7 @@ import AloneReminder from './AloneReminder.jsx';
 import Tour from './Tour.jsx';
 import { hasSeenTour, useTour } from './useTour.js';
 import TourButton from './TourButton.jsx';
+import { trackEvent } from './analytics.js';
 import NoiseToggle from './NoiseToggle.jsx';
 import { BreakoutBanner, BreakoutPanel } from './Breakouts.jsx';
 import TabSwap from './TabSwap.jsx';
@@ -439,7 +440,9 @@ export default function App() {
           setSelfId(ack.selfId);
           setWaitingForHost(Boolean(ack.forHost));
           setWaiting(true);
+          trackEvent('knocked'); // (analytics.js — no names, no room)
         } else if (ack?.ok) {
+          trackEvent('joined meeting', { as: ack.state?.hostId === ack.selfId ? 'host' : 'guest' });
           ticketRef.current = ack.ticket ?? null; // our way back in after a drop
           setSelfId(ack.selfId);
           setState(ack.state);

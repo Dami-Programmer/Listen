@@ -15,6 +15,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Check } from './icons.jsx';
+import { trackEvent } from './analytics.js';
 
 // The app inside the frame is laid out at a real screen size, then scaled
 // to fit — so it looks exactly like Turnly on a laptop or a phone.
@@ -130,12 +131,16 @@ function DemoScreen({ scene, phone, run, label }) {
       if (e.data?.type === 'turnly-demo-ready') {
         setReadyFor(appKey);
         setFailedFor((f) => (f === appKey ? null : f)); // made it after all
+        trackEvent('demo played', { scene }); // (analytics.js)
       }
-      if (e.data?.type === 'turnly-demo-failed') setFailedFor(appKey);
+      if (e.data?.type === 'turnly-demo-failed') {
+        setFailedFor(appKey);
+        trackEvent('demo failed', { scene });
+      }
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [appKey]);
+  }, [appKey, scene]);
 
   // Not ready in time: give up waiting and offer "Try again" (instead of a
   // spinner that turns for ever — e.g. when the demo page itself can't load).

@@ -41,8 +41,9 @@ export default function PrivacyPage() {
         </p>
 
         <p className="ld-legal-lead">
-          Turnly has no accounts, no ads and no tracking. We keep as little as we can, for as short
-          a time as we can, and only to run your meetings. This page says exactly what that is.
+          Turnly has no accounts, no ads and no tracking cookies. We keep as little as we can, for
+          as short a time as we can, and only to run your meetings. This page says exactly what that
+          is.
         </p>
 
         <h2>What we keep, and for how long</h2>
@@ -86,6 +87,14 @@ export default function PrivacyPage() {
             meeting’s name, and whether you used a phone or computer and which browser.
           </dd>
 
+          <dt>Visitor counts</dt>
+          <dd>
+            We count visits with Umami, which uses no cookies and collects nothing that identifies
+            you. It sees which kind of page was opened (never a room’s name), the site you came
+            from, and a few moments like “joined a meeting”, plus your rough country and type of
+            device. If your browser asks sites not to track you, nothing is counted.
+          </dd>
+
           <dt>Error reports</dt>
           <dd>
             When something goes wrong in your browser — a crash, or a call that fails to connect — a
@@ -122,6 +131,9 @@ export default function PrivacyPage() {
           </li>
           <li>
             <b>Resend</b> delivers review emails to us.
+          </li>
+          <li>
+            <b>Umami</b> counts visits (see “Visitor counts” above).
           </li>
           <li>
             <b>Google Fonts</b> provides the site’s fonts, so your browser contacts Google when it
