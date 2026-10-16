@@ -1,8 +1,14 @@
 import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import Landing from './Landing.jsx';
+import ErrorBoundary from './ErrorBoundary.jsx';
 import './index.css';
 import { installPressFx } from './pressFx.js';
+import { installErrorReporting } from './errorReport.js';
+
+// Anything that goes wrong in the browser is reported to the server's logs
+// (errorReport.js) — first thing, so even a crash while starting up is caught.
+installErrorReporting();
 
 // Each page's code is downloaded only when that page is opened. The landing
 // page used to carry the WHOLE app (call screen, recording page, the server
@@ -33,16 +39,32 @@ const recordingId = params.get('rec');
 const isLanding = window.location.pathname === '/' && !params.get('room') && !params.has('profile');
 
 let page;
-if (IS_DEMO) page = <DemoApp />;
-else if (recordingId) page = <RecordingPage id={recordingId} />;
-else if (isLanding) page = <Landing />;
-else page = <App />;
+let kind; // for the error screen: which page this is (it picks its buttons by it)
+if (IS_DEMO) {
+  page = <DemoApp />;
+  kind = 'demo';
+} else if (recordingId) {
+  page = <RecordingPage id={recordingId} />;
+  kind = 'recording';
+} else if (isLanding) {
+  page = <Landing />;
+  kind = 'landing';
+} else {
+  page = <App />;
+  // the app's home screen, or a meeting (a room in the address)
+  kind = window.location.pathname === '/start' && !params.get('room') ? 'home' : 'meeting';
+}
 
 // (Suspense: nothing on screen for the moment a page's code is downloading.)
+// ErrorBoundary: if the page crashes — or its code can't be downloaded, e.g.
+// right after a new version went live — "Something went wrong" instead of a
+// blank screen (ErrorBoundary.jsx).
 const render = () =>
   createRoot(document.getElementById('root')).render(
     <StrictMode>
-      <Suspense fallback={null}>{page}</Suspense>
+      <ErrorBoundary page={kind}>
+        <Suspense fallback={null}>{page}</Suspense>
+      </ErrorBoundary>
     </StrictMode>,
   );
 

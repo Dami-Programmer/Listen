@@ -51,6 +51,11 @@ function useNarrow() {
 // The screen: the real app in a frame, scaled to fit
 // =============================================================================
 
+// How long a demo may take to start before the cover gives up and offers
+// "Try again". Generous on purpose: on a slow phone connection the first
+// start (the app's code plus the pretend people's photos) can take a while.
+const DEMO_TIMEOUT_MS = 20_000;
+
 function DemoScreen({ scene, phone, run, label }) {
   const box = useRef(null);
   const frame = useRef(null);
@@ -58,9 +63,15 @@ function DemoScreen({ scene, phone, run, label }) {
   const [near, setNear] = useState(false); // on (or close to) the screen
   // which demo said "ready" — the cover lifts only for the one on show
   const [readyFor, setReadyFor] = useState(null);
+  // which demo failed: didn't start in time, or crashed (its error screen
+  // tells us — ErrorBoundary.jsx)
+  const [failedFor, setFailedFor] = useState(null);
+  const [tries, setTries] = useState(0); // "Try again" = a fresh start
   const size = phone ? PHONE : DESKTOP;
-  const appKey = `${scene}-${run}-${phone ? 'p' : 'd'}${near ? '' : '-off'}`;
-  const ready = readyFor === appKey;
+  const appKey = `${scene}-${run}-${tries}-${phone ? 'p' : 'd'}${near ? '' : '-off'}`;
+  const failed = failedFor === appKey;
+  const ready = readyFor === appKey && !failed;
+  const started = near && width > 0; // the frame is loading / running
 
   // How wide the space is (the app is scaled to it).
   useEffect(() => {
@@ -104,18 +115,35 @@ function DemoScreen({ scene, phone, run, label }) {
   // Off the screen the app stops; coming back starts it again, so the
   // cover goes back up until it says it's ready.
   useEffect(() => {
-    if (!near) setReadyFor(null);
+    if (!near) {
+      setReadyFor(null);
+      setFailedFor(null);
+    }
   }, [near]);
 
-  // "Ready" from the app in the frame (DemoApp.jsx) — hide the loading cover.
+  // Messages from the app in the frame:
+  //   "ready"  (DemoApp.jsx)       hide the cover — even if it had given up
+  //   "failed" (ErrorBoundary.jsx) it crashed: show "Couldn't start the demo"
   useEffect(() => {
     const onMessage = (e) => {
       if (e.origin !== window.location.origin || e.source !== frame.current?.contentWindow) return;
-      if (e.data?.type === 'turnly-demo-ready') setReadyFor(appKey);
+      if (e.data?.type === 'turnly-demo-ready') {
+        setReadyFor(appKey);
+        setFailedFor((f) => (f === appKey ? null : f)); // made it after all
+      }
+      if (e.data?.type === 'turnly-demo-failed') setFailedFor(appKey);
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, [appKey]);
+
+  // Not ready in time: give up waiting and offer "Try again" (instead of a
+  // spinner that turns for ever — e.g. when the demo page itself can't load).
+  useEffect(() => {
+    if (!started || readyFor === appKey) return undefined;
+    const t = setTimeout(() => setFailedFor(appKey), DEMO_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, [started, readyFor, appKey]);
 
   // The landing page switches light / dark: the app follows.
   useEffect(() => {
@@ -145,7 +173,7 @@ function DemoScreen({ scene, phone, run, label }) {
         <span className="ld-frame-tag">Pretend people, nothing here is real</span>
       </div>
       <div className="ld-frame-stage" ref={box} style={{ height: stageH || undefined }}>
-        {near && width > 0 && (
+        {started && (
           <div
             className="ld-frame-app"
             style={{
@@ -170,8 +198,19 @@ function DemoScreen({ scene, phone, run, label }) {
           </div>
         )}
         <div className={`ld-frame-cover${ready ? ' gone' : ''}`} aria-hidden={ready}>
-          <span className="ld-spinner" />
-          Starting the demo meeting…
+          {failed ? (
+            <>
+              <span role="alert">Couldn’t start the demo</span>
+              <button type="button" className="ld-frame-retry" onClick={() => setTries((n) => n + 1)}>
+                Try again
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="ld-spinner" />
+              Starting the demo meeting…
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -253,7 +292,9 @@ export function HeroDemo() {
           width={2160}
           height={1320}
           // the top of the page: load it first. (Lowercase on purpose: this
-          // React version passes it through only as the plain HTML attribute.)
+          // React version passes it through only as the plain HTML attribute,
+          // and warns about the camelCase spelling the lint rule expects.)
+          // eslint-disable-next-line react/no-unknown-property
           fetchpriority="high"
           alt="Turnly on a computer: the host sees who's talking, who's next, and grants raised hands from the side panel"
         />

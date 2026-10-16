@@ -27,6 +27,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { EVENTS, MODES, ROLES } from '@listen/shared';
 import { socket } from './socket.js';
 import { useSfu } from './sfu.js';
+// Calls that go wrong are reported to the server's logs (see errorReport.js).
+import { reportCallProblem } from './errorReport.js';
 
 // Fallback when the server didn't send a list: STUN only (direct routes).
 // The server's list adds a TURN relay for networks that block direct routes.
@@ -286,6 +288,7 @@ export function useCall({
           socket.emit(EVENTS.RTC_SIGNAL, { targetId: peerId, description: pc.localDescription });
         } catch (err) {
           console.error('[webrtc] negotiation failed for', peerId, err);
+          reportCallProblem('video connection setup failed', err);
         } finally {
           entry.makingOffer = false;
         }
@@ -338,7 +341,16 @@ export function useCall({
         }, wait);
       };
       async function retry(why) {
-        if (pc.signalingState === 'closed' || entry.restarts >= MAX_RESTARTS) return;
+        if (pc.signalingState === 'closed') return;
+        if (entry.restarts >= MAX_RESTARTS) {
+          // Out of retries: this person's video won't come back on its own.
+          // Report it (once) — this is the "call failed" we most want to see.
+          if (!entry.gaveUpReported) {
+            entry.gaveUpReported = true;
+            reportCallProblem(`video connection gave up after ${MAX_RESTARTS} tries`, why);
+          }
+          return;
+        }
         entry.restarts += 1;
         console.warn(`[webrtc] reconnecting to ${peerId} (${why}), try ${entry.restarts}`);
         try {
@@ -348,6 +360,7 @@ export function useCall({
           pc.restartIce();
         } catch (err) {
           console.error('[webrtc] restart failed for', peerId, err);
+          reportCallProblem('video connection restart failed', err);
         }
         armWatchdog(); // check again in a bit; retry again if still not up
       }
@@ -436,10 +449,12 @@ export function useCall({
             });
           } catch (err2) {
             console.error('[webrtc] rebuild failed for', from, err2);
+            reportCallProblem('video connection rebuild failed', err2);
           }
           return;
         }
         console.error('[webrtc] failed handling signal from', from, err);
+        reportCallProblem('video connection message failed', err);
       }
     },
     [addPeer, removePeer, syncRemotes],
@@ -452,7 +467,10 @@ export function useCall({
     (msg) => {
       signalChainRef.current = signalChainRef.current
         .then(() => handleSignal(msg))
-        .catch((err) => console.error('[webrtc] signal handling failed', err));
+        .catch((err) => {
+          console.error('[webrtc] signal handling failed', err);
+          reportCallProblem('video connection message failed', err);
+        });
     },
     [handleSignal],
   );
@@ -507,7 +525,10 @@ export function useCall({
         setCamOn(stream.getVideoTracks()[0]?.enabled ?? false);
       })
       .catch((err) => {
-        if (!cancelled) setMediaError(friendlyMediaError(err));
+        if (cancelled) return;
+        setMediaError(friendlyMediaError(err));
+        // (err.name tells why: refused, no device, in use by another app…)
+        reportCallProblem('camera/mic failed to open', err);
       });
 
     return () => {
@@ -831,6 +852,7 @@ export function useCall({
       fresh = s.getVideoTracks()[0];
     } catch (err) {
       setMediaError(friendlyMediaError(err));
+      reportCallProblem('camera failed to turn back on', err);
       return;
     }
     if (localStreamRef.current !== stream) {
@@ -896,6 +918,7 @@ export function useCall({
         track = await open(deviceId);
       } catch (err) {
         setMediaError(friendlyMediaError(err));
+        reportCallProblem(`switching ${kind === 'video' ? 'camera' : 'mic'} failed`, err);
         if (kind !== 'video' || !old) return;
         // Camera switch failed: bring the previous camera back.
         try {

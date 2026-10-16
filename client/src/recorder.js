@@ -15,6 +15,7 @@
 import { useEffect, useRef } from 'react';
 import { EVENTS } from '@listen/shared';
 import { socket } from './socket.js';
+import { reportCallProblem } from './errorReport.js';
 
 const WIDTH = 1280;
 const HEIGHT = 720;
@@ -307,7 +308,10 @@ export function useRecorder({ id, part, active, scene }) {
           .catch(() => {});
       });
     };
-    recorder.onerror = (e) => console.warn('[rec] recorder error', e.error ?? e);
+    recorder.onerror = (e) => {
+      console.warn('[rec] recorder error', e.error ?? e);
+      reportCallProblem('recording error', e.error ?? e);
+    };
     recorder.start(CHUNK_MS);
     console.log(`[rec] recording part ${part} (${type})`);
 

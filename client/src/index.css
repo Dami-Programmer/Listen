@@ -6181,6 +6181,14 @@ body:has(.mc) {
   transform: translateY(-1px);
   filter: brightness(1.08);
 }
+/* the error screen (ErrorBoundary.jsx) reuses this card; its "Go to the home
+   page" is a link, so it needs a button's centring */
+.crash-screen .left-home {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
 .left-rejoin:disabled,
 .left-home:disabled {
   opacity: 0.6;
@@ -9362,6 +9370,26 @@ html:has(.landing) {
 .ld-frame-cover.gone {
   opacity: 0;
   pointer-events: none;
+}
+/* "Try again" when a demo couldn't start (LandingDemos.jsx). The cover is
+   always dark, so the button is light in both themes. */
+.ld-frame-retry {
+  height: 40px;
+  padding: 0 20px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: transparent;
+  color: #fff;
+  font: 600 14px/1 var(--ld-display, system-ui, sans-serif);
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+.ld-frame-retry:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.ld-frame-retry:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
 }
 .ld-spinner {
   width: 28px;

@@ -30,6 +30,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { EVENTS } from '@listen/shared';
 import { socket } from './socket.js';
+import { reportCallProblem } from './errorReport.js';
 
 // Cloudflare's own STUN server, plus the TURN relay the server handed us (for
 // networks that block direct routes, e.g. strict office / school Wi-Fi).
@@ -200,6 +201,7 @@ export function useSfu({
   const rebuildLater = (why) => {
     const run = runRef.current;
     console.warn(`[sfu] starting the video connection over (${why})`);
+    reportCallProblem('Cloudflare video connection started over', why);
     teardown();
     clearTimeout(run.timer);
     run.timer = setTimeout(() => sync(), run.backoff);

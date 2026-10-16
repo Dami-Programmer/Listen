@@ -486,6 +486,72 @@ app.post('/feedback', async (req, res) => {
   }
 });
 
+// --- Errors from visitors' browsers (client/src/errorReport.js) ---------------
+// When something crashes or a call goes wrong in someone's browser, it's sent
+// here and written to the log, one entry each — on Render, search the logs
+// for "[client-error]". Nothing is stored or emailed.
+//
+// The browser sends it with sendBeacon as plain text (that way it doesn't need
+// a CORS pre-check), so this route reads text and parses the JSON itself.
+// Everything in it comes from the browser: cleaned and trimmed before logging,
+// and rate-limited per visitor so nobody can flood the logs.
+const CLIENT_ERROR_LIMIT = { max: 30, perMs: 10 * 60 * 1000 }; // per IP: 30 every 10 minutes
+const clientErrorHits = new Map(); // ip -> timestamps inside the window
+const CLIENT_ERROR_KINDS = new Set(['crash', 'error', 'promise', 'call']);
+const CLIENT_ERROR_PAGES = new Set(['landing', 'demo', 'home', 'meeting', 'recording']);
+
+app.post('/client-errors', express.text({ type: 'text/plain', limit: '8kb' }), (req, res) => {
+  const now = Date.now();
+  const recent = (clientErrorHits.get(req.ip) ?? []).filter(
+    (t) => now - t < CLIENT_ERROR_LIMIT.perMs,
+  );
+  // Over the limit: quietly drop it (the browser doesn't look at the answer).
+  if (recent.length >= CLIENT_ERROR_LIMIT.max) return res.status(204).end();
+  recent.push(now);
+  clientErrorHits.set(req.ip, recent);
+
+  let body;
+  try {
+    body = JSON.parse(typeof req.body === 'string' ? req.body : '');
+  } catch {
+    return res.status(400).end();
+  }
+  if (!body || typeof body !== 'object') return res.status(400).end();
+
+  const kind = CLIENT_ERROR_KINDS.has(body.kind) ? body.kind : 'error';
+  const page = CLIENT_ERROR_PAGES.has(body.page) ? body.page : 'unknown';
+  const message = oneLine(body.message, 300) || '(no message)';
+  const where = oneLine(body.where, 120);
+  const browser = oneLine(req.get('user-agent'), 200);
+  // the stack keeps its lines (that's what makes it readable), each one cleaned
+  const stack = (typeof body.stack === 'string' ? body.stack : '')
+    .split('\n')
+    .slice(0, 8)
+    .map((line) => oneLine(line, 200))
+    .filter(Boolean);
+
+  console.error(
+    [
+      `[client-error] ${kind} on ${page}: ${message}`,
+      where && `  in ${where}`,
+      ...stack.map((line) => `  ${line}`),
+      `  browser: ${browser}`,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  );
+  res.status(204).end();
+});
+
+// Forget visitors whose rate-limit window has passed, so the map doesn't grow
+// for ever on a long-running server.
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, hits] of clientErrorHits) {
+    if (hits.every((t) => now - t >= CLIENT_ERROR_LIMIT.perMs)) clientErrorHits.delete(ip);
+  }
+}, CLIENT_ERROR_LIMIT.perMs).unref();
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: CLIENT_ORIGIN, methods: ['GET', 'POST'] },
