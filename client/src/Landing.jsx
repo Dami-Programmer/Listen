@@ -161,25 +161,21 @@ export default function Landing() {
           <span className="dim">Even in</span> big <span className="dim">meetings</span>
           <span className="dim">!</span>
         </h1>
-        <p className="ld-sub">
-          ...because nobody should have to shout to be <b>heard</b>.
-        </p>
+
         <p className="ld-lead">
-          Video calls where people raise a hand and the host gives them the floor. Comes with
-          recording, questions and polls, breakout rooms, scheduling, noise reduction and a room
-          link that stays the same every week.
+          Video calls where people raise a hand and the host gives them the floor. So big meetings
+          never turn into talking over each other.
         </p>
         <div className="ld-cta">
           <a href={START} className="ld-btn">
             <span aria-hidden="true">▶</span> Start a meeting
           </a>
-          <a href={START} className="ld-btn grey">
-            <span aria-hidden="true">#</span> Join with a code
-          </a>
+
           <a href="#how" className="ld-btn ghost">
             <span aria-hidden="true">✋</span> See how it works
           </a>
         </div>
+
         <p className="ld-small">Free · No account · Nothing to install · Works on phones</p>
       </section>
 

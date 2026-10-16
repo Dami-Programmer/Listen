@@ -21,11 +21,21 @@ import { Check } from './icons.jsx';
 // (a small laptop: still the full desktop layout, but less shrinking needed)
 const DESKTOP = { w: 1100, h: 700 };
 const PHONE = { w: 390, h: 844 };
-// the hero shows more of the screen, like a big laptop
-const WIDE = { w: 1440, h: 880 };
 const NARROW_PX = 760; // below this the landing page shows the phone layout
 
 const themeNow = () => (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
+
+// 'light' or 'dark', kept up to date as the landing page switches (the theme
+// button sets data-theme on <html>, also when it follows the device).
+function useThemeNow() {
+  const [theme, setTheme] = useState(themeNow);
+  useEffect(() => {
+    const mo = new MutationObserver(() => setTheme(themeNow()));
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => mo.disconnect();
+  }, []);
+  return theme;
+}
 
 function useNarrow() {
   const [narrow, setNarrow] = useState(() => window.innerWidth < NARROW_PX);
@@ -41,14 +51,14 @@ function useNarrow() {
 // The screen: the real app in a frame, scaled to fit
 // =============================================================================
 
-function DemoScreen({ scene, phone, run, label, wide = false }) {
+function DemoScreen({ scene, phone, run, label }) {
   const box = useRef(null);
   const frame = useRef(null);
   const [width, setWidth] = useState(0);
   const [near, setNear] = useState(false); // on (or close to) the screen
   // which demo said "ready" — the cover lifts only for the one on show
   const [readyFor, setReadyFor] = useState(null);
-  const size = phone ? PHONE : wide ? WIDE : DESKTOP;
+  const size = phone ? PHONE : DESKTOP;
   const appKey = `${scene}-${run}-${phone ? 'p' : 'd'}${near ? '' : '-off'}`;
   const ready = readyFor === appKey;
 
@@ -209,12 +219,53 @@ function StoryBody({ item, index, onReplay, extra, headingId }) {
 // =============================================================================
 
 // The host's view of a meeting in full swing: the line of raised hands, the
-// person talking, everyone else. A phone layout on narrow screens.
+// person talking, everyone else — as two FIXED pictures, not the live app:
+// the desktop call in the window frame, and the same meeting on a phone
+// overlapping its bottom-left corner. Pictures appear instantly and cost
+// nothing to run; the live demos further down ("How it works", "Features")
+// stay live.
+//
+// The pictures are screenshots of the demo's "turns" scene
+// (/demo?scene=turns&theme=dark or light): public/hero-desktop.webp (dark)
+// and public/hero-desktop-light.webp (light), both a 1440 x 880 screen at
+// 1.5x, and public/hero-phone.webp (390 x 844 screen, at 2x). The phone has
+// only one picture: the app's phone call screen is dark in both themes. To
+// refresh them after the call screen changes, screenshot that page again at
+// those sizes.
+//
+// The desktop picture follows the landing page's light / dark switch: only
+// the one on show is downloaded.
 export function HeroDemo() {
-  const narrow = useNarrow();
+  const theme = useThemeNow();
   return (
-    <div className="ld-hero-panel">
-      <DemoScreen scene="turns" phone={narrow} wide run={0} label="Live Turnly demo" />
+    <div className={`ld-hero-panel ld-hero-shots${theme === 'light' ? ' light' : ''}`}>
+      <div className="ld-frame">
+        <div className="ld-frame-bar" aria-hidden="true">
+          <span className="ld-dot" />
+          <span className="ld-dot" />
+          <span className="ld-dot" />
+          <span className="ld-frame-url">turnly · team meeting</span>
+          <span className="ld-frame-tag">Pretend people, nothing here is real</span>
+        </div>
+        <img
+          className="ld-hero-desktop"
+          src={theme === 'light' ? '/hero-desktop-light.webp' : '/hero-desktop.webp'}
+          width={2160}
+          height={1320}
+          // the top of the page: load it first. (Lowercase on purpose: this
+          // React version passes it through only as the plain HTML attribute.)
+          fetchpriority="high"
+          alt="Turnly on a computer: the host sees who's talking, who's next, and grants raised hands from the side panel"
+        />
+      </div>
+      <div className="ld-hero-phone">
+        <img
+          src="/hero-phone.webp"
+          width={780}
+          height={1688}
+          alt="The same meeting on a phone: the person talking, everyone else in a strip down the side"
+        />
+      </div>
     </div>
   );
 }

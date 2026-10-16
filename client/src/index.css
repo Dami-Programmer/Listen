@@ -8378,7 +8378,10 @@ body:has(.mc) .reactions-layer {
   color: var(--ld-ink);
   font-family: var(--ld-font);
   -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
+  /* clip, not hidden: hidden quietly makes this its own scroll box, which
+     stops the sticky top bar from sticking (and lets the page be pushed
+     sideways by wide content) — clip just cuts the overflow off */
+  overflow-x: clip;
 }
 :root[data-theme='light'] .landing {
   --ld-hi: #0d0d0d;
@@ -8448,6 +8451,27 @@ body:has(.mc) .reactions-layer {
   align-items: center;
   gap: 36px;
 }
+/* Desktop (wide enough for the nav links): the bar stays at the top while
+   you scroll, on frosted glass — the page shows through, blurred, in the
+   page's own colour (so it works in light and dark). The bar spans the full
+   width; the padding keeps its contents lined up with the page column. */
+@media (min-width: 981px) {
+  .ld-top {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    max-width: none;
+    padding-inline: max(24px, calc((100% - var(--ld-max)) / 2 + 24px));
+    background: color-mix(in srgb, var(--ld-page) 62%, transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    backdrop-filter: blur(16px) saturate(160%);
+    border-bottom: 1px solid color-mix(in srgb, var(--ld-line) 70%, transparent);
+  }
+  /* the nav's links (#how, #features…) stop below the bar, not under it */
+  .landing [id] {
+    scroll-margin-top: 90px;
+  }
+}
 .ld-logo {
   display: flex;
   flex-shrink: 0;
@@ -8507,13 +8531,6 @@ body:has(.mc) .reactions-layer {
   font-size: 14px;
   opacity: 0.85;
 }
-.ld-btn.grey {
-  background: rgba(var(--ld-hi-rgb), 0.28);
-  color: var(--ld-hi) !important;
-}
-.ld-btn.grey:hover {
-  background: rgba(var(--ld-hi-rgb), 0.36);
-}
 .ld-btn.ghost {
   background: transparent;
   border-color: rgba(var(--ld-hi-rgb), 0.22);
@@ -8555,16 +8572,6 @@ body:has(.mc) .reactions-layer {
   font-weight: 500;
   color: var(--ld-dim);
 }
-.ld-sub {
-  margin: 22px 0 0;
-  font: 500 clamp(20px, 2.4vw, 32px) / 1.3 var(--ld-display);
-  letter-spacing: -0.02em;
-  color: var(--ld-dim);
-}
-.ld-sub b {
-  font-weight: 800;
-  color: var(--ld-hi);
-}
 .ld-lead {
   max-width: 680px;
   margin: 34px auto 40px;
@@ -8603,6 +8610,63 @@ body:has(.mc) .reactions-layer {
 .ld-hero-panel .ld-frame {
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
+}
+
+/* The hero's fixed pictures (HeroDemo in LandingDemos.jsx): the desktop call
+   fills the window frame; the phone overlaps its bottom-left corner, in a
+   black bezel like the live phone demo. */
+.ld-hero-shots {
+  position: relative; /* the phone is placed against this panel */
+}
+/* light theme: the light-mode picture gets a light window bar to match
+   (the frame is dark by default, for the live demos) */
+.ld-hero-shots.light .ld-frame {
+  background: #f4f6f8;
+}
+.ld-hero-shots.light .ld-frame-bar {
+  border-bottom-color: rgba(0, 0, 0, 0.07);
+  color: #6b7480;
+}
+.ld-hero-shots.light .ld-frame-url {
+  background: rgba(0, 0, 0, 0.05);
+  color: #3d4550;
+}
+.ld-hero-shots.light .ld-frame-tag {
+  color: #a86a00; /* the yellow tag, darker so it reads on white */
+}
+.ld-hero-desktop {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.ld-hero-phone {
+  position: absolute;
+  left: 3%;
+  bottom: 0;
+  /* a fifth of the panel, but readable on small screens and not huge on big ones */
+  width: clamp(96px, 19%, 230px);
+  border-radius: 13% / 6%; /* rounder at the corners, like a phone */
+  overflow: hidden;
+  box-shadow:
+    0 0 0 8px #000,
+    0 0 0 9px rgba(255, 255, 255, 0.14),
+    0 30px 70px -20px rgba(0, 0, 0, calc(0.9 * var(--shadow-k, 1)));
+}
+.ld-hero-phone img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+/* on a phone the whole picture is small: a slightly bigger phone, thinner edge */
+@media (max-width: 760px) {
+  .ld-hero-phone {
+    left: 4%;
+    width: 27%;
+    box-shadow:
+      0 0 0 4px #000,
+      0 0 0 5px rgba(255, 255, 255, 0.14),
+      0 16px 40px -12px rgba(0, 0, 0, calc(0.9 * var(--shadow-k, 1)));
+  }
 }
 
 /* window dots (the frame's title bar) */
@@ -8663,32 +8727,7 @@ body:has(.mc) .reactions-layer {
   line-height: 1;
 }
 
-/* 3. how it works */
-.ld-steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-}
-.ld-steps .ld-card {
-  position: relative;
-}
-.ld-step-n {
-  position: absolute;
-  top: 18px;
-  right: 20px;
-  font:
-    800 34px/1 'Plus Jakarta Sans',
-    'Inter',
-    system-ui,
-    sans-serif;
-  color: rgba(var(--ld-hi-rgb, 255, 255, 255), 0.25);
-}
-
-/* 4. features, 5. who it's for */
-.ld-features,
+/* 5. who it's for */
 .ld-audience {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -8804,7 +8843,6 @@ body:has(.mc) .reactions-layer {
 
 /* --- smaller screens --- */
 @media (max-width: 980px) {
-  .ld-features,
   .ld-audience {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -8841,8 +8879,6 @@ body:has(.mc) .reactions-layer {
   .ld-hero-panel {
     padding: 20px 12px 0;
   }
-  .ld-steps,
-  .ld-features,
   .ld-audience {
     grid-template-columns: 1fr;
   }
@@ -9175,15 +9211,49 @@ html:has(.landing) {
   }
 }
 @media (max-width: 1180px) {
-  /* smaller screens and phones: one row you swipe sideways */
+  /* Smaller screens and phones: the tabs no longer fit on one row, so they
+     wrap onto as many rows as needed — as pills, since an underline only
+     reads on a single row. Every tab stays visible; nothing to swipe for.
+     (This used to be one row you swiped sideways, with the scrollbar
+     hidden: the last tabs just looked cut off, and a mouse couldn't reach
+     them.) */
   .ld-steplist {
-    flex-wrap: nowrap;
-    justify-content: flex-start;
-    overflow-x: auto;
-    scrollbar-width: none;
+    gap: 8px;
+    margin-bottom: 20px;
+    border-bottom: none;
   }
-  .ld-steplist::-webkit-scrollbar {
-    display: none;
+  .ld-stepitem {
+    margin-bottom: 0;
+    padding: 9px 15px;
+    border: 1px solid var(--ld-line);
+    border-radius: 9999px;
+    font-size: 15px;
+    transition:
+      color 0.2s ease,
+      border-color 0.25s ease,
+      background-color 0.25s ease;
+  }
+  .ld-stepitem.on {
+    border-color: var(--ld-gold);
+    background: color-mix(in srgb, var(--ld-gold) 14%, transparent);
+  }
+  .ld-stepitem:focus-visible {
+    outline-offset: 2px;
+  }
+}
+@media (max-width: 640px) {
+  /* phones: smaller pills, so more fit on each row */
+  .ld-steplist {
+    gap: 6px;
+  }
+  .ld-stepitem {
+    gap: 5px;
+    padding: 7px 11px;
+    font-size: 13.5px;
+  }
+  /* (".ld-stepitem" in front: the number's own rule comes later in this file) */
+  .ld-stepitem .ld-stepitem-n {
+    font-size: 11px;
   }
 }
 .ld-stepitem-n {

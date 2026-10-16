@@ -791,16 +791,6 @@ export function moveParticipant(fromId, toId, socketId, create = {}) {
   return to;
 }
 
-/** The room a breakout room belongs to, and all its breakout rooms' ids. */
-export function breakoutIdsOf(mainId) {
-  return rooms.get(mainId)?.breakouts?.ids ?? [];
-}
-
-/** All rooms' ids (for finding breakout rooms of a main room that closed). */
-export function allRoomIds() {
-  return [...rooms.keys()];
-}
-
 /**
  * Remove a participant from whatever room they're in.
  * If the host left, promote the next participant (co-host first).
