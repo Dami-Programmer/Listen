@@ -1,0 +1,36 @@
+# Checks every push (and every pull request) before you rely on it:
+#   1. lint   — catches mistakes like unused or undefined names
+#   2. tests  — the meeting rules in server/src/rooms.js (server/test/)
+#   3. build  — the website still builds
+# A red ✗ next to a commit on GitHub means one of them failed; click it to see
+# which and why. (Render can be set to deploy only after these pass — see its
+# "Auto-Deploy" setting.)
+
+name: Check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # exactly the versions in package-lock.json
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        run: npm test
+
+      - name: Build the website
+        run: npm run build

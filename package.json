@@ -13,6 +13,7 @@
     "dev": "concurrently -n server,client -c blue,green \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run build -w client",
     "lint": "eslint .",
+    "test": "node --test \"server/test/*.test.js\"",
     "format": "prettier --write ."
   },
   "devDependencies": {
