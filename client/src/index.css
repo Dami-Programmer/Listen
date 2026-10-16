@@ -2512,6 +2512,19 @@ button.cs-mode-badge.moderated:hover {
   background: rgba(var(--ink, 255, 255, 255), 0.05);
   transition: border-color 0.2s ease;
 }
+/* the fieldset that lets a mute disable the whole box at once: no look of
+   its own */
+.cp-compose-set {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+/* muted by a moderator: dimmed, and the reason shows as the placeholder */
+.cp-compose.muted {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 /* a soft green edge while you're typing in it */
 .cp-compose:focus-within {
   border-color: rgba(47, 211, 107, 0.35);
@@ -4499,6 +4512,11 @@ img.pj-initials {
 .mc-comment {
   flex: 1;
   min-width: 0;
+}
+/* chat muted by a moderator: the field is dimmed (reactions stay usable) */
+.mc-comment.muted input {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 .mc-comment input {
   width: 100%;
@@ -8062,6 +8080,21 @@ body:has(.mc) .reactions-layer {
 .pj-extras .pj-claim {
   margin-top: 0;
 }
+/* quieter than the two links before it: a plain grey "Privacy" */
+.pj-privacy {
+  align-self: center;
+  margin-left: auto;
+  padding: 6px 2px;
+  font:
+    500 13px/1.3 'Inter',
+    system-ui,
+    sans-serif;
+  color: var(--text-muted, #8d98a5);
+  text-decoration: none;
+}
+.pj-privacy:hover {
+  text-decoration: underline;
+}
 .sched-row {
   display: grid;
   grid-template-columns: 1.3fr 1fr 1fr;
@@ -8835,7 +8868,11 @@ body:has(.mc) .reactions-layer {
   padding: 56px 24px;
   border-radius: 28px;
   text-align: center;
-  background: linear-gradient(135deg, rgba(var(--ld-hi-rgb, 255, 255, 255), 0.16), rgba(var(--ld-hi-rgb, 255, 255, 255), 0.16));
+  background: linear-gradient(
+    135deg,
+    rgba(var(--ld-hi-rgb, 255, 255, 255), 0.16),
+    rgba(var(--ld-hi-rgb, 255, 255, 255), 0.16)
+  );
   border: 1px solid var(--ld-line);
 }
 .ld-final h2 {
@@ -8860,6 +8897,62 @@ body:has(.mc) .reactions-layer {
 .ld-foot a {
   color: var(--ld-hi, #fff);
   text-decoration: none;
+}
+/* the right-hand side: Privacy & terms · Made by … */
+.ld-foot-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+}
+
+/* --- the privacy page (PrivacyPage.jsx): one readable column --- */
+.ld-legal {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 40px 24px 72px;
+  font-size: 16.5px;
+  line-height: 1.65;
+  color: var(--ld-ink);
+}
+.ld-legal h1 {
+  margin: 0 0 10px;
+  font: 800 clamp(34px, 5vw, 48px) / 1.1 var(--ld-display);
+  color: var(--ld-hi);
+}
+.ld-legal h2 {
+  margin: 40px 0 12px;
+  font: 700 22px/1.3 var(--ld-display);
+  color: var(--ld-hi);
+  scroll-margin-top: 90px; /* below the sticky top bar */
+}
+.ld-legal-meta {
+  margin: 0 0 24px;
+  font-size: 14px;
+  color: var(--ld-dim);
+}
+.ld-legal-lead {
+  font-size: 19px;
+}
+.ld-legal a {
+  color: var(--ld-hi);
+  text-underline-offset: 3px;
+}
+.ld-legal-list dt {
+  margin-top: 18px;
+  font-weight: 600;
+  color: var(--ld-hi);
+}
+.ld-legal-list dd {
+  margin: 4px 0 0;
+}
+.ld-legal ul {
+  padding-left: 20px;
+}
+.ld-legal li + li {
+  margin-top: 8px;
+}
+.ld-legal-back {
+  margin-top: 48px;
 }
 
 /* --- smaller screens --- */
@@ -9334,7 +9427,12 @@ html:has(.landing) {
 }
 .ld-frame.phone .ld-frame-stage {
   background:
-    radial-gradient(420px 300px at 50% 40%, rgba(var(--ld-hi-rgb, 255, 255, 255), 0.08), transparent 70%), #0b0f14;
+    radial-gradient(
+      420px 300px at 50% 40%,
+      rgba(var(--ld-hi-rgb, 255, 255, 255), 0.08),
+      transparent 70%
+    ),
+    #0b0f14;
 }
 .ld-frame-app {
   position: absolute;

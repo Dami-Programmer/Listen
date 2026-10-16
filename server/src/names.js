@@ -36,6 +36,8 @@ const RESERVED = new Set([
   'new',
   'start', // the app's home screen (/start — the landing page is /)
   'demo', // the landing page's live demo (/demo)
+  'privacy', // the privacy page (/privacy)
+  'terms',
   'rec',
   'recording',
   'recordings',

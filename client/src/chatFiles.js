@@ -7,6 +7,15 @@ import { socket } from './socket.js';
 
 const MAX_IMAGE_DIM = 1600;
 
+// The link that DOWNLOADS a chat file. Files now live on the server
+// (server/src/chatFiles.js), and a browser ignores <a download> for links to
+// another address — so ask the server to send it as a download instead.
+// (An old in-memory data: URL is left as it is.)
+export function downloadUrl(url = '') {
+  if (!/^https?:/.test(url)) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}download=1`;
+}
+
 export function formatBytes(n) {
   if (!n) return '';
   if (n < 1024) return `${n} B`;
@@ -64,13 +73,14 @@ export function prepareFile(file) {
   );
 }
 
-
 // Prepare + send one file to the room chat. Resolves with an error message to
 // show, or null when it went through.
 export function sendChatFile(file) {
   if (!file) return Promise.resolve(null);
   if (file.size > CHAT_FILE_MAX_BYTES && !file.type.startsWith('image/')) {
-    return Promise.resolve(`"${file.name}" is too large (max ${formatBytes(CHAT_FILE_MAX_BYTES)}).`);
+    return Promise.resolve(
+      `"${file.name}" is too large (max ${formatBytes(CHAT_FILE_MAX_BYTES)}).`,
+    );
   }
   return prepareFile(file)
     .then((prepared) => {

@@ -35,7 +35,7 @@ import {
   Trash,
   X,
 } from './icons.jsx';
-import { sendChatFile } from './chatFiles.js';
+import { downloadUrl, sendChatFile } from './chatFiles.js';
 import { loadDeck, startPainter } from './presenter.js';
 import { useVideoPip } from './useVideoPip.js';
 import { inviteLink, recordingLink } from './meeting.js';
@@ -111,6 +111,8 @@ export default function MobileCall({ call }) {
 
   const host = participants.find((p) => p.role === ROLES.HOST);
   const peerOf = (id) => participants.find((p) => p.id === id);
+  // whose chat a moderator muted (CHAT_MUTE)
+  const chatMuted = state?.chatMuted ?? [];
 
   // Each camera tile, plus what we need to draw an avatar while its camera is off.
   const tiles = cameraTiles.map((t) => {
@@ -819,6 +821,7 @@ export default function MobileCall({ call }) {
         onHold={setMsgMenu}
         onView={setViewing}
         onOpenQuestions={() => openSheet('qa')}
+        canModerate={isModerator}
       />
 
       {presentation && (
@@ -876,7 +879,7 @@ export default function MobileCall({ call }) {
           {badge > 0 && <b className="mc-badge">{badge}</b>}
         </button>
 
-        <Composer />
+        <Composer muted={chatMuted.includes(selfId)} />
 
         <ControlDial
           open={dialOpen}
@@ -1040,7 +1043,7 @@ export default function MobileCall({ call }) {
             <p className="mc-menu-title mc-menu-quote">
               {msgMenu.kind === 'file' ? `📎 ${msgMenu.file?.name ?? 'Attachment'}` : msgMenu.text}
             </p>
-            {msgMenu.kind !== 'sticker' && msgMenu.kind !== 'file' && (
+            {msgMenu.from === selfId && msgMenu.kind !== 'sticker' && msgMenu.kind !== 'file' && (
               <button
                 type="button"
                 role="menuitem"
@@ -1060,13 +1063,17 @@ export default function MobileCall({ call }) {
               onClick={async () => {
                 const m = msgMenu;
                 setMsgMenu(null);
+                const mine = m.from === selfId;
                 const ok = await confirmDialog({
-                  title: 'Delete this message?',
+                  title: mine ? 'Delete this message?' : `Delete ${m.name}’s message?`,
                   message: 'It will be removed for everyone.',
                   confirmLabel: 'Delete',
                   danger: true,
                 });
-                if (ok) socket.emit(EVENTS.CHAT_UNSEND, { id: m.id }, () => {});
+                if (!ok) return;
+                // your own: unsend; someone else's: a moderator's delete
+                // (the server checks you're allowed)
+                socket.emit(mine ? EVENTS.CHAT_UNSEND : EVENTS.CHAT_DELETE, { id: m.id }, () => {});
               }}
             >
               <span>Delete</span>
@@ -1113,6 +1120,7 @@ export default function MobileCall({ call }) {
             handRaised,
             myQueuePos,
             cohostId,
+            chatMuted,
             act,
             initialTab: sheetTab,
             questions: state?.questions ?? [],
@@ -1509,8 +1517,9 @@ function DeviceMenu({ kind, current, onPick, onClose, extra = null }) {
 }
 
 // "Add comment…" — sends a text message to the room chat. The 📎 inside the
-// field sends a photo (library or camera) or any file.
-function Composer() {
+// field sends a photo (library or camera) or any file. `muted`: a moderator
+// muted my chat — the field greys out and says so.
+function Composer({ muted = false }) {
   const [text, setText] = useState('');
   const [attachMenu, setAttachMenu] = useState(false);
   const [sending, setSending] = useState(false);
@@ -1573,12 +1582,15 @@ function Composer() {
     stopTyping();
   }
   return (
-    <form className="mc-comment" onSubmit={send}>
+    <form className={`mc-comment${muted ? ' muted' : ''}`} onSubmit={send}>
       <input
         value={text}
         onChange={onChange}
         onBlur={stopTyping}
-        placeholder="Add comment..."
+        // muted by a moderator: can't type (reactions below still work —
+        // they aren't chat)
+        disabled={muted}
+        placeholder={muted ? 'The host muted your chat' : 'Add comment...'}
         aria-label="Add comment"
         maxLength={2000}
         enterKeyHint="send"
@@ -1594,7 +1606,7 @@ function Composer() {
         type="button"
         className={`mc-attach${sending ? ' busy' : ''}`}
         onClick={() => setAttachMenu(true)}
-        disabled={sending}
+        disabled={sending || muted}
         aria-label={sending ? 'Sending…' : 'Send a photo or file'}
       >
         <Paperclip />
@@ -1655,6 +1667,7 @@ function ChatFeed({
   onHold,
   onView,
   onOpenQuestions,
+  canModerate = false, // a moderator can hold anyone's message to delete it
 }) {
   const [joins, setJoins] = useState([]);
   const seen = useRef(null);
@@ -1778,7 +1791,9 @@ function ChatFeed({
             <div
               key={m.id}
               className={`mc-msg${enter}${held === m.id ? ' held' : ''}`}
-              {...(m.from === selfId ? holdHandlers(hold, () => onHold(m)) : {})}
+              // hold a message for its menu: your own (edit / delete), or —
+              // for a moderator — anyone's (delete)
+              {...(m.from === selfId || canModerate ? holdHandlers(hold, () => onHold(m)) : {})}
             >
               <Avatar name={m.name} src={avatarOf(m)} size={32} />
               <div>
@@ -1890,7 +1905,8 @@ function MessageBody({ m, onView }) {
         </button>
       );
     return (
-      <a className="mc-file" href={m.file.url} download={m.file.name}>
+      // (the server sends it as a download — see downloadUrl)
+      <a className="mc-file" href={downloadUrl(m.file.url)} download={m.file.name}>
         📎 {m.file.name}
       </a>
     );
@@ -1918,6 +1934,7 @@ function PeopleSheet({
   handRaised,
   myQueuePos,
   cohostId,
+  chatMuted = [],
   act,
   questions,
   poll,
@@ -2114,6 +2131,16 @@ function PeopleSheet({
                       {canMod && !moderated && (
                         <button type="button" onClick={() => act.forceMute(p.id)}>
                           Mute
+                        </button>
+                      )}
+                      {/* their chat: muted = they can read, not post
+                          (never the co-host — a moderator) */}
+                      {canMod && p.id !== cohostId && (
+                        <button
+                          type="button"
+                          onClick={() => act.setChatMute(p.id, !chatMuted.includes(p.id))}
+                        >
+                          {chatMuted.includes(p.id) ? 'Unmute chat' : 'Mute chat'}
                         </button>
                       )}
                       {canMod && (

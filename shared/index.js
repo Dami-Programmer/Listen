@@ -123,6 +123,15 @@ export const EVENTS = {
   CHAT_UNSEND: 'chat-unsend',
   CHAT_UNSENT: 'chat-unsent',
 
+  // Chat moderation — moderators (host / co-host) only, checked on the server.
+  //   CHAT_DELETE : client -> server { id }. Delete ANYONE's message; everyone
+  //                 gets the same CHAT_UNSENT as for an unsend.
+  //   CHAT_MUTE   : client -> server { targetId, muted }. Mute / unmute one
+  //                 person's chat (they can read, not post). Never the host or
+  //                 co-host. Room-state's `chatMuted` lists who's muted.
+  CHAT_DELETE: 'chat-delete',
+  CHAT_MUTE: 'chat-mute',
+
   // Screen sharing (added after in-call chat). Google-Meet-style: only ONE
   // person presents at a time. The media itself is renegotiated peer-to-peer
   // (perfect negotiation in webrtc.js), or published to the SFU (sfu.js —

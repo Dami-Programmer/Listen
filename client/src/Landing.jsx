@@ -231,11 +231,14 @@ export default function Landing() {
 
       <footer className="ld-foot">
         <span>© {new Date().getFullYear()} Turnly. Every voice gets a turn.</span>
-        <span>
-          Made by{' '}
-          <a href={PROFILE.portfolio} target="_blank" rel="noreferrer">
-            {PROFILE.name}
-          </a>
+        <span className="ld-foot-links">
+          <a href="/privacy">Privacy &amp; terms</a>
+          <span>
+            Made by{' '}
+            <a href={PROFILE.portfolio} target="_blank" rel="noreferrer">
+              {PROFILE.name}
+            </a>
+          </span>
         </span>
       </footer>
     </div>

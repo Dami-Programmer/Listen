@@ -42,6 +42,14 @@ import {
 import * as sfu from './sfu.js';
 import * as recordings from './recordings.js';
 import {
+  deleteChatFile,
+  deleteChatFilesOf,
+  openChatFile,
+  saveChatFile,
+  sweepChatFiles,
+  chatFileIdOf,
+} from './chatFiles.js';
+import {
   claimName,
   isHostKey,
   lookupName,
@@ -105,6 +113,9 @@ import {
   snapshot,
   ticketOf,
   unsendChatMessage,
+  deleteChatMessage,
+  setChatMuted,
+  isChatMuted,
   usePass,
 } from './rooms.js';
 
@@ -114,6 +125,13 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const PORT = process.env.PORT || 3001;
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+// This server's own public address, for links it hands out (chat files —
+// chatFiles.js). Render sets RENDER_EXTERNAL_URL; locally it's localhost.
+// (Not taken from the visitor's request, which a client could fake.)
+const PUBLIC_URL = (process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`).replace(
+  /\/$/,
+  '',
+);
 
 // ICE servers every browser uses to connect its calls. STUN finds a direct
 // route between two people; on networks that block direct routes (mobile data,
@@ -543,6 +561,34 @@ app.post('/client-errors', express.text({ type: 'text/plain', limit: '8kb' }), (
   res.status(204).end();
 });
 
+// --- Chat files (chatFiles.js) -------------------------------------------------
+// A photo or file sent in a meeting's chat. Whoever has the link (everyone in
+// that meeting got it in the chat) can open it; the id is random and
+// unguessable. Photos and PDFs open in the browser; anything else, or
+// ?download=1, is sent as a download — never shown as a page on this server.
+app.get('/files/:id', async (req, res) => {
+  try {
+    const f = await openChatFile(req.params.id);
+    if (!f) return res.status(404).send('This file is no longer available.');
+    const asDownload = !f.inline || req.query.download;
+    res.set({
+      'Content-Type': f.inline ? f.type : 'application/octet-stream',
+      'Content-Length': String(f.size),
+      'Content-Disposition': `${asDownload ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(f.name)}`,
+      'Cache-Control': 'private, max-age=3600',
+      // belt and braces: the browser mustn't guess another type, or run anything
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy':
+        "sandbox; default-src 'none'; img-src 'self'; style-src 'unsafe-inline'",
+    });
+    f.body.on('error', () => res.destroy());
+    f.body.pipe(res);
+  } catch (err) {
+    console.error('[chat files] reading failed:', err.message);
+    res.status(500).send('Couldn’t load this file.');
+  }
+});
+
 // Forget visitors whose rate-limit window has passed, so the map doesn't grow
 // for ever on a long-running server.
 setInterval(() => {
@@ -595,6 +641,8 @@ function finishLeave(socketId) {
   const { roomId, room, admitted } = result;
   if (room === null) {
     console.log(`[room ${roomId}] closed (empty)`);
+    // Its chat files go with it (chatFiles.js).
+    deleteChatFilesOf(before?.chat).catch(() => {});
     // The last person has gone: the recording (if any) is finished.
     if (before?.recording) endRecording(before);
     return;
@@ -851,6 +899,8 @@ const RATE_LIMITS = {
   [EVENTS.CHAT_SEND]: { max: 10, perMs: 10_000 },
   [EVENTS.CHAT_EDIT]: { max: 10, perMs: 10_000 },
   [EVENTS.CHAT_UNSEND]: { max: 10, perMs: 10_000 },
+  [EVENTS.CHAT_DELETE]: { max: 20, perMs: 10_000 },
+  [EVENTS.CHAT_MUTE]: { max: 20, perMs: 10_000 },
   [EVENTS.CHAT_TYPING]: { max: 20, perMs: 10_000 },
   [EVENTS.RAISE_HAND]: { max: 10, perMs: 10_000 },
   [EVENTS.LOWER_HAND]: { max: 20, perMs: 10_000 },
@@ -1467,13 +1517,18 @@ io.on('connection', (socket) => {
   // timestamps every message, keeps a bounded history, and fans it out on its
   // own event (never in room-state, which would resend the whole log on every
   // join/role change). Text is escaped by React on render.
-  on(EVENTS.CHAT_SEND, ({ text, kind, file } = {}, ack) => {
+  on(EVENTS.CHAT_SEND, async ({ text, kind, file } = {}, ack) => {
     const room = getRoom(joinedRoomId);
     const participant = room?.participants[socket.id];
     if (!room || !participant) {
       ack?.({ ok: false, error: 'not in a room' });
       return;
     }
+    // A moderator muted this person's chat (CHAT_MUTE below).
+    if (isChatMuted(room, socket.id)) {
+      return ack?.({ ok: false, error: 'The host has muted your chat.' });
+    }
+    const roomId = joinedRoomId; // (saving a file takes a moment)
 
     const base = {
       id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
@@ -1497,15 +1552,26 @@ io.on('connection', (socket) => {
           .replace(/[/\\\r\n\t]/g, '_')
           .trim()
           .slice(0, 200) || 'file';
+      const type = String(file?.type ?? 'application/octet-stream').slice(0, 100);
+      // Into storage (chatFiles.js) — the message only carries a link to it,
+      // so the file doesn't sit in this server's memory for the whole meeting.
+      let saved;
+      try {
+        saved = await saveChatFile(url, { name, type }, CHAT_FILE_MAX_BYTES);
+      } catch (err) {
+        console.error('[chat files] saving failed:', err.message);
+        return ack?.({ ok: false, error: 'Couldn’t send that file. Please try again.' });
+      }
+      if (!saved) return ack?.({ ok: false, error: 'attachment too large' });
+      // They may have left (or the room closed) while it was saving.
+      if (!getRoom(roomId)?.participants[socket.id]) {
+        deleteChatFile(saved.id);
+        return ack?.({ ok: false, error: 'not in a room' });
+      }
       message = {
         ...base,
         kind: 'file',
-        file: {
-          name,
-          type: String(file?.type ?? 'application/octet-stream').slice(0, 100),
-          size: Number.isFinite(file?.size) ? Math.max(0, Math.round(file.size)) : url.length,
-          url,
-        },
+        file: { name, type, size: saved.size, url: `${PUBLIC_URL}/files/${saved.id}` },
       };
     } else {
       const isSticker = kind === 'sticker';
@@ -1522,9 +1588,9 @@ io.on('connection', (socket) => {
       };
     }
 
-    addChatMessage(room, message);
+    addChatMessage(getRoom(roomId), message);
     ack?.({ ok: true });
-    io.to(joinedRoomId).emit(EVENTS.CHAT_MESSAGE, message);
+    io.to(roomId).emit(EVENTS.CHAT_MESSAGE, message);
   });
 
   // Edit your own text message. Works for everyone in the room in any mode —
@@ -1550,11 +1616,45 @@ io.on('connection', (socket) => {
     const room = getRoom(joinedRoomId);
     if (!room || !room.participants[socket.id]) return ack?.({ ok: false, error: 'not in a room' });
     const msgId = String(id ?? '');
+    const fileId = chatFileIdOf(room.chat.find((m) => m.id === msgId)?.file?.url);
     if (!unsendChatMessage(room, socket.id, msgId)) {
       return ack?.({ ok: false, error: 'you can only unsend your own messages' });
     }
+    if (fileId) deleteChatFile(fileId); // an unsent file is gone from storage too
     ack?.({ ok: true });
     io.to(joinedRoomId).emit(EVENTS.CHAT_UNSENT, { id: msgId });
+  });
+
+  // --- Chat moderation: a moderator (host or co-host) can delete ANYONE's
+  // message, and mute one person's chat (they can still read it, not post).
+  // Checked here on the server — the buttons in the app prove nothing.
+
+  // Delete someone's message for everyone. Same broadcast as an unsend, so
+  // every chat removes it the same way.
+  on(EVENTS.CHAT_DELETE, ({ id } = {}, ack) => {
+    const room = requireModeratorRoom(ack);
+    if (!room) return;
+    const removed = deleteChatMessage(room, String(id ?? ''));
+    if (!removed) return ack?.({ ok: false, error: 'no such message' });
+    const fileId = chatFileIdOf(removed.file?.url);
+    if (fileId) deleteChatFile(fileId);
+    ack?.({ ok: true });
+    io.to(joinedRoomId).emit(EVENTS.CHAT_UNSENT, { id: removed.id });
+  });
+
+  // Mute / unmute one person's chat. Never the host (requireTarget) or the
+  // co-host (setChatMuted refuses). Shows in room-state (`chatMuted`), so their
+  // app can grey out the message box and say why.
+  on(EVENTS.CHAT_MUTE, ({ targetId, muted } = {}, ack) => {
+    const room = requireModeratorRoom(ack);
+    if (!room) return;
+    const target = requireTarget(room, targetId, ack);
+    if (!target) return;
+    if (!setChatMuted(room, target, muted === true)) {
+      return ack?.({ ok: false, error: 'a co-host’s chat can’t be muted' });
+    }
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
   });
 
   // "Someone is typing" — pure relay to the rest of the room, never stored.
@@ -1563,6 +1663,7 @@ io.on('connection', (socket) => {
     const room = getRoom(joinedRoomId);
     const participant = room?.participants[socket.id];
     if (!room || !participant) return;
+    if (typing === true && isChatMuted(room, socket.id)) return; // can't post, so not "typing"
     socket.to(joinedRoomId).emit(EVENTS.CHAT_TYPING, {
       id: socket.id,
       name: participant.name,
@@ -2167,6 +2268,10 @@ server.listen(PORT, () => {
 checkStorage();
 recordings.sweep();
 setInterval(() => recordings.sweep(), 60 * 60 * 1000).unref();
+// Chat files older than a day (also catches rooms that closed while the
+// server was restarting).
+sweepChatFiles();
+setInterval(() => sweepChatFiles(), 60 * 60 * 1000).unref();
 // …and one-off scheduled meetings, a day after they end.
 sweepNames();
 setInterval(() => sweepNames(), 60 * 60 * 1000).unref();

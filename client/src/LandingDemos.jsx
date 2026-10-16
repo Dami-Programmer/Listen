@@ -201,7 +201,11 @@ function DemoScreen({ scene, phone, run, label }) {
           {failed ? (
             <>
               <span role="alert">Couldn’t start the demo</span>
-              <button type="button" className="ld-frame-retry" onClick={() => setTries((n) => n + 1)}>
+              <button
+                type="button"
+                className="ld-frame-retry"
+                onClick={() => setTries((n) => n + 1)}
+              >
                 Try again
               </button>
             </>

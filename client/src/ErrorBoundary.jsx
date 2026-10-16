@@ -51,15 +51,11 @@ export default class ErrorBoundary extends Component {
         <div className="left-card" role="alert">
           <h1>Something went wrong</h1>
           <p>
-            Sorry, Turnly hit a problem and couldn’t show this page. It’s been reported so it
-            can be fixed.
+            Sorry, Turnly hit a problem and couldn’t show this page. It’s been reported so it can be
+            fixed.
           </p>
           <div className="left-actions">
-            <button
-              type="button"
-              className="left-rejoin"
-              onClick={() => window.location.reload()}
-            >
+            <button type="button" className="left-rejoin" onClick={() => window.location.reload()}>
               {page === 'meeting' ? 'Rejoin' : 'Reload'}
             </button>
             {page !== 'landing' && (

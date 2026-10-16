@@ -9,7 +9,7 @@ const KEYS = 'turnly.hostKeys'; // { name: hostKey }
 const NAME_RE = /^[a-z0-9](?:[a-z0-9-]{1,28})[a-z0-9]$/;
 const CODE_RE = /^[a-z]{3}-[a-z]{4}-[a-z]{3}$/;
 // Paths that are pages of the site, never a room (see main.jsx).
-const PAGES = new Set(['start', 'demo']);
+const PAGES = new Set(['start', 'demo', 'privacy']);
 export const looksLikeName = (id) => NAME_RE.test(id) && !CODE_RE.test(id) && !PAGES.has(id);
 
 /** Turn "Grace Church!" into "gracechurch" (a suggestion while typing). */

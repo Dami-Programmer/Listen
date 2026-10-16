@@ -24,7 +24,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CHAT_FILE_MAX_BYTES, EVENTS, STICKERS } from '@listen/shared';
 import { socket } from './socket.js';
-import { formatBytes, prepareFile } from './chatFiles.js';
+import { downloadUrl, formatBytes, prepareFile } from './chatFiles.js';
 import ImageViewer from './ImageViewer.jsx';
 import Avatar from './Avatar.jsx';
 import { confirmDialog } from './ConfirmDialog.jsx';
@@ -140,6 +140,10 @@ export default function ChatPanel({
   selfId,
   participants = [],
   onOpenQuestions,
+  // Chat moderation: a moderator can delete anyone's message; `muted` means
+  // a moderator muted MY chat (I can read, not post). Both come from App.jsx.
+  canModerate = false,
+  muted = false,
 }) {
   const [text, setText] = useState('');
   const [picker, setPicker] = useState(null); // 'emoji' | 'sticker' | null
@@ -356,6 +360,22 @@ export default function ChatPanel({
     });
   }
 
+  // A moderator deletes SOMEONE ELSE's message (the server checks they're a
+  // moderator). Everyone's chat removes it the same way as an unsend.
+  async function remove(m) {
+    setActionsFor(null);
+    const ok = await confirmDialog({
+      title: `Delete ${m.name}’s message?`,
+      message: 'It will be removed for everyone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
+    socket.emit(EVENTS.CHAT_DELETE, { id: m.id }, (ack) => {
+      if (!ack?.ok) setAttachError(ack?.error ?? 'Could not delete the message.');
+    });
+  }
+
   // The inline editor that replaces a bubble while you edit it.
   function renderEditor(m) {
     return (
@@ -426,11 +446,11 @@ export default function ChatPanel({
           >
             <img className="chat-image" src={m.file.url} alt={m.file.name} />
           </button>
-          {/* <a download> saves the file instead of navigating to it. The
-              image is a data: URL already in memory, so no server trip. */}
+          {/* Saves the file: the server sends it as a download (downloadUrl
+              — <a download> alone is ignored for the server's address). */}
           <a
             className="cp-image-dl"
-            href={m.file.url}
+            href={downloadUrl(m.file.url)}
             download={m.file.name}
             aria-label={`Download ${m.file.name}`}
             title="Download"
@@ -447,7 +467,7 @@ export default function ChatPanel({
       return (
         <a
           className="cp-bubble cp-file"
-          href={m.file.url}
+          href={downloadUrl(m.file.url)}
           download={m.file.name}
           title={`${m.file.name} · ${formatBytes(m.file.size)} · click to download`}
         >
@@ -517,8 +537,9 @@ export default function ChatPanel({
                   {g.items.map((m) => {
                     const editing = editingId === m.id;
                     // My own, still-live message, not mid-edit -> it gets the
-                    // ✎ Edit (text only) and 🗑 Unsend buttons.
-                    const canAct = mine && !m.unsent && !editing;
+                    // ✎ Edit (text only) and 🗑 Unsend buttons. Someone
+                    // else's, when I'm a moderator -> just 🗑 Delete.
+                    const canAct = (mine || canModerate) && !m.unsent && !editing;
                     return (
                       <div
                         key={m.id}
@@ -551,7 +572,7 @@ export default function ChatPanel({
                           // Sits on the bubble's left (mine are right-aligned).
                           // Hidden until you hover the message (see CSS).
                           <span className="cp-actions">
-                            {m.kind === 'text' && (
+                            {mine && m.kind === 'text' && (
                               <button
                                 type="button"
                                 className="cp-action"
@@ -570,10 +591,11 @@ export default function ChatPanel({
                               className="cp-action danger"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                unsend(m);
+                                if (mine) unsend(m);
+                                else remove(m);
                               }}
-                              aria-label="Unsend message"
-                              title="Unsend"
+                              aria-label={mine ? 'Unsend message' : `Delete ${m.name}’s message`}
+                              title={mine ? 'Unsend' : 'Delete'}
                             >
                               <Trash />
                             </button>
@@ -656,70 +678,75 @@ export default function ChatPanel({
       )}
 
       {/* The composer: one rounded box — text on top, tools along the bottom. */}
-      <form className="cp-compose" onSubmit={sendText}>
-        <textarea
-          ref={inputRef}
-          value={text}
-          onChange={onInputChange}
-          onKeyDown={onComposeKeyDown}
-          onBlur={stopTyping}
-          onPaste={onPaste}
-          placeholder="Message..."
-          maxLength={2000}
-          rows={2}
-          aria-label="Message the room"
-        />
-        <div className="cp-compose-tools">
-          {/* Two attach buttons, each clicking its own hidden file input:
+      {/* Muted by a moderator: everything in the box is disabled (a fieldset
+          disables every button and field inside it at once) and the box
+          says why. */}
+      <form className={`cp-compose${muted ? ' muted' : ''}`} onSubmit={sendText}>
+        <fieldset className="cp-compose-set" disabled={muted}>
+          <textarea
+            ref={inputRef}
+            value={text}
+            onChange={onInputChange}
+            onKeyDown={onComposeKeyDown}
+            onBlur={stopTyping}
+            onPaste={onPaste}
+            placeholder={muted ? 'The host muted your chat. You can still read it.' : 'Message...'}
+            maxLength={2000}
+            rows={2}
+            aria-label="Message the room"
+          />
+          <div className="cp-compose-tools">
+            {/* Two attach buttons, each clicking its own hidden file input:
               - the picture opens the file picker filtered to images
               - the paperclip accepts ANY file (PDF, doc, zip, ...)
               Both go through the same onFilePick -> sendFile path, so images
               still get downscaled and everything respects the size cap.
               (Pasting a file into the message box works too — see onPaste.) */}
-          <span className="cp-compose-left">
-            <button
-              type="button"
-              className="cp-tool"
-              aria-label="Send a photo"
-              title="Send a photo"
-              onClick={() => imageInputRef.current?.click()}
-            >
-              <ImageIcon />
-            </button>
-            <button
-              type="button"
-              className="cp-tool"
-              aria-label="Send a file"
-              title="Send a file"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Paperclip />
-            </button>
-          </span>
-          <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={onFilePick} />
-          <input ref={fileInputRef} type="file" hidden onChange={onFilePick} />
+            <span className="cp-compose-left">
+              <button
+                type="button"
+                className="cp-tool"
+                aria-label="Send a photo"
+                title="Send a photo"
+                onClick={() => imageInputRef.current?.click()}
+              >
+                <ImageIcon />
+              </button>
+              <button
+                type="button"
+                className="cp-tool"
+                aria-label="Send a file"
+                title="Send a file"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Paperclip />
+              </button>
+            </span>
+            <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={onFilePick} />
+            <input ref={fileInputRef} type="file" hidden onChange={onFilePick} />
 
-          <span className="cp-compose-right">
-            <button
-              type="button"
-              className={`cp-tool${picker ? ' on' : ''}`}
-              aria-label="Emoji and stickers"
-              title="Emoji and stickers"
-              onClick={() => setPicker((p) => (p ? null : 'emoji'))}
-            >
-              <Smile />
-            </button>
-            <button
-              type="submit"
-              className="cp-tool cp-send"
-              disabled={!text.trim()}
-              aria-label="Send"
-              title="Send"
-            >
-              <Send />
-            </button>
-          </span>
-        </div>
+            <span className="cp-compose-right">
+              <button
+                type="button"
+                className={`cp-tool${picker ? ' on' : ''}`}
+                aria-label="Emoji and stickers"
+                title="Emoji and stickers"
+                onClick={() => setPicker((p) => (p ? null : 'emoji'))}
+              >
+                <Smile />
+              </button>
+              <button
+                type="submit"
+                className="cp-tool cp-send"
+                disabled={!text.trim()}
+                aria-label="Send"
+                title="Send"
+              >
+                <Send />
+              </button>
+            </span>
+          </div>
+        </fieldset>
       </form>
 
       {/* Full-screen viewer for a clicked chat image. It portals itself into

@@ -791,6 +791,8 @@ export function CallView({ state, chat, typers, selfId, onLeave, media, iceServe
 
   // socketId -> the id of that peer's screen MediaStream (room-state).
   const sharing = state?.sharing ?? {};
+  // whose chat a moderator muted (CHAT_MUTE) — mine greys out my message box
+  const chatMuted = state?.chatMuted ?? [];
 
   // The whole call: local camera + screen, remote streams, toggles, and
   // (Phase 4) my role + whether I'm a muted listener.
@@ -1069,6 +1071,9 @@ export function CallView({ state, chat, typers, selfId, onLeave, media, iceServe
 
   // Phase 7 — moderation. Destructive actions confirm first.
   const forceMute = (targetId) => emit(EVENTS.FORCE_MUTE, { targetId });
+  // Mute / unmute someone's chat (they can still read it). Easy to undo, so
+  // no confirmation.
+  const setChatMute = (targetId, muted) => emit(EVENTS.CHAT_MUTE, { targetId, muted });
   async function removeParticipant(p) {
     const ok = await confirmDialog({
       title: `Remove ${p.name} from the call?`,
@@ -1435,6 +1440,7 @@ export function CallView({ state, chat, typers, selfId, onLeave, media, iceServe
               dismissHand,
               moveInQueue,
               forceMute,
+              setChatMute,
               removeParticipant,
               clearFloor,
               makeCohost,
@@ -2003,6 +2009,16 @@ export function CallView({ state, chat, typers, selfId, onLeave, media, iceServe
                               Mute
                             </button>
                           )}
+                          {/* their chat: muted = they can read, not post
+                              (never the co-host — a moderator) */}
+                          {canMod && p.id !== cohostId && (
+                            <button
+                              className="ghost small"
+                              onClick={() => setChatMute(p.id, !chatMuted.includes(p.id))}
+                            >
+                              {chatMuted.includes(p.id) ? 'Unmute chat' : 'Mute chat'}
+                            </button>
+                          )}
                           {canMod && (
                             <button
                               className="ghost small danger"
@@ -2055,6 +2071,8 @@ export function CallView({ state, chat, typers, selfId, onLeave, media, iceServe
                 selfId={selfId}
                 participants={participants}
                 onOpenQuestions={() => setPanelTab('qa')}
+                canModerate={isModerator}
+                muted={chatMuted.includes(selfId)}
               />
             )}
             {panelTab === 'qa' && (

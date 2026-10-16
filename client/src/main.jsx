@@ -17,6 +17,7 @@ installErrorReporting();
 // demo in a frame asks for it).
 const App = lazy(() => import('./App.jsx'));
 const RecordingPage = lazy(() => import('./RecordingPage.jsx'));
+const PrivacyPage = lazy(() => import('./PrivacyPage.jsx'));
 // The landing page's live demo: the real app against a pretend server, loaded
 // only on /demo (see demo/DemoApp.jsx).
 const DemoApp = lazy(() => import('./demo/DemoApp.jsx'));
@@ -33,6 +34,7 @@ installPressFx();
 //   / (nothing else)           the landing page (Landing.jsx) — for people
 //                              who've never heard of Turnly
 //   /demo?scene=…              the landing page's live demo (in a frame)
+//   /privacy                   the privacy page + terms of use (PrivacyPage.jsx)
 //   /start, ?room=…, /name     the app (home screen, or straight into a meeting)
 const params = new URLSearchParams(window.location.search);
 const recordingId = params.get('rec');
@@ -49,6 +51,9 @@ if (IS_DEMO) {
 } else if (isLanding) {
   page = <Landing />;
   kind = 'landing';
+} else if (window.location.pathname === '/privacy') {
+  page = <PrivacyPage />; // privacy + terms of use
+  kind = 'landing'; // (for the error screen: a plain page, just "Reload")
 } else {
   page = <App />;
   // the app's home screen, or a meeting (a room in the address)

@@ -95,6 +95,7 @@ function createRoom() {
     tickets: {},
     away: {},
     media: {},
+    chatMuted: {}, // socketId -> true: a moderator muted their chat (see setChatMuted)
     recording: null, // { id, startedAt, recorderId, part } while recording
     // Questions, the poll, and the meeting report's numbers (activities.js).
     createdAt: Date.now(),
@@ -211,7 +212,14 @@ export function rekey(room, oldId, newId) {
   // Plain socketId -> value maps: move the value across.
   // (`media` too: their Cloudflare connection can outlive a Socket.IO drop,
   // so after a quick reconnect their video just carries on.)
-  for (const map of [room.sharing, room.mics, room.cams, room.tickets, room.media]) {
+  for (const map of [
+    room.sharing,
+    room.mics,
+    room.cams,
+    room.tickets,
+    room.media,
+    room.chatMuted,
+  ]) {
     if (oldId in map) {
       map[newId] = map[oldId];
       delete map[oldId];
@@ -253,6 +261,7 @@ export function createPass(room, roomId, socketId) {
     name: p.name,
     avatar: p.avatar,
     role: p.role, // what they had — restoreRole gives it back
+    chatMuted: Boolean(room.chatMuted[socketId]), // so leaving + rejoining doesn't unmute
     oldId: socketId, // to hand their chat messages back to them
     cohostBefore: room.cohostId, // was the co-host the one who takes over?
     heir: null, // filled in after they're removed: the new host
@@ -284,6 +293,7 @@ export function usePass(ticket, socketId) {
   // Straight into the room — no waiting-room knock, they were already in.
   attach(room, socketId, pass.name, pass.avatar);
   restoreRole(room, socketId, pass);
+  if (pass.chatMuted) setChatMuted(room, socketId, true);
   for (const m of room.chat) if (m.from === pass.oldId) m.from = socketId;
   return { roomId: pass.roomId, room };
 }
@@ -492,6 +502,7 @@ export function promoteCohost(room, socketId) {
   room.cohostId = socketId;
   participant.role = ROLES.COHOST;
   room.queue = room.queue.filter((id) => id !== socketId); // not waiting in line
+  delete room.chatMuted[socketId]; // a moderator's chat is never muted
 }
 
 /**
@@ -667,6 +678,34 @@ export function unsendChatMessage(room, socketId, id) {
 }
 
 /**
+ * Chat moderation: a moderator deletes ANY message (index.js checks they're a
+ * moderator). Returns the removed message, or null if there's no such message.
+ */
+export function deleteChatMessage(room, id) {
+  const msg = room?.chat.find((m) => m.id === id);
+  if (!msg) return null;
+  room.chat = room.chat.filter((m) => m.id !== id);
+  return msg;
+}
+
+/**
+ * Chat moderation: mute (or unmute) one person's chat — they can still read
+ * it, but not post. Never a moderator: the host (index.js refuses targeting
+ * the host) or the co-host (refused here). Returns false if refused.
+ */
+export function setChatMuted(room, socketId, muted) {
+  if (!room?.participants[socketId]) return false;
+  if (socketId === room.hostId || socketId === room.cohostId) return false;
+  if (muted) room.chatMuted[socketId] = true;
+  else delete room.chatMuted[socketId];
+  return true;
+}
+
+export function isChatMuted(room, socketId) {
+  return Boolean(room?.chatMuted?.[socketId]);
+}
+
+/**
  * In-call chat (added after Phase 7). Append one message and keep only the most
  * recent CHAT_HISTORY, so a room's chat can't grow without bound. Messages are
  * plain data the server built; the client renders text with React's default
@@ -751,7 +790,16 @@ export function moveParticipant(fromId, toId, socketId, create = {}) {
   delete from.participants[socketId];
   from.queue = from.queue.filter((id) => id !== socketId);
   from.speaking = from.speaking.filter((id) => id !== socketId);
-  for (const map of [from.sharing, from.mics, from.cams, from.tickets, from.media, from.away]) {
+  const chatMuted = Boolean(from.chatMuted[socketId]); // goes with them
+  for (const map of [
+    from.sharing,
+    from.mics,
+    from.cams,
+    from.tickets,
+    from.media,
+    from.away,
+    from.chatMuted,
+  ]) {
     delete map[socketId];
   }
   if (from.cohostId === socketId) from.cohostId = null;
@@ -787,6 +835,7 @@ export function moveParticipant(fromId, toId, socketId, create = {}) {
   to.tickets[socketId] = carry.ticket ?? randomUUID();
   if (carry.media) to.media[socketId] = carry.media;
   if (carry.away) to.away[socketId] = carry.away;
+  if (chatMuted && to.hostId !== socketId) to.chatMuted[socketId] = true;
   if (!to.stats[socketId]) statsJoin(to, socketId, carry.name);
   return to;
 }
@@ -815,6 +864,7 @@ export function removeParticipant(socketId) {
     delete room.tickets[socketId]; // their seat is gone — the ticket is useless now
     delete room.away[socketId];
     delete room.media[socketId]; // their tracks: everyone stops receiving them
+    delete room.chatMuted[socketId]; // (a rejoin pass remembers it — see createPass)
     if (room.cohostId === socketId) room.cohostId = null;
 
     const remaining = Object.keys(room.participants);
@@ -876,6 +926,8 @@ export function snapshot(roomId) {
     // socketIds of people whose connection dropped and who are reconnecting
     // (their tiles say "Reconnecting…"). The tickets themselves stay secret.
     away: Object.keys(room.away),
+    // whose chat a moderator muted (their message box is greyed out)
+    chatMuted: Object.keys(room.chatMuted),
     // Cloudflare SFU: whether calls go through it, and socketId -> { kind:
     // key } for the tracks each person is sending (see EVENTS.SFU_PULL).
     // Only tracks they may still send (see maySend): never a listener's audio.

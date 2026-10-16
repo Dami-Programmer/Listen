@@ -17,7 +17,11 @@ import {
   admitWaiting,
   clearFloor,
   createPass,
+  deleteChatMessage,
   demoteCohost,
+  isChatMuted,
+  setChatMuted,
+  snapshot,
   denyWaiting,
   editChatMessage,
   findTicket,
@@ -424,6 +428,12 @@ describe('talking and screen sharing', () => {
     assert.equal(setSpeaking(room, ids[1], true), false); // already talking
   });
 
+  test('a listener can’t fake the green "speaking" glow', () => {
+    const { id, room, ids } = moderatedRoom();
+    setSpeaking(room, ids[1], true); // a hand-rolled client claiming to talk
+    assert.equal(snapshot(id).activeSpeakerId, null);
+  });
+
   test('a listener can’t become the active speaker', () => {
     const { room, ids } = moderatedRoom();
     assert.equal(setSpeaking(room, ids[1], true), false);
@@ -474,6 +484,57 @@ describe('chat', () => {
     const { room, ids } = newRoom('host');
     addChatMessage(room, msg('s1', ids[0], 'sticker'));
     assert.equal(editChatMessage(room, ids[0], 's1', 'x'), null);
+  });
+
+  test('a moderator can delete anyone’s message (the server checks who asks)', () => {
+    const { room, ids } = newRoom('host', 'ada');
+    addChatMessage(room, msg('m1', ids[1]));
+    assert.equal(deleteChatMessage(room, 'm1').from, ids[1]);
+    assert.equal(room.chat.length, 0);
+    assert.equal(deleteChatMessage(room, 'm1'), null); // already gone
+  });
+
+  test('a muted person’s chat shows in the room state; unmuting clears it', () => {
+    const { id, room, ids } = newRoom('host', 'ada');
+    assert.equal(setChatMuted(room, ids[1], true), true);
+    assert.equal(isChatMuted(room, ids[1]), true);
+    assert.deepEqual(snapshot(id).chatMuted, [ids[1]]);
+    setChatMuted(room, ids[1], false);
+    assert.equal(isChatMuted(room, ids[1]), false);
+  });
+
+  test('the host’s and co-host’s chat can’t be muted', () => {
+    const { room, ids } = newRoom('host', 'ada');
+    promoteCohost(room, ids[1]);
+    assert.equal(setChatMuted(room, ids[0], true), false);
+    assert.equal(setChatMuted(room, ids[1], true), false);
+  });
+
+  test('being made co-host lifts a chat mute', () => {
+    const { room, ids } = newRoom('host', 'ada');
+    setChatMuted(room, ids[1], true);
+    promoteCohost(room, ids[1]);
+    assert.equal(isChatMuted(room, ids[1]), false);
+  });
+
+  test('a chat mute survives reconnecting, leaving + rejoining, and breakouts', () => {
+    const { id, room, ids } = newRoom('host', 'ada', 'ben');
+    setChatMuted(room, ids[1], true);
+    const fresh = uid('ada-again');
+    rekey(room, ids[1], fresh); // reconnect
+    assert.equal(isChatMuted(room, fresh), true);
+
+    createPass(room, id, fresh); // leave on purpose…
+    const ticket = ticketOf(room, fresh);
+    removeParticipant(fresh);
+    const back = uid('ada-back');
+    usePass(ticket, back); // …and rejoin
+    assert.equal(isChatMuted(room, back), true);
+
+    const breakoutId = uid('breakout');
+    moveParticipant(id, breakoutId, ids[2]); // Ben goes first, so he hosts it
+    const to = moveParticipant(id, breakoutId, back);
+    assert.equal(isChatMuted(to, back), true);
   });
 
   test('the room keeps only the last 100 messages', () => {

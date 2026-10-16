@@ -21,6 +21,7 @@ import {
   addChatMessage,
   addParticipant,
   clearFloor,
+  deleteChatMessage,
   demoteCohost,
   editChatMessage,
   getRoom,
@@ -35,6 +36,7 @@ import {
   reorderQueue,
   revokeFloor,
   setCam,
+  setChatMuted,
   setDevice,
   setLock,
   setMic,
@@ -451,6 +453,25 @@ export function createDemoServer(socket, scene) {
         ok();
         toApp(here, EVENTS.CHAT_UNSENT, { id: payload.id });
         return undefined;
+      // Chat moderation, as on the real server (server/src/index.js).
+      case EVENTS.CHAT_DELETE: {
+        if (!needMod()) return undefined;
+        const removed = deleteChatMessage(room, String(payload.id ?? ''));
+        if (!removed) return fail('no such message');
+        ok();
+        toApp(here, EVENTS.CHAT_UNSENT, { id: removed.id });
+        return undefined;
+      }
+      case EVENTS.CHAT_MUTE:
+        if (!needMod()) return undefined;
+        if (
+          payload.targetId === room.hostId ||
+          !setChatMuted(room, payload.targetId, payload.muted === true)
+        ) {
+          return fail('can’t mute that person’s chat');
+        }
+        ok();
+        break;
       case EVENTS.CHAT_TYPING:
         return undefined;
       case EVENTS.SCREEN_SHARE:

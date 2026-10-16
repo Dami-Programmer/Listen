@@ -118,6 +118,12 @@ export default function PreJoin({
       <button type="button" className="pj-claim" onClick={() => setScheduleOpen(true)}>
         📅 Schedule a meeting
       </button>
+      {/* the privacy page (not inside the landing page's demo frame) */}
+      {!IS_DEMO && (
+        <a className="pj-privacy" href="/privacy">
+          Privacy
+        </a>
+      )}
     </div>
   );
   const claimDialog = (
