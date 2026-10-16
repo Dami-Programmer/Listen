@@ -27,7 +27,7 @@ import { socket } from './socket.js';
 import { downloadUrl, formatBytes, prepareFile } from './chatFiles.js';
 import ImageViewer from './ImageViewer.jsx';
 import Avatar from './Avatar.jsx';
-import { confirmDialog } from './ConfirmDialog.jsx';
+import { confirmDialog } from './confirm.js';
 import { recordingLink } from './meeting.js';
 import {
   Download,

@@ -39,11 +39,12 @@ import { downloadUrl, sendChatFile } from './chatFiles.js';
 import { loadDeck, startPainter } from './presenter.js';
 import { useVideoPip } from './useVideoPip.js';
 import { inviteLink, recordingLink } from './meeting.js';
-import { confirmDialog } from './ConfirmDialog.jsx';
+import { confirmDialog } from './confirm.js';
 import Tour from './Tour.jsx';
 import { hasSeenTour, useTour } from './useTour.js';
 import TourButton from './TourButton.jsx';
 import RecBadge from './RecBadge.jsx';
+import { CaptionsBar, CcIcon } from './CaptionsBar.jsx';
 import NextUp from './NextUp.jsx';
 import { ReactionButton } from './Reactions.jsx';
 import NoiseToggle from './NoiseToggle.jsx';
@@ -66,6 +67,10 @@ export default function MobileCall({ call }) {
     chat,
     typers,
     selfId,
+    captionsWanted,
+    setCaptionsWanted,
+    captionLines,
+    captionsOn,
     onLeave,
     rejoined,
     media,
@@ -686,6 +691,13 @@ export default function MobileCall({ call }) {
           </div>
         )}
         {mediaError && <p className="mc-status err">{mediaError}</p>}
+        {/* everyone sees when captions are on (speakers' speech is being
+            turned into text — captions.js) */}
+        {captionsOn && (
+          <p className="mc-status mc-cc-on">
+            <CcIcon /> Captions on
+          </p>
+        )}
       </header>
 
       {grid ? (
@@ -868,6 +880,9 @@ export default function MobileCall({ call }) {
         </button>
       )}
 
+      {/* live captions, just above the bottom bar (only while I have them on) */}
+      {captionsWanted && <CaptionsBar phone lines={captionLines} selfId={selfId} />}
+
       <footer className="mc-bar">
         <button
           type="button"
@@ -959,6 +974,22 @@ export default function MobileCall({ call }) {
                   aria-label={sharingScreen ? 'Stop presenting' : 'Present to everyone'}
                 >
                   <CastIcon />
+                </button>
+              ),
+            },
+            {
+              // live captions on / off, for me (phones show them; they
+              // don't transcribe — see captions.js)
+              key: 'cc',
+              node: (
+                <button
+                  type="button"
+                  className={`mc-btn mc-cc${captionsWanted ? ' on' : ''}`}
+                  onClick={() => setCaptionsWanted((v) => !v)}
+                  aria-pressed={captionsWanted}
+                  aria-label={captionsWanted ? 'Hide captions' : 'Show captions'}
+                >
+                  <CcIcon />
                 </button>
               ),
             },

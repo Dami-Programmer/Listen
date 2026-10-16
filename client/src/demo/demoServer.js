@@ -20,6 +20,7 @@ import { EVENTS, MODES, REACTIONS, ROLES, STICKERS } from '@listen/shared';
 import {
   addChatMessage,
   addParticipant,
+  captionsOn,
   clearFloor,
   deleteChatMessage,
   demoteCohost,
@@ -36,6 +37,7 @@ import {
   reorderQueue,
   revokeFloor,
   setCam,
+  setCaptionWatcher,
   setChatMuted,
   setDevice,
   setLock,
@@ -113,6 +115,38 @@ export function createDemoServer(socket, scene) {
   // --- sending to the app ---------------------------------------------------
   function toApp(roomId, event, payload) {
     if (roomId === here) socket.deliver(event, payload);
+  }
+
+  // --- pretend captions ------------------------------------------------------
+  // Real captions come from each speaker's own browser (captions.js), which
+  // the demo never uses — it would listen to the visitor's real microphone.
+  // So while the visitor has captions on, whoever's talking "says" one of
+  // these every few seconds.
+  const CAPTION_LINES = [
+    'Thanks everyone for joining, let’s get started.',
+    'I’ll keep this short so there’s time for questions.',
+    'Raise your hand if you’d like to add something.',
+    'Great point, let’s come back to that at the end.',
+    'Ada, you’re next, go ahead whenever you’re ready.',
+  ];
+  let captionLoop = false;
+  let captionNo = 0;
+  function captionTick() {
+    const room = getRoom(here);
+    if (!room || !captionsOn(room)) {
+      captionLoop = false;
+      return;
+    }
+    const talker = [...room.speaking].reverse().find((id) => id !== YOU);
+    if (talker && room.participants[talker]) {
+      toApp(here, EVENTS.CAPTION, {
+        id: talker,
+        name: room.participants[talker].name,
+        text: CAPTION_LINES[captionNo++ % CAPTION_LINES.length],
+        final: true,
+      });
+    }
+    after(2800, captionTick);
   }
 
   function broadcast(roomId = here) {
@@ -472,6 +506,17 @@ export function createDemoServer(socket, scene) {
         }
         ok();
         break;
+      // Live captions (as on the real server), with pretend lines (above).
+      case EVENTS.CAPTIONS_WANT:
+        setCaptionWatcher(room, YOU, payload.on === true);
+        ok();
+        if (captionsOn(room) && !captionLoop) {
+          captionLoop = true;
+          after(600, captionTick);
+        }
+        break;
+      case EVENTS.CAPTION:
+        return undefined; // (the demo never transcribes — see above)
       case EVENTS.CHAT_TYPING:
         return undefined;
       case EVENTS.SCREEN_SHARE:

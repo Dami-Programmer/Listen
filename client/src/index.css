@@ -6593,6 +6593,17 @@ body:has(.mc) {
 .mc .mc-dial-item .mc-cast.on {
   background: #cfe6ff;
 }
+/* captions on / off (MobileCall.jsx): a white tile like the present button,
+   blue while captions are on */
+.mc .mc-dial-item .mc-cc {
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #1d2733;
+}
+.mc .mc-dial-item .mc-cc.on {
+  background: #cfe6ff;
+  color: #1667c9;
+}
 /* leave: red squircle with a soft red halo, like the design */
 .mc .mc-dial-item .mc-leave {
   border-radius: 16px;
@@ -6801,6 +6812,80 @@ body:has(.mc) {
 .rec-badge-wrap {
   position: relative;
   flex-shrink: 0;
+}
+
+/* --- live captions (CaptionsBar.jsx / captions.js) ----------------------------
+   "CC Captions on" in the top bar — like the recording badge, in blue */
+.cs-cc-badge {
+  height: 30px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  border: 1px solid rgba(58, 160, 255, 0.45);
+  background: rgba(58, 160, 255, 0.12);
+  color: #6fb8ff;
+  font:
+    600 13px/1 'Inter',
+    system-ui,
+    sans-serif;
+}
+:root[data-theme='light'] .cs-cc-badge {
+  color: #1667c9;
+}
+.mc-cc-on {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #8fc8ff;
+}
+.mc-cc-on svg {
+  width: 16px;
+  height: 16px;
+}
+/* the captions strip: dark and high-contrast in both themes, like TV
+   captions; the newest line is brightest */
+.captions {
+  flex-shrink: 0;
+  min-height: 64px;
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 4px;
+  border-radius: 14px;
+  background: rgba(8, 11, 16, 0.88);
+  color: #fff;
+  font:
+    500 17px/1.4 'Inter',
+    system-ui,
+    sans-serif;
+}
+.captions p {
+  margin: 0;
+  opacity: 0.75;
+}
+.captions p:last-child {
+  opacity: 1;
+}
+.captions b {
+  margin-right: 6px;
+  color: #8fc8ff;
+  font-weight: 700;
+}
+.captions .captions-hint {
+  opacity: 0.6;
+  font-size: 14px;
+}
+/* phones: a little smaller, floating just above the bottom bar */
+.captions.phone {
+  position: relative;
+  z-index: 4;
+  min-height: 52px;
+  margin: 0 10px 8px;
+  font-size: 15px;
 }
 .rec-badge {
   height: 30px;

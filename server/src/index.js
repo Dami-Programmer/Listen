@@ -116,6 +116,8 @@ import {
   deleteChatMessage,
   setChatMuted,
   isChatMuted,
+  setCaptionWatcher,
+  mayCaption,
   usePass,
 } from './rooms.js';
 
@@ -901,6 +903,10 @@ const RATE_LIMITS = {
   [EVENTS.CHAT_UNSEND]: { max: 10, perMs: 10_000 },
   [EVENTS.CHAT_DELETE]: { max: 20, perMs: 10_000 },
   [EVENTS.CHAT_MUTE]: { max: 20, perMs: 10_000 },
+  // captions: a few updates a second while someone talks (the client sends
+  // at most ~3 a second), plus the odd on / off
+  [EVENTS.CAPTION]: { max: 60, perMs: 10_000 },
+  [EVENTS.CAPTIONS_WANT]: { max: 10, perMs: 10_000 },
   [EVENTS.CHAT_TYPING]: { max: 20, perMs: 10_000 },
   [EVENTS.RAISE_HAND]: { max: 10, perMs: 10_000 },
   [EVENTS.LOWER_HAND]: { max: 20, perMs: 10_000 },
@@ -1655,6 +1661,33 @@ io.on('connection', (socket) => {
     }
     ack?.({ ok: true });
     broadcastRoom(joinedRoomId);
+  });
+
+  // --- Live captions (client/src/captions.js) ----------------------------
+  // Switch captions on / off for myself. While anyone has them on, room-state
+  // says `captionsOn`, and speakers' browsers start turning speech into text.
+  on(EVENTS.CAPTIONS_WANT, ({ on: want } = {}, ack) => {
+    const room = getRoom(joinedRoomId);
+    if (!room?.participants[socket.id]) return ack?.({ ok: false, error: 'not in a room' });
+    setCaptionWatcher(room, socket.id, want === true);
+    ack?.({ ok: true });
+    broadcastRoom(joinedRoomId);
+  });
+
+  // A line of what I'm saying, passed on to the whole room — never stored.
+  // Only while captions are on, and only from someone who may speak.
+  on(EVENTS.CAPTION, ({ text, final } = {}) => {
+    const room = getRoom(joinedRoomId);
+    const participant = room?.participants[socket.id];
+    if (!participant || !mayCaption(room, socket.id)) return;
+    const line = oneLine(text, 300);
+    if (!line) return;
+    io.to(joinedRoomId).emit(EVENTS.CAPTION, {
+      id: socket.id,
+      name: participant.name,
+      text: line,
+      final: final === true,
+    });
   });
 
   // "Someone is typing" — pure relay to the rest of the room, never stored.

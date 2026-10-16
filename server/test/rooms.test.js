@@ -17,7 +17,10 @@ import {
   admitWaiting,
   clearFloor,
   createPass,
+  captionsOn,
   deleteChatMessage,
+  mayCaption,
+  setCaptionWatcher,
   demoteCohost,
   isChatMuted,
   setChatMuted,
@@ -542,6 +545,43 @@ describe('chat', () => {
     for (let i = 0; i < 130; i += 1) addChatMessage(room, msg(`m${i}`, ids[0]));
     assert.equal(room.chat.length, 100);
     assert.equal(room.chat[0].id, 'm30');
+  });
+});
+
+// --- live captions ----------------------------------------------------------------
+
+describe('live captions', () => {
+  test('captions are on while anyone wants them, and the room state says so', () => {
+    const { id, room, ids } = newRoom('host', 'ada');
+    assert.equal(captionsOn(room), false);
+    setCaptionWatcher(room, ids[1], true);
+    assert.equal(snapshot(id).captionsOn, true);
+    setCaptionWatcher(room, ids[1], false);
+    assert.equal(snapshot(id).captionsOn, false);
+  });
+
+  test('nobody’s speech is shown while captions are off', () => {
+    const { room, ids } = newRoom('host', 'ada');
+    assert.equal(mayCaption(room, ids[0]), false);
+  });
+
+  test('in a moderated room only people who may speak are captioned', () => {
+    const { room, ids } = moderatedRoom();
+    setCaptionWatcher(room, ids[3], true);
+    assert.equal(mayCaption(room, ids[0]), true); // the host
+    assert.equal(mayCaption(room, ids[1]), false); // a listener
+    grantFloor(room, ids[1]);
+    assert.equal(mayCaption(room, ids[1]), true); // now a speaker
+  });
+
+  test('wanting captions survives a reconnect; leaving turns it off', () => {
+    const { room, ids } = newRoom('host', 'ada');
+    setCaptionWatcher(room, ids[1], true);
+    const fresh = uid('ada-again');
+    rekey(room, ids[1], fresh);
+    assert.equal(captionsOn(room), true);
+    removeParticipant(fresh);
+    assert.equal(captionsOn(room), false);
   });
 });
 

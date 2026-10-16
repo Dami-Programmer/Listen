@@ -16,10 +16,10 @@
 
 import Logo from './Logo.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
-import { PROFILE } from './ProfileCard.jsx';
+import { PROFILE } from './profile.js';
 
 const CONTACT = 'garrywilliams20@protonmail.com';
-const UPDATED = '16 October 2026';
+const UPDATED = '17 October 2026';
 
 export default function PrivacyPage() {
   return (
@@ -112,6 +112,16 @@ export default function PrivacyPage() {
           them — unless the host records the meeting (see above).
         </p>
 
+        <h2>Live captions</h2>
+        <p>
+          Anyone can switch captions on for themselves. While someone in the meeting has them on,
+          everyone sees “Captions on”, and the browser of each person speaking turns their speech
+          into text, which is shown to the meeting and never stored. To do that, the browser sends
+          the speaker’s audio to its own speech service — Google’s in Chrome and Edge, Apple’s in
+          Safari — under their privacy terms. Your speech is never captioned while your microphone
+          is off, and phones don’t send speech for captions at all.
+        </p>
+
         <h2>Stored in your own browser</h2>
         <p>
           A few small settings are saved on your device, not on our servers: light or dark mode,
@@ -138,6 +148,10 @@ export default function PrivacyPage() {
           <li>
             <b>Google Fonts</b> provides the site’s fonts, so your browser contacts Google when it
             loads them.
+          </li>
+          <li>
+            <b>Google</b> or <b>Apple</b>’s speech service (through your browser) turns speech into
+            live captions, only while captions are on (see “Live captions” above).
           </li>
           <li>
             <b>Wikipedia</b> and <b>Jikan</b> (an anime database) answer the character-picture

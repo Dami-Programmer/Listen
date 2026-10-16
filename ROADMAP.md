@@ -4,12 +4,14 @@ A moderated group video-call app. Google Meet base layer + host-authoritative
 moderation on top. Everything about who may speak lives on the server; the client
 never decides its own permissions.
 
-**Where it stands:** Phases 0–7 are complete. A batch of features was then added
-out of sequence — chat (with attachments, emoji, stickers, typing), screen
-sharing, co-host, and a waiting room — all under
-[Beyond Phase 7](#beyond-phase-7--features-added-out-of-sequence). **Phase 8
-(resilience & deploy) is the only planned phase not started.** Source:
-<https://github.com/Dami-Programmer/Listen>.
+**Where it stands (17 October 2026):** Phases 0–8 are done — Phase 8
+(resilience & deploy) mostly, see [its checklist](#phase-8--resilience--deploy).
+Turnly is live on Render: the website at <https://listen-2-pyrg.onrender.com>,
+the server at <https://listen-1-wj2o.onrender.com>. Many features were added
+beyond the original plan — see
+[Beyond Phase 7](#beyond-phase-7--features-added-out-of-sequence) and
+[Since going live](#since-going-live). What's still open is under
+[Next up](#next-up). Source: <https://github.com/Dami-Programmer/Listen>.
 
 ---
 
@@ -160,9 +162,9 @@ speaker after 10 s of quiet and promote `queue[0]`. It was dropped as no longer
 needed: a speaker now keeps the floor until they pass the mic or a moderator
 revokes it.
 
-> **Known gap:** the `speaking` event isn't role-checked server-side, so a
-> hand-rolled client could fake the glow. Cosmetic
-> today; worth folding into Phase 8 hardening.
+> **Closed gap:** the `speaking` event is now checked on the server —
+> `setSpeaking` ignores a listener claiming to talk, and the event is
+> rate-limited (covered by a test in `server/test/rooms.test.js`).
 
 ## Phase 7 — Full moderation controls
 
@@ -222,10 +224,13 @@ photo/file attachments, and a typing indicator.
   sending, so a phone photo doesn't blow the cap. The server requires a `data:`
   URL, caps the decoded size at `CHAT_FILE_MAX_BYTES` (5 MB), strips path
   separators / control chars from the filename, and keeps a per-room 40 MB
-  attachment budget (`CHAT_ATTACHMENT_BUDGET_BYTES` — oldest *file* messages are
+  attachment budget (`CHAT_ATTACHMENT_BUDGET_BYTES` — oldest _file_ messages are
   evicted first, text/stickers stay). `maxHttpBufferSize` is raised 1 MB → 12 MB.
   Client: a 📎 button and Ctrl+V paste; images render inline (click to open),
   other files as a download chip.
+  **Later:** the server now saves each file to R2 and the message carries a
+  `/files/<id>` link instead of the data — see
+  [Since going live](#since-going-live).
 - Recent history (within the byte budget) rides along in the `join-room` ack as
   `chat`, so a late joiner has context.
 - `chat-typing {typing}` — the iMessage bouncing-dots indicator. The composer
@@ -244,8 +249,8 @@ photo/file attachments, and a typing indicator.
 moderated room only the host + speakers can.
 
 - **The signaling layer became renegotiation-capable.** `webrtc.js` no longer
-  has a single deterministic "caller" per pair — it uses the MDN *perfect
-  negotiation* pattern: both peers add their tracks, both may fire
+  has a single deterministic "caller" per pair — it uses the MDN _perfect
+  negotiation_ pattern: both peers add their tracks, both may fire
   `onnegotiationneeded`, and glare is resolved by a deterministic polite /
   impolite role (lower socket id is polite). This is what makes adding a screen
   track mid-call work.
@@ -277,7 +282,7 @@ power, and can drop them back to a listener at any time.
 - New role `cohost` in `shared/index.js`, plus `promote-cohost` / `demote-cohost`
   events (**host-only** — a co-host can't appoint or drop a co-host).
 - `rooms.js`: `promoteCohost` / `demoteCohost` are the only paths that touch a
-  co-host's role — `setRole` deliberately no-ops for `room.hostId` *and*
+  co-host's role — `setRole` deliberately no-ops for `room.hostId` _and_
   `room.cohostId`, so mode flips / grant / revoke / clear-floor / the silence
   rule can't disturb them. One co-host at a time; appointing a new one drops the
   old to normal-for-mode (`listener` when moderated, `speaker` when open).
@@ -300,7 +305,7 @@ power, and can drop them back to a listener at any time.
   `room.participants`, NOT in the Socket.IO room — so they get nothing (no
   room-state, no chat, no media signaling) until admitted.
 - Server: `join-room` into a locked non-empty room acks `{ ok: true, waiting:
-  true }`; `admit` / `deny` (moderator-only, `{ socketId }`) move a waiter in
+true }`; `admit` / `deny` (moderator-only, `{ socketId }`) move a waiter in
   (server emits `admitted` with the full state) or turn them away (`denied`);
   `set-lock { locked }` toggles the lock — unlocking admits everyone currently
   waiting. Disconnecting from the lobby clears the entry. If a room empties
@@ -363,29 +368,86 @@ Jakarta Sans), a floating white shell:
 - iPhone layout: `viewport-fit=cover` and the visual viewport keep the bar
   clear of Safari's toolbar and the keyboard.
 
+### Since going live
+
+Built after the app went live, in order (each is a commit — `git log`):
+
+- **Pre-join lobby & devices** — camera / mic preview and pickers, avatars,
+  invite links and meeting codes, light / dark theme, in-app confirm dialog,
+  creator profile card, floating mini-call.
+- **Reconnect & rejoin** — a dropped connection keeps your seat for a while
+  ("Reconnecting…"); leaving on purpose gives a minute to rejoin with your old
+  role (`markAway` / `rekey` / `createPass` / `usePass` in `rooms.js`).
+  Server hardened with per-event rate limits.
+- **Phone extras** — control dial, step-by-step tour, "Are you still there?",
+  floating video on iPhone.
+- **Bigger calls** — Cloudflare's SFU when configured, with simulcast cameras.
+- **Recording** — saved to Cloudflare R2, watchable for a day.
+- **Turnly** — renamed from Listen, new logo (twice), landing page with live
+  demos (a pretend server running the real meeting rules in the browser —
+  `client/src/demo/`), AI-generated demo people.
+- **Meeting tools** — breakout rooms, polls, Q&A, reactions, scheduled
+  meetings, permanent room names (`names.js`), meeting report, strong noise
+  reduction.
+- **Chat moderation** — moderators delete any message and mute / unmute one
+  person's chat (`CHAT_DELETE`, `CHAT_MUTE`); kept across reconnects, rejoins
+  and breakouts.
+- **Chat files in storage** — attachments go to R2 (`server/src/chatFiles.js`)
+  behind a private link, deleted on unsend, when the room closes, and within a
+  day — no longer held in the server's memory.
+- **Live captions** — each speaker's own browser turns speech into text
+  (Chrome / Edge / Safari speech recognition), shown to everyone who switched
+  captions on; "Captions on" for all while anyone does. Phones show captions
+  but don't transcribe. Never in the demo (it would use the visitor's real
+  mic). `client/src/captions.js`, `CAPTION*` events.
+- **Privacy & trust** — `/privacy` page (what's kept, for how long, services,
+  rights under the Nigeria Data Protection Act, short terms of use).
+- **Quality** — error screen (`ErrorBoundary.jsx`), browser errors and failed
+  calls reported to the server log (`[client-error]`), 73 tests for the meeting
+  rules and chat files (`npm test`), a GitHub check (lint + tests + build) on
+  every push, Umami visitor counts (off until its website ID is set on Render).
+
 ### Deferred / not built
 
-- **Chat moderation** — delete a message, mute someone's chat. Not built; would
-  follow the Phase 7 pattern.
-- Everything in Phase 8 below (reconnect handling especially).
+- A per-speaker "keep the floor" pin across the mode flip (only the co-host
+  survives it today).
 
 ---
 
 ## Phase 8 — Resilience & deploy
 
-**Goal:** works outside localhost.
+**Goal:** works outside localhost. **Status: mostly done.**
 
-- TURN server (coturn or hosted) — STUN-only will fail for many home networks;
-  this is required, not optional.
-- Reconnect handling (a dropped socket currently bounces you to the join
-  screen), ICE-failure recovery, device-permission error states, device pickers.
-- Deploy: client to static hosting, server to a Node host with WebSocket support,
-  TURN alongside, HTTPS (required for `getUserMedia` / `getDisplayMedia` off
-  localhost).
-- Observability: structured logs, error tracking, basic metrics.
-- Real-world test with friends on different networks.
+- [x] TURN — Cloudflare's TURN relay (plus self-hosted TURN via env vars).
+- [x] Reconnect handling — seats held on a drop, rejoin after leaving,
+      self-healing video connections, device-permission errors, device pickers.
+- [x] Deploy — website as a Render static site (with a `/* → /index.html`
+      rewrite), server as a Render web service, HTTPS, R2 for storage. The
+      server redeploys only when `server/`, `shared/` or the package files
+      change (Render build filter).
+- [x] Observability — `[client-error]` reports and server logs on Render;
+      Umami for visits.
+- [ ] Real-world test with friends on different networks — ongoing.
+- [ ] **A server restart ends every live meeting** (all meetings live in its
+      memory) — see [Next up](#next-up).
 
-**Deliverable:** shareable URL that actually works.
+**Deliverable:** shareable URL that actually works. ✓
+
+---
+
+## Next up
+
+1. **Survive server restarts.** Today any server deploy ends every meeting.
+   First step: before pushing a server change, check a "live meetings" count
+   on the server's health address and wait for zero. Then: the app rejoins
+   its meeting by itself when the server comes back, instead of sending
+   everyone out. The full fix is keeping meeting state outside the server's
+   memory (e.g. Redis), only needed at a larger size.
+2. **Move the server off Render's free plan** — it sleeps when idle, so the
+   first person in waits about a minute.
+3. **Keyboard shortcuts** — raise hand, mute, pass the mic.
+4. **Captions on phones** — only once phones can transcribe without breaking
+   the call's audio.
 
 ---
 
@@ -400,8 +462,8 @@ Jakarta Sans), a floating white shell:
   own permissions.
 - **Single process, all in memory.** One Node process holds every room in a
   `Map`; a restart drops every call. No horizontal scale (would need Redis + the
-  Socket.IO adapter). Chat, chat history, and attachments (bounded at 40 MB of
-  file bytes per room) are all in that memory too.
+  Socket.IO adapter). Chat and chat history are in that memory too; chat
+  attachments now live in R2 storage (`chatFiles.js`), not in memory.
 
 ## Decisions (answers to the doc's open questions)
 

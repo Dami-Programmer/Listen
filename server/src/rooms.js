@@ -96,6 +96,7 @@ function createRoom() {
     away: {},
     media: {},
     chatMuted: {}, // socketId -> true: a moderator muted their chat (see setChatMuted)
+    captionWatchers: {}, // socketId -> true: wants live captions (see setCaptionWatcher)
     recording: null, // { id, startedAt, recorderId, part } while recording
     // Questions, the poll, and the meeting report's numbers (activities.js).
     createdAt: Date.now(),
@@ -219,6 +220,7 @@ export function rekey(room, oldId, newId) {
     room.tickets,
     room.media,
     room.chatMuted,
+    room.captionWatchers,
   ]) {
     if (oldId in map) {
       map[newId] = map[oldId];
@@ -706,6 +708,32 @@ export function isChatMuted(room, socketId) {
 }
 
 /**
+ * Live captions: someone switches captions on or off for themselves. While
+ * anyone in the room has them on (captionsOn), speakers' browsers transcribe
+ * their own speech.
+ */
+export function setCaptionWatcher(room, socketId, on) {
+  if (!room?.participants[socketId]) return;
+  if (on) room.captionWatchers[socketId] = true;
+  else delete room.captionWatchers[socketId];
+}
+
+export function captionsOn(room) {
+  return Object.keys(room?.captionWatchers ?? {}).length > 0;
+}
+
+/**
+ * May this person's captions be shown? Only while captions are on, and only
+ * for someone who may speak: in a moderated room, not a listener (their mic
+ * is off anyway).
+ */
+export function mayCaption(room, socketId) {
+  const p = room?.participants[socketId];
+  if (!p || !captionsOn(room)) return false;
+  return !(room.mode === MODES.MODERATED && p.role === ROLES.LISTENER);
+}
+
+/**
  * In-call chat (added after Phase 7). Append one message and keep only the most
  * recent CHAT_HISTORY, so a room's chat can't grow without bound. Messages are
  * plain data the server built; the client renders text with React's default
@@ -791,6 +819,7 @@ export function moveParticipant(fromId, toId, socketId, create = {}) {
   from.queue = from.queue.filter((id) => id !== socketId);
   from.speaking = from.speaking.filter((id) => id !== socketId);
   const chatMuted = Boolean(from.chatMuted[socketId]); // goes with them
+  const wantsCaptions = Boolean(from.captionWatchers[socketId]); // so does this
   for (const map of [
     from.sharing,
     from.mics,
@@ -799,6 +828,7 @@ export function moveParticipant(fromId, toId, socketId, create = {}) {
     from.media,
     from.away,
     from.chatMuted,
+    from.captionWatchers,
   ]) {
     delete map[socketId];
   }
@@ -836,6 +866,7 @@ export function moveParticipant(fromId, toId, socketId, create = {}) {
   if (carry.media) to.media[socketId] = carry.media;
   if (carry.away) to.away[socketId] = carry.away;
   if (chatMuted && to.hostId !== socketId) to.chatMuted[socketId] = true;
+  if (wantsCaptions) to.captionWatchers[socketId] = true;
   if (!to.stats[socketId]) statsJoin(to, socketId, carry.name);
   return to;
 }
@@ -865,6 +896,7 @@ export function removeParticipant(socketId) {
     delete room.away[socketId];
     delete room.media[socketId]; // their tracks: everyone stops receiving them
     delete room.chatMuted[socketId]; // (a rejoin pass remembers it — see createPass)
+    delete room.captionWatchers[socketId];
     if (room.cohostId === socketId) room.cohostId = null;
 
     const remaining = Object.keys(room.participants);
@@ -928,6 +960,9 @@ export function snapshot(roomId) {
     away: Object.keys(room.away),
     // whose chat a moderator muted (their message box is greyed out)
     chatMuted: Object.keys(room.chatMuted),
+    // live captions: true while anyone wants them (not WHO) — speakers'
+    // browsers transcribe, and everyone sees "Captions on"
+    captionsOn: captionsOn(room),
     // Cloudflare SFU: whether calls go through it, and socketId -> { kind:
     // key } for the tracks each person is sending (see EVENTS.SFU_PULL).
     // Only tracks they may still send (see maySend): never a listener's audio.

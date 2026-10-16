@@ -10,7 +10,7 @@
 import { useId, useState } from 'react';
 import Logo from './Logo.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
-import { PROFILE } from './ProfileCard.jsx';
+import { PROFILE } from './profile.js';
 import { FeatureTour, HeroDemo, HowItWorks } from './LandingDemos.jsx';
 import { trackEvent } from './analytics.js';
 
@@ -162,7 +162,6 @@ export default function Landing() {
           <span className="dim">Even in</span> big <span className="dim">meetings</span>
           <span className="dim">!</span>
         </h1>
-
         <p className="ld-lead">
           Video calls where people raise a hand and the host gives them the floor. So big meetings
           never turn into talking over each other.
@@ -175,12 +174,10 @@ export default function Landing() {
           >
             <span aria-hidden="true">▶</span> Start a meeting
           </a>
-
           <a href="#how" className="ld-btn ghost">
             <span aria-hidden="true">✋</span> See how it works
           </a>
         </div>
-
         <p className="ld-small">Free · No account · Nothing to install · Works on phones</p>
       </section>
 

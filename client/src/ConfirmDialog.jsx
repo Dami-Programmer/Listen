@@ -1,7 +1,7 @@
 // In-app replacement for window.confirm() — a centered card over a dimmed,
 // blurred backdrop, styled to match the rest of the app (and both themes).
 //
-// Usage, from anywhere:
+// Usage (confirm.js), from anywhere:
 //
 //   if (!(await confirmDialog({ title: 'Remove Ada?', confirmLabel: 'Remove', danger: true }))) return;
 //
@@ -16,23 +16,8 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Avatar from './Avatar.jsx';
 
-let openDialog = null; // set by <ConfirmHost/> while it's mounted
-
-/**
- * @param {object}  opts
- * @param {string}  opts.title                 the question, e.g. "Remove Ada from the call?"
- * @param {string} [opts.message]              one line of detail under the title
- * @param {string} [opts.confirmLabel='OK']    the confirm button's text
- * @param {string} [opts.cancelLabel='Cancel']
- * @param {boolean}[opts.danger]               red confirm button, for destructive actions
- * @param {{name: string, avatar?: string}} [opts.person]  shows their avatar at the top
- * @returns {Promise<boolean>}
- */
-export function confirmDialog(opts) {
-  // Fall back to the browser's own if the host isn't mounted for some reason.
-  if (!openDialog) return Promise.resolve(window.confirm(opts.title));
-  return new Promise((resolve) => openDialog({ ...opts, resolve }));
-}
+// confirmDialog() itself lives in confirm.js; this component is what it opens.
+import { setDialogOpener } from './confirm.js';
 
 export function ConfirmHost() {
   const [dialog, setDialog] = useState(null);
@@ -41,17 +26,15 @@ export function ConfirmHost() {
   const confirmBtn = useRef(null);
 
   useEffect(() => {
-    openDialog = (d) => {
+    setDialogOpener((d) => {
       answer.current = false;
       setClosing(false);
       setDialog((prev) => {
         prev?.resolve(false); // a new dialog replaces an unanswered one
         return d;
       });
-    };
-    return () => {
-      openDialog = null;
-    };
+    });
+    return () => setDialogOpener(null);
   }, []);
 
   function close(result) {

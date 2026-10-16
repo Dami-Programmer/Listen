@@ -13,14 +13,15 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { EVENTS, MODES, RECONNECT_GRACE_MS, REJOIN_WINDOW_MS, ROLES } from '@listen/shared';
-import { socket } from './socket.js';
+import { IS_DEMO, socket } from './socket.js';
 import { strongNoiseSupported, useCall } from './webrtc.js';
 import VideoTile from './VideoTile.jsx';
 import ChatPanel from './ChatPanel.jsx';
 import PreJoin from './PreJoin.jsx';
 import Avatar from './Avatar.jsx';
 import Toasts from './Toasts.jsx';
-import { ConfirmHost, confirmDialog } from './ConfirmDialog.jsx';
+import { ConfirmHost } from './ConfirmDialog.jsx';
+import { confirmDialog } from './confirm.js';
 import InviteCard from './InviteCard.jsx';
 import DevicePicker from './DevicePicker.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
@@ -43,6 +44,8 @@ import NoiseToggle from './NoiseToggle.jsx';
 import { BreakoutBanner, BreakoutPanel } from './Breakouts.jsx';
 import TabSwap from './TabSwap.jsx';
 import RecBadge from './RecBadge.jsx';
+import { canTranscribe, useCaptionLines, useTranscriber } from './captions.js';
+import { CaptionsBar, CcIcon } from './CaptionsBar.jsx';
 import NextUp from './NextUp.jsx';
 import { ReactionButton, ReactionsLayer } from './Reactions.jsx';
 import QuestionsPanel from './QuestionsPanel.jsx';
@@ -960,6 +963,21 @@ export function CallView({ state, chat, typers, selfId, onLeave, media, iceServe
   const recording = state?.recording?.id ? state.recording : null;
   const iRecord = Boolean(recording) && recording.recorderId === selfId;
 
+  // --- live captions (captions.js, EVENTS.CAPTION*) ------------------------
+  // `captionsWanted`: I switched captions on (the CC button) — tell the
+  // server, which keeps it across reconnects. `captionsOn`: someone in the
+  // room has them on — then, if I may speak and my mic is on, my browser
+  // turns my speech into text for everyone (desktop only — see captions.js).
+  const [captionsWanted, setCaptionsWanted] = useState(false);
+  const captionsOn = state?.captionsOn === true;
+  useEffect(() => {
+    if (selfId) socket.emit(EVENTS.CAPTIONS_WANT, { on: captionsWanted });
+  }, [selfId, captionsWanted]);
+  const captionLines = useCaptionLines(captionsWanted);
+  // (Never in the landing page's demo: speech recognition would listen to
+  // the visitor's REAL microphone, which the demo must never touch.)
+  useTranscriber(captionsOn && micOn && !isListener && canTranscribe && !isMobile && !IS_DEMO);
+
   // Tell the server if this is a laptop (a better recorder than a phone),
   // and whether this browser can record at all.
   useEffect(() => {
@@ -1392,6 +1410,11 @@ export function CallView({ state, chat, typers, selfId, onLeave, media, iceServe
             chat,
             typers,
             selfId,
+            // live captions (see the captions section above)
+            captionsWanted,
+            setCaptionsWanted,
+            captionLines,
+            captionsOn,
             onLeave: leave,
             rejoined,
             media,
@@ -1488,6 +1511,13 @@ export function CallView({ state, chat, typers, selfId, onLeave, media, iceServe
             <TourButton onClick={tour.start} />
             {/* "● Recording 12:34" for everyone while it's being recorded */}
             {recording && <RecBadge recording={recording} />}
+            {/* everyone sees when captions are on: speech is being turned
+                into text (by the speakers' browsers — captions.js) */}
+            {captionsOn && (
+              <span className="cs-cc-badge" title="Live captions are on in this meeting">
+                <CcIcon /> Captions on
+              </span>
+            )}
             {/* breakout rooms: where you are / that they're running */}
             <BreakoutBanner
               state={state}
@@ -1650,6 +1680,10 @@ export function CallView({ state, chat, typers, selfId, onLeave, media, iceServe
           )}
         </div>
 
+        {/* Live captions, between the video and the controls (never over
+            anyone's face). Only while I have them on. */}
+        {captionsWanted && <CaptionsBar lines={captionLines} selfId={selfId} />}
+
         <footer className="cs-controls">
           {/* Door lock, bottom-left — the mirror of the chat button. Moderators
               only: locked = newcomers wait to be admitted. */}
@@ -1763,6 +1797,16 @@ export function CallView({ state, chat, typers, selfId, onLeave, media, iceServe
               }
             >
               {layout === 'grid' ? <SpotlightView /> : <GridView />}
+            </button>
+            {/* live captions on / off, for me */}
+            <button
+              className={captionsWanted ? 'on' : ''}
+              onClick={() => setCaptionsWanted((v) => !v)}
+              aria-pressed={captionsWanted}
+              aria-label={captionsWanted ? 'Hide captions' : 'Show captions'}
+              title={captionsWanted ? 'Hide captions' : 'Show captions'}
+            >
+              <CcIcon />
             </button>
           </div>
           <button

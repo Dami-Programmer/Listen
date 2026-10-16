@@ -132,6 +132,18 @@ export const EVENTS = {
   CHAT_DELETE: 'chat-delete',
   CHAT_MUTE: 'chat-mute',
 
+  // Live captions. Each speaker's own browser turns their speech into text
+  // (client/src/captions.js) — only while someone in the room wants captions.
+  //   CAPTIONS_WANT : client -> server { on }. I want to see captions (or not).
+  //                   Room-state's `captionsOn` is true while anyone does —
+  //                   that's what tells speakers' browsers to transcribe, and
+  //                   everyone's screen to show "Captions on".
+  //   CAPTION       : client -> server { text, final } — what I'm saying now
+  //                   (`final`: the sentence is finished). Server -> everyone
+  //                   in the room: { id, name, text, final }. Never stored.
+  CAPTIONS_WANT: 'captions-want',
+  CAPTION: 'caption',
+
   // Screen sharing (added after in-call chat). Google-Meet-style: only ONE
   // person presents at a time. The media itself is renegotiated peer-to-peer
   // (perfect negotiation in webrtc.js), or published to the SFU (sfu.js —

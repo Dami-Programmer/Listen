@@ -9,18 +9,8 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from './icons.jsx';
-
-// ---- edit your details here -------------------------------------------------
-export const PROFILE = {
-  name: 'Newtz',
-  role: 'Creator of Turnly',
-  about: 'A platform designed for better conversation, where everyone gets a chance to speak.',
-  photo: '/creator-newtz.jpg',
-  status: 'Available for work', // set to '' to hide the green-dot line
-  portfolio: 'https://davey-portfolio.netlify.app/', // left button
-  contact: 'https://wa.me/2349114264109', // right button — opens a WhatsApp chat
-};
-// -----------------------------------------------------------------------------
+// your name, photo and links — edit them in profile.js
+import { PROFILE } from './profile.js';
 
 const PortfolioIcon = () => (
   <svg
