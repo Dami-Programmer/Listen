@@ -6278,8 +6278,21 @@ body:has(.mc) {
 .pjm-top .pj-credit {
   margin-left: auto;
 }
-.pjm-logo {
+.pjm-logo,
+.pj-logo {
   display: flex;
+}
+/* the logo is a link back to the landing page (PreJoin's HomeLogo) */
+.pj-home {
+  border-radius: 10px;
+  transition: opacity 0.2s ease;
+}
+.pj-home:hover {
+  opacity: 0.8;
+}
+.pj-home:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 4px;
 }
 .pjm-logo .cs-logo {
   height: 44px;

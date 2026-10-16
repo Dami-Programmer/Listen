@@ -1,21 +1,61 @@
-// Drawn "cameras" and generated sound for the demo (see env.js / bots.js).
+// The demo's "cameras" and generated sound (see env.js / bots.js).
 //
 // Every person in the demo — the visitor and the pretend participants — has a
-// "camera" whose picture is drawn here: a soft coloured backdrop with a
-// head-and-shoulders figure that sways a little, and talks (an animated
-// mouth + rings) while that person has the floor and is speaking. No real
-// faces, no real camera. (The pictures reach the call screen through the
-// stand-in connection in fakePeer.js.)
+// "camera" whose picture is made here. No real camera is ever used.
+//
+//   - Each named person (Grace, Sam, Ada, Tunde, Mia, Ben, and "you") shows a
+//     PHOTO from public/demo-people/. They're AI-generated — not real people —
+//     made for the demo. A slow drift and zoom makes the still photo look
+//     like a live camera.
+//   - Anyone without a photo, or while it's still loading, gets the drawn
+//     figure below instead: a coloured backdrop and a head-and-shoulders
+//     shape that sways, and talks (mouth + rings) while speaking.
+//
+// The pictures reach the call screen through the stand-in connection in
+// fakePeer.js (no video compression), so drawing them costs very little.
 
-// The picture is laid out on a 640 x 360 sheet (all the numbers below), but
-// actually drawn at SCALE of that: the demo is shown shrunk inside the
-// landing page, so the tiles are small and a smaller picture looks the same
-// — at a quarter of the drawing work. FPS: how often it's redrawn; 10 still
-// moves smoothly enough for a sway and a talking mouth.
+// The picture is laid out on a 640 x 360 sheet (all the numbers below) and
+// drawn at SCALE of that: 960 x 540, the photos' own size, so a photo stays
+// sharp even in the big "talking" tile. FPS: how often it's redrawn; 10 is
+// plenty for a slow drift and a talking mouth.
 const W = 640;
 const H = 360;
-const SCALE = 0.5;
+const SCALE = 1.5;
 const FPS = 10;
+
+// The people who have a photo (public/demo-people/<name>.webp, 960 x 540).
+const PHOTOS = new Set(['grace', 'sam', 'ada', 'tunde', 'mia', 'ben', 'you']);
+const images = new Map(); // name -> <img>, loaded once and shared
+
+/** The photo name for a camera id ('bot-grace', 'bot-grace~2', 'demo-you'). */
+function photoName(id) {
+  const base = id === 'demo-you' ? 'you' : id.replace(/^bot-/, '').replace(/~\d+$/, '');
+  return PHOTOS.has(base) ? base : null;
+}
+
+function photo(name) {
+  let img = images.get(name);
+  if (!img) {
+    img = new Image();
+    img.decoding = 'async';
+    img.src = `/demo-people/${name}.webp`;
+    images.set(name, img);
+  }
+  return img;
+}
+
+// A photo, gently moving: a slow zoom in and out ("breathing") and a small
+// drift, each person at their own rhythm (`seed`) so they don't move in step.
+// It's always zoomed in a little (at least 2.8%), so the drift never shows
+// the photo's edges.
+function drawPhoto(ctx, img, t, seed) {
+  const k = 1.04 + Math.sin(t / 2600 + seed) * 0.012;
+  const dx = Math.sin(t / 3400 + seed * 2) * 6;
+  const dy = Math.cos(t / 4100 + seed) * 3;
+  const w = W * k;
+  const h = H * k;
+  ctx.drawImage(img, (W - w) / 2 + dx, (H - h) / 2 + dy, w, h);
+}
 
 // Who's talking right now (the demo server keeps this up to date).
 const talking = new Set();
@@ -114,8 +154,16 @@ function camera(id, color) {
   canvas.width = W * SCALE;
   canvas.height = H * SCALE;
   const ctx = canvas.getContext('2d');
-  ctx.scale(SCALE, SCALE); // draw in 640 x 360 numbers onto the smaller canvas
-  const tick = () => drawPerson(ctx, performance.now(), color, talking.has(id));
+  ctx.scale(SCALE, SCALE); // draw in 640 x 360 numbers onto the real canvas size
+  const name = photoName(id);
+  const img = name ? photo(name) : null;
+  const seed = [...id].reduce((s, ch) => s + ch.charCodeAt(0), 0) % 7; // own rhythm
+  const tick = () => {
+    const t = performance.now();
+    // the photo once it's loaded; the drawn figure until then (or without one)
+    if (img?.complete && img.naturalWidth) drawPhoto(ctx, img, t, seed);
+    else drawPerson(ctx, t, color, talking.has(id));
+  };
   tick();
   setInterval(tick, 1000 / FPS);
   cam = { canvas };
@@ -123,7 +171,7 @@ function camera(id, color) {
   return cam;
 }
 
-/** A drawn camera for `id` (a fresh track each call; one drawing per person). */
+/** A camera for `id`: a fresh track each call, one picture per person. */
 export function drawnCamera(id, _name, color) {
   return camera(id, color).canvas.captureStream(FPS);
 }

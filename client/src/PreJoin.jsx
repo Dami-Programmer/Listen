@@ -11,11 +11,29 @@ import useIsMobile from './useIsMobile.js';
 import ThemeToggle from './ThemeToggle.jsx';
 import Logo from './Logo.jsx';
 import ProfileCard, { PROFILE } from './ProfileCard.jsx';
-import { SIGNALING_URL } from './socket.js';
+import { IS_DEMO, SIGNALING_URL } from './socket.js';
 import { cameraConstraints } from './webrtc.js';
 import ClaimRoom from './ClaimRoom.jsx';
 import ScheduleMeeting from './ScheduleMeeting.jsx';
 import ScheduledBanner from './ScheduledBanner.jsx';
+
+// The logo, top left: a link back to the landing page ("/"). Safe here —
+// nobody is in a call yet on this screen. Not a link inside the landing
+// page's live demo, though: there it would load the landing page inside the
+// demo's own frame.
+function HomeLogo({ className }) {
+  if (IS_DEMO)
+    return (
+      <span className={className}>
+        <Logo />
+      </span>
+    );
+  return (
+    <a href="/" className={`${className} pj-home`} aria-label="Turnly home">
+      <Logo />
+    </a>
+  );
+}
 
 // A link with ?profile in it (https://your-site/?profile) opens the creator card.
 const wantsProfile = () => new URLSearchParams(window.location.search).has('profile');
@@ -302,10 +320,8 @@ export default function PreJoin({
     return (
       <main className="prejoin pjm">
         <div className="pjm-top">
-          {/* the Listen logo, top left */}
-          <span className="pjm-logo">
-            <Logo />
-          </span>
+          {/* the logo, top left — back to the landing page */}
+          <HomeLogo className="pjm-logo" />
           {/* the creator credit — opens the profile card */}
           <button type="button" className="pj-credit" onClick={() => setProfileOpen(true)}>
             <img src={PROFILE.photo} alt="" />
@@ -409,7 +425,7 @@ export default function PreJoin({
   return (
     <main className="prejoin">
       <header className="pj-top">
-        <Logo />
+        <HomeLogo className="pj-logo" />
         <div className="pj-top-right">
           {/* the creator credit — opens the profile card */}
           <button type="button" className="pj-credit" onClick={() => setProfileOpen(true)}>
