@@ -3,7 +3,32 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Turnly</title>
+    <title>Turnly · Every voice gets a turn</title>
+    <!-- What search engines show, and the preview card when a Turnly link is
+         shared on WhatsApp, Slack, X, iMessage… The image must be a full web
+         address: if the site moves to its own domain, change it here (both
+         og:image and og:url). The picture is public/og-image.jpg (1200 x 630,
+         made from the hero picture). -->
+    <meta
+      name="description"
+      content="Free video calls where people raise a hand and the host gives them the floor, so big meetings never turn into talking over each other. No account, nothing to install."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Turnly" />
+    <meta property="og:title" content="Turnly · Every voice gets a turn" />
+    <meta
+      property="og:description"
+      content="Free video calls where people raise a hand and the host gives them the floor. No account, nothing to install."
+    />
+    <meta property="og:url" content="https://listen-2-pyrg.onrender.com/" />
+    <meta property="og:image" content="https://listen-2-pyrg.onrender.com/og-image.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="A Turnly meeting: the person talking, the line of raised hands, and everyone else"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
     <!-- Pick light or dark BEFORE the page paints, so a light-mode user never
          sees a flash of dark while the app loads. Same rule as theme.js: the
          saved choice ('light' / 'dark'), or else the device's own setting.
@@ -28,10 +53,29 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
-      rel="stylesheet"
-    />
+    <!-- Only the fonts this page uses (it used to load all five families on
+         every page). Picked here, before the page draws, from the address —
+         the same pages main.jsx shows:
+           landing page (/) + privacy page   Barlow, Manrope, IBM Plex Mono
+           everything else (the app: home    Inter, Plus Jakarta Sans
+           screen, meetings, recordings,
+           the landing page's demo frames) -->
+    <script>
+      (function () {
+        var path = location.pathname;
+        var q = new URLSearchParams(location.search);
+        var landing =
+          path === '/privacy' ||
+          (path === '/' && !q.get('room') && !q.has('profile') && !q.get('rec'));
+        var families = landing
+          ? 'family=Barlow:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800'
+          : 'family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800';
+        var link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = 'https://fonts.googleapis.com/css2?' + families + '&display=swap';
+        document.head.appendChild(link);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

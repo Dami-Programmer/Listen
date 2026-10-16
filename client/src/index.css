@@ -8440,7 +8440,9 @@ body:has(.mc) .reactions-layer {
 :root[data-theme='light'] .landing {
   --ld-hi: #0d0d0d;
   --ld-hi-rgb: 13, 13, 13;
-  --ld-dim: #7c7a73;
+  /* the grey words — dark enough to read easily on white (about 6.5:1;
+     #7c7a73 was 4.3:1, just under the 4.5:1 normal-size text needs) */
+  --ld-dim: #5f5d57;
   --ld-ink: #161615;
   --ld-card: #ffffff;
   --ld-line: #e7e5e0;
@@ -8641,9 +8643,10 @@ body:has(.mc) .reactions-layer {
 }
 .ld-small {
   margin: 30px 0 0;
-  font: 13px/1.5 var(--ld-mono);
+  font: 13.5px/1.5 var(--ld-mono);
+  /* full strength: it was faded twice (grey AND see-through), which made
+     the most reassuring line on the page the hardest to read */
   color: var(--ld-dim);
-  opacity: 0.85;
 }
 
 /* --- 2. the real app, live, on a dotted panel --- */
@@ -8806,7 +8809,7 @@ body:has(.mc) .reactions-layer {
   background: none;
   color: var(--text, #f5f7fa);
   font:
-    600 17px/1.4 'Inter',
+    600 17px/1.4 var(--ld-display, 'Inter'),
     system-ui,
     sans-serif;
   text-align: left;
@@ -9048,7 +9051,7 @@ html:has(.landing) {
   background: rgba(var(--ink, 255, 255, 255), 0.05);
   color: var(--text, #f5f7fa);
   font:
-    600 14px/1 'Inter',
+    600 14px/1 var(--ld-display, 'Inter'),
     system-ui,
     sans-serif;
   cursor: pointer;
@@ -9097,7 +9100,7 @@ html:has(.landing) {
   background: rgba(var(--ink, 255, 255, 255), 0.05);
   color: var(--text, #f5f7fa);
   font:
-    600 14px/1 'Inter',
+    600 14px/1 var(--ld-display, 'Inter'),
     system-ui,
     sans-serif;
   cursor: pointer;
