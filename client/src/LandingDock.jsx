@@ -19,6 +19,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import ThemeToggle from './ThemeToggle.jsx';
 import { GridView, Hand, People } from './icons.jsx';
 import { trackEvent } from './analytics.js';
+import { markStartClick } from './startClick.js';
 
 // Two icons the app's icon set doesn't have; same line style as icons.jsx.
 const line = {
@@ -279,7 +280,10 @@ export default function LandingDock({ start }) {
         href={start}
         className="ld-dock-btn ld-dock-start"
         aria-label="Start a meeting"
-        onClick={() => trackEvent('start clicked', { where: 'dock' })}
+        onClick={() => {
+          markStartClick(); // the water-filling splash on the start page (StartSplash.jsx)
+          trackEvent('start clicked', { where: 'dock' });
+        }}
       >
         <Play />
         <span className="ld-dock-tip" aria-hidden="true">

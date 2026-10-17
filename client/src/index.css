@@ -10094,3 +10094,102 @@ html:has(.landing) {
 .ld-frame-cover .ld-spinner {
   border-top-color: #fff;
 }
+
+/* --- start splash (StartSplash.jsx) -----------------------------------------
+   Right after "Start a meeting": the Turnly mark fills up like water in a
+   cup, over the start page, then fades into it. The mark's shape (the image's
+   see-through outline) is a mask; inside it, a faint "empty" layer and the
+   water — a block rising from the bottom (--level, set every frame by
+   StartSplash.jsx) with two rolling waves on top. Same page colours as the
+   app, and the water is the text colour: white in dark mode, near-black in
+   light. */
+.start-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 1000; /* over everything on the start page */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  background: var(--bg, #0f1115);
+  color: var(--text, #e8e8ea);
+  transition:
+    opacity 0.45s ease,
+    visibility 0.45s;
+}
+.start-splash.done {
+  opacity: 0;
+  visibility: hidden;
+}
+.ss-cup {
+  --water: var(--text, #f5f7fa);
+  position: relative;
+  width: 96px;
+  height: 96px;
+  -webkit-mask: url('/turnly-mark-96.png') center / contain no-repeat;
+  mask: url('/turnly-mark-96.png') center / contain no-repeat;
+}
+.ss-empty {
+  position: absolute;
+  inset: 0;
+  background: var(--water);
+  opacity: 0.14;
+}
+.ss-water {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--level, 0%);
+  background: var(--water);
+  /* each pour rises smoothly (StartSplash.jsx sets the levels) */
+  transition: height 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* the wave on top of the water: a wavy strip twice as wide as the cup,
+   sliding sideways forever; a fainter one behind, the other way, slower */
+.ss-wave {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% - 1px);
+  width: 200%;
+  height: 10px;
+  background: var(--water);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 10' preserveAspectRatio='none'%3E%3Cpath d='M0 5 Q12 0 24 5 T48 5 T72 5 T96 5 V10 H0Z'/%3E%3C/svg%3E")
+    0 0 / 50% 100% repeat-x;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 10' preserveAspectRatio='none'%3E%3Cpath d='M0 5 Q12 0 24 5 T48 5 T72 5 T96 5 V10 H0Z'/%3E%3C/svg%3E")
+    0 0 / 50% 100% repeat-x;
+  animation: ss-roll 1.6s linear infinite;
+}
+.ss-wave.back {
+  height: 12px;
+  opacity: 0.45;
+  animation-duration: 2.6s;
+  animation-direction: reverse;
+}
+@keyframes ss-roll {
+  to {
+    transform: translateX(-50%);
+  }
+}
+/* full: a tiny settle as it fades out */
+.ss-cup.full {
+  animation: ss-settle 0.5s ease-out;
+}
+@keyframes ss-settle {
+  40% {
+    transform: scale(1.07);
+  }
+}
+.ss-words {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-muted, #8d98a5);
+}
+/* less motion asked for: still fills, but the waves don't roll */
+@media (prefers-reduced-motion: reduce) {
+  .ss-wave,
+  .ss-cup.full {
+    animation: none;
+  }
+}

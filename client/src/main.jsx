@@ -6,6 +6,8 @@ import './index.css';
 import { installPressFx } from './pressFx.js';
 import { installErrorReporting } from './errorReport.js';
 import { installAnalytics } from './analytics.js';
+import StartSplash from './StartSplash.jsx';
+import { takeStartClick } from './startClick.js';
 
 // Anything that goes wrong in the browser is reported to the server's logs
 // (errorReport.js) — first thing, so even a crash while starting up is caught.
@@ -69,12 +71,19 @@ if (IS_DEMO) {
 // privacy page counts as itself, not as "landing".
 installAnalytics(window.location.pathname === '/privacy' ? 'privacy' : kind);
 
+// Just clicked "Start a meeting" on the landing page? Then the water-filling
+// Turnly mark covers the start page for a moment (StartSplash.jsx). It sits
+// OUTSIDE Suspense, so it's on screen at once, while the app's code is still
+// downloading underneath.
+const startClick = kind === 'home' ? takeStartClick() : null;
+
 const render = () =>
   createRoot(document.getElementById('root')).render(
     <StrictMode>
       <ErrorBoundary page={kind}>
         <Suspense fallback={null}>{page}</Suspense>
       </ErrorBoundary>
+      {startClick && <StartSplash since={startClick} />}
     </StrictMode>,
   );
 

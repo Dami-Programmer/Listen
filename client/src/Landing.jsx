@@ -13,6 +13,7 @@ import ThemeToggle from './ThemeToggle.jsx';
 import { PROFILE } from './profile.js';
 import { FeatureTour, HeroDemo, HowItWorks } from './LandingDemos.jsx';
 import { trackEvent } from './analytics.js';
+import { markStartClick } from './startClick.js';
 import LandingDock from './LandingDock.jsx';
 
 const START = '/start'; // the app's home screen (start or join a meeting)
@@ -172,7 +173,10 @@ export default function Landing() {
           <a
             href={START}
             className="ld-btn"
-            onClick={() => trackEvent('start clicked', { where: 'top' })}
+            onClick={() => {
+              markStartClick(); // the water-filling splash on the start page (StartSplash.jsx)
+              trackEvent('start clicked', { where: 'top' });
+            }}
           >
             <span aria-hidden="true">▶</span> Start a meeting
           </a>
@@ -231,7 +235,10 @@ export default function Landing() {
         <a
           href={START}
           className="ld-btn"
-          onClick={() => trackEvent('start clicked', { where: 'bottom' })}
+          onClick={() => {
+            markStartClick(); // the water-filling splash on the start page (StartSplash.jsx)
+            trackEvent('start clicked', { where: 'bottom' });
+          }}
         >
           Start a meeting
         </a>
