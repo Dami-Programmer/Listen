@@ -1404,9 +1404,41 @@ function Tile({ tile, sinkId, screen = false }) {
 //
 // While closed you can't see the mic button, so a muted mic shows as a small
 // red badge on ⋮ itself.
+//
+// A ROLLING dial: the quarter circle (straight up → straight left) holds four
+// controls, 30° apart. With more than four (leave, camera, mic, present,
+// captions = five), the dial turns like a wheel:
+//   - swipe along the curve (from a control or the space around them) to
+//     roll it; let go and it snaps to the nearest step
+//   - a mouse wheel / trackpad scroll rolls one step at a time
+//   - Tab to a control that's rolled out of sight and it rolls into view
+//   - just after it opens, it nudges a little and back — a hint that there's
+//     more (not for people who ask their phone for less motion)
+// A control rolled past either end shrinks and fades (and can't be tapped).
+// "turn" = how far it's rolled, in degrees; control i sits at
+// 90° + i·30° − turn.
 const DIAL_RADIUS = 150; // px from the ⋮ button's centre to each control's centre
-const DIAL_FIRST_DEG = 90; // first control: straight up
-const DIAL_STEP_DEG = 28; // each next one this much further round to the left
+const DIAL_FIRST_DEG = 90; // first spot: straight up
+const DIAL_LAST_DEG = 180; // last spot: straight left
+const DIAL_STEP_DEG = 30; // between neighbours (so four fit, 90° → 180°)
+const DIAL_FADE_DEG = 25; // past either end, gone after this many degrees
+const DIAL_NUDGE_DEG = 18; // the "there's more" hint on opening
+const DIAL_SWIPE_DEG = 6; // a press that moves further than this is a swipe, not a tap
+
+/** Where control i sits when the dial is turned `turn`°: x/y in px from
+ *  the ⋮ button's centre, and k = how "in view" it is (1 = fully, 0 = gone). */
+function dialPlace(i, turn) {
+  const deg = DIAL_FIRST_DEG + i * DIAL_STEP_DEG - turn;
+  const past = deg < DIAL_FIRST_DEG ? DIAL_FIRST_DEG - deg : Math.max(0, deg - DIAL_LAST_DEG);
+  const rad = (deg * Math.PI) / 180;
+  return {
+    // angle round the circle (0° = right, 90° = up) → x/y on screen (screen y
+    // grows downwards, hence the minus)
+    x: Math.round(Math.cos(rad) * DIAL_RADIUS),
+    y: Math.round(-Math.sin(rad) * DIAL_RADIUS),
+    k: Math.max(0, 1 - past / DIAL_FADE_DEG),
+  };
+}
 
 function ControlDial({ open, onToggle, onClose, micOff, items }) {
   // Esc closes it, like the other menus.
@@ -1418,8 +1450,185 @@ function ControlDial({ open, onToggle, onClose, micOff, items }) {
   }, [open, onClose]);
 
   const n = items.length;
+  // how far it can roll: until the last control is straight left (0 = it
+  // all fits, no rolling)
+  const maxTurn = Math.max(0, (n - 1) * DIAL_STEP_DEG - (DIAL_LAST_DEG - DIAL_FIRST_DEG));
+
+  const rootRef = useRef(null);
+  const itemEls = useRef([]); // the control wrappers, by index
+  const turn = useRef(0); // where it is now (degrees)
+  const target = useRef(0); // where it's heading
+  const frame = useRef(0);
+
+  // Put every control where the current turn says. Straight onto the
+  // elements (CSS variables), not through React state: this runs every frame
+  // while rolling.
+  const draw = useCallback(() => {
+    itemEls.current.forEach((el, i) => {
+      if (!el) return;
+      const { x, y, k } = dialPlace(i, turn.current);
+      el.style.setProperty('--x', `${x}px`);
+      el.style.setProperty('--y', `${y}px`);
+      el.style.setProperty('--s', (0.5 + 0.5 * k).toFixed(3)); // shrinks to half…
+      el.style.setProperty('--o', k.toFixed(3)); // …and fades out
+      el.style.pointerEvents = k > 0.6 ? '' : 'none'; // mostly gone: not tappable
+    });
+  }, []);
+
+  // Glide towards `target` (a little of the way each frame = an ease-out).
+  // While it moves, .rolling switches off the controls' own CSS animation so
+  // they follow exactly.
+  const glide = useCallback(() => {
+    cancelAnimationFrame(frame.current);
+    rootRef.current?.classList.add('rolling');
+    const step = () => {
+      const gap = target.current - turn.current;
+      if (Math.abs(gap) < 0.2) {
+        turn.current = target.current;
+        draw();
+        rootRef.current?.classList.remove('rolling');
+        return;
+      }
+      turn.current += gap * 0.2;
+      draw();
+      frame.current = requestAnimationFrame(step);
+    };
+    frame.current = requestAnimationFrame(step);
+  }, [draw]);
+
+  // Opening: start unrolled; once the controls have popped out, the nudge.
+  // Closing: back to unrolled, so it opens the same way next time.
+  useEffect(() => {
+    cancelAnimationFrame(frame.current);
+    rootRef.current?.classList.remove('rolling');
+    turn.current = 0;
+    target.current = 0;
+    draw();
+    if (!open || !maxTurn) return undefined;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return undefined;
+    const timers = [
+      // the pop-out takes ~0.7s (index.css, .mc-dial-item); nudge after it
+      setTimeout(() => {
+        target.current = DIAL_NUDGE_DEG;
+        glide();
+      }, 750),
+      setTimeout(() => {
+        target.current = 0;
+        glide();
+      }, 1150),
+    ];
+    return () => {
+      timers.forEach(clearTimeout);
+      cancelAnimationFrame(frame.current);
+    };
+  }, [open, maxTurn, draw, glide]);
+
+  // Swiping and scrolling to roll (only when there's something to roll to).
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!open || !maxTurn || !root) return undefined;
+    // the pointer's angle round the ⋮ button (0° = right, 90° = up)
+    const toggle = root.querySelector('.mc-dial-toggle');
+    const angleOf = (e) => {
+      const r = toggle.getBoundingClientRect();
+      const dx = e.clientX - (r.left + r.width / 2);
+      const dy = e.clientY - (r.top + r.height / 2);
+      return { deg: (Math.atan2(-dy, dx) * 180) / Math.PI, dist: Math.hypot(dx, dy) };
+    };
+    const snap = (t) =>
+      Math.max(0, Math.min(maxTurn, Math.round(t / DIAL_STEP_DEG) * DIAL_STEP_DEG));
+
+    let press = null; // { start, last } angles while a finger / mouse is down
+    let swiping = false;
+    let swiped = false; // the press that just ended was a swipe (so: no tap)
+
+    const onDown = (e) => {
+      if (e.target.closest('.mc-dial-toggle')) return;
+      const { deg, dist } = angleOf(e);
+      // only near the ring of controls, not anywhere on the screen
+      if (dist < DIAL_RADIUS - 60 || dist > DIAL_RADIUS + 60) return;
+      press = { start: deg, last: deg };
+      swiping = false;
+      swiped = false;
+    };
+    const onMove = (e) => {
+      if (!press) return;
+      const { deg } = angleOf(e);
+      if (!swiping && Math.abs(deg - press.start) > DIAL_SWIPE_DEG) {
+        swiping = true;
+        swiped = true;
+        cancelAnimationFrame(frame.current);
+        root.classList.add('rolling');
+        // A phone keeps a touch tied to the control it started on — let go
+        // of it, so that control's press-and-hold timer (camera / mic) is
+        // cancelled instead of firing mid-swipe.
+        e.target.releasePointerCapture?.(e.pointerId);
+      }
+      if (swiping) {
+        // turning the finger anticlockwise (towards the top) rolls the
+        // controls up and away: turn grows. A little give past the ends.
+        const t = turn.current - (deg - press.last);
+        turn.current = Math.max(-12, Math.min(maxTurn + 12, t));
+        draw();
+      }
+      press.last = deg;
+    };
+    const onUp = () => {
+      if (swiping) {
+        target.current = snap(turn.current);
+        glide();
+      }
+      press = null;
+      swiping = false;
+    };
+    // a swipe that ends on a control mustn't also press it (or close the dial)
+    const onClickCapture = (e) => {
+      if (!swiped) return;
+      swiped = false;
+      e.stopPropagation();
+      e.preventDefault();
+    };
+    const onWheel = (e) => {
+      e.preventDefault();
+      target.current = snap(target.current + Math.sign(e.deltaY || e.deltaX) * DIAL_STEP_DEG);
+      glide();
+    };
+    // keyboard: Tab onto a control that's rolled out of view → roll it in
+    const onFocusIn = (e) => {
+      const i = itemEls.current.findIndex((el) => el?.contains(e.target));
+      if (i < 0) return;
+      // control i is in view while turn is between i·30 − 90 and i·30
+      const lo = i * DIAL_STEP_DEG - (DIAL_LAST_DEG - DIAL_FIRST_DEG);
+      const want = Math.max(
+        0,
+        Math.min(maxTurn, Math.min(Math.max(target.current, lo), i * DIAL_STEP_DEG)),
+      );
+      if (want !== target.current) {
+        target.current = want;
+        glide();
+      }
+    };
+
+    root.addEventListener('pointerdown', onDown);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    root.addEventListener('click', onClickCapture, true);
+    root.addEventListener('wheel', onWheel, { passive: false });
+    root.addEventListener('focusin', onFocusIn);
+    return () => {
+      root.removeEventListener('pointerdown', onDown);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      root.removeEventListener('click', onClickCapture, true);
+      root.removeEventListener('wheel', onWheel);
+      root.removeEventListener('focusin', onFocusIn);
+    };
+  }, [open, maxTurn, draw, glide]);
+
   return (
-    <div className={`mc-dial${open ? ' open' : ''}`}>
+    <div ref={rootRef} className={`mc-dial${open ? ' open' : ''}`}>
       {/* Invisible full-screen layer under the controls: a tap anywhere
           else lands here and closes the dial. */}
       <div className="mc-dial-scrim" onClick={onClose} aria-hidden="true" />
@@ -1427,16 +1636,23 @@ function ControlDial({ open, onToggle, onClose, micOff, items }) {
       <div className="mc-dial-glow" aria-hidden="true" />
 
       {items.map((item, i) => {
-        // Angle round the circle (0° = right, 90° = up), then x/y on screen
-        // (screen y grows downwards, hence the minus).
-        const rad = ((DIAL_FIRST_DEG + i * DIAL_STEP_DEG) * Math.PI) / 180;
-        const x = Math.round(Math.cos(rad) * DIAL_RADIUS);
-        const y = Math.round(-Math.sin(rad) * DIAL_RADIUS);
+        // where it starts (unrolled); draw() updates these while rolling
+        const { x, y, k } = dialPlace(i, 0);
         return (
           <div
             key={item.key}
+            ref={(el) => {
+              itemEls.current[i] = el;
+            }}
             className="mc-dial-item"
-            style={{ '--x': `${x}px`, '--y': `${y}px`, '--i': i, '--ri': n - 1 - i }}
+            style={{
+              '--x': `${x}px`,
+              '--y': `${y}px`,
+              '--s': 0.5 + 0.5 * k,
+              '--o': k,
+              '--i': i,
+              '--ri': n - 1 - i,
+            }}
             // While closed: invisible AND out of reach (no taps, no keyboard).
             {...(open ? {} : { inert: '' })}
           >

@@ -6561,12 +6561,24 @@ body:has(.mc) {
     opacity 0.18s ease-in calc(var(--ri) * 40ms);
 }
 .mc-dial.open .mc-dial-item {
-  opacity: 1;
-  transform: translate(var(--x), var(--y)) scale(1);
+  /* --s / --o: smaller and fainter as it rolls past either end of the
+     quarter circle (the rolling dial, MobileCall.jsx); 1 = fully in view */
+  opacity: var(--o, 1);
+  transform: translate(var(--x), var(--y)) scale(var(--s, 1));
   /* opening: one after another, with a little overshoot ("pop") */
   transition:
     transform 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) calc(var(--i) * 70ms),
     opacity 0.2s ease calc(var(--i) * 70ms);
+}
+/* while the dial is being rolled (a swipe, a scroll, the opening nudge),
+   MobileCall.jsx moves the controls every frame itself — no CSS animation in
+   between, or they'd lag behind the finger */
+.mc-dial.open.rolling .mc-dial-item {
+  transition: none;
+}
+/* the controls belong to the dial's swipe, not the page's scrolling */
+.mc-dial.open .mc-dial-item {
+  touch-action: none;
 }
 
 /* the controls are bigger out on the arc than they were in the old bar */
