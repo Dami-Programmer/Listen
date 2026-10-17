@@ -8592,11 +8592,26 @@ body:has(.mc) .reactions-layer {
   align-items: center;
   gap: 36px;
 }
-/* The top bar scrolls away with the page. Further down, the floating dock at
-   the bottom takes over (.ld-dock, below). */
-/* the dock's links (#how, #features…) stop a little below the screen's top */
+/* Desktop and larger tablets (wide enough for the nav links): the bar sits
+   at the very top of the page on frosted glass, spanning the full width
+   with a line under it (the padding keeps its contents lined up with the
+   page column). It is NOT sticky: it scrolls away with the page, and from
+   the demo picture down the floating dock at the bottom is the navigation
+   (.ld-dock, below) — one nav on screen at a time. */
+/* links to a section (#how, #features…) stop a little below the screen's top */
 .landing [id] {
   scroll-margin-top: 24px;
+}
+@media (min-width: 981px) {
+  .ld-top {
+    z-index: 50;
+    max-width: none;
+    padding-inline: max(24px, calc((100% - var(--ld-max)) / 2 + 24px));
+    background: color-mix(in srgb, var(--ld-page) 62%, transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    backdrop-filter: blur(16px) saturate(160%);
+    border-bottom: 1px solid color-mix(in srgb, var(--ld-line) 70%, transparent);
+  }
 }
 
 /* --- the floating dock (LandingDock.jsx) ---
