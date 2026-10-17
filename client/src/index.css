@@ -8592,7 +8592,7 @@ body:has(.mc) .reactions-layer {
   align-items: center;
   gap: 36px;
 }
-/* Desktop and larger tablets (wide enough for the nav links): the bar sits
+/* Desktop and tablets (wider than 640px, enough for the nav links): the bar sits
    at the very top of the page on frosted glass, spanning the full width
    with a line under it (the padding keeps its contents lined up with the
    page column). It is NOT sticky: it scrolls away with the page, and from
@@ -8602,7 +8602,7 @@ body:has(.mc) .reactions-layer {
 .landing [id] {
   scroll-margin-top: 24px;
 }
-@media (min-width: 981px) {
+@media (min-width: 641px) {
   .ld-top {
     z-index: 50;
     max-width: none;
@@ -9426,6 +9426,20 @@ body:has(.mc) .reactions-layer {
   .ld-audience {
     grid-template-columns: repeat(2, 1fr);
   }
+  /* tablets: the full top bar still shows (links + glass), just tighter;
+     "Made by" makes room for the links (it's in the footer too) */
+  .ld-top {
+    gap: 24px;
+  }
+  .ld-nav {
+    gap: 18px;
+  }
+  .ld-made {
+    display: none;
+  }
+}
+/* phones: no room for the links — the bottom dock is the navigation */
+@media (max-width: 640px) {
   .ld-nav {
     display: none;
   }
