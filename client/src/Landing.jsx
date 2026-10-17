@@ -13,6 +13,7 @@ import ThemeToggle from './ThemeToggle.jsx';
 import { PROFILE } from './profile.js';
 import { FeatureTour, HeroDemo, HowItWorks } from './LandingDemos.jsx';
 import { trackEvent } from './analytics.js';
+import LandingDock from './LandingDock.jsx';
 
 const START = '/start'; // the app's home screen (start or join a meeting)
 
@@ -121,7 +122,8 @@ const STARS = [
 
 export default function Landing() {
   return (
-    <div className="landing">
+    // id="top": where the dock's "Back to top" goes
+    <div className="landing" id="top">
       <div className="ld-stars" aria-hidden="true">
         {STARS.map(([x, y, size, delay]) => (
           <span
@@ -156,9 +158,12 @@ export default function Landing() {
       <section className="ld-hero">
         {/* the big soft glow behind the headline, turned 45° */}
         <div className="ld-glow" aria-hidden="true" />
-        {/* one idea, one colour; the "big meetings" point as a quieter line */}
-        <h1>Every voice gets a turn.</h1>
-        <p className="ld-sub">Even in big meetings.</p>
+        <h1>
+          <span className="dim">Every</span> voice <span className="dim">gets a</span> turn
+          <span className="dim">.</span> <br />
+          <span className="dim">Even in</span> big <span className="dim">meetings</span>
+          <span className="dim">!</span>
+        </h1>
         <p className="ld-lead">
           Video calls where people raise a hand and the host gives them the floor. So big meetings
           never turn into talking over each other.
@@ -244,6 +249,10 @@ export default function Landing() {
           </span>
         </span>
       </footer>
+
+      {/* --- the floating dock at the bottom: appears once you reach the demo
+          picture (LandingDock.jsx) --- */}
+      <LandingDock start={START} />
     </div>
   );
 }
