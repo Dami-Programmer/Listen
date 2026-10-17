@@ -7,8 +7,8 @@ import { clientIp, createConnectionCounter, MAX_CONNECTIONS_PER_IP } from '../sr
 describe('connection limits', () => {
   test('a whole hall on one Wi-Fi (one address) still fits', () => {
     const c = createConnectionCounter();
-    for (let i = 0; i < 40; i += 1) assert.equal(c.tryAdd('203.0.113.7'), true);
-    assert.ok(MAX_CONNECTIONS_PER_IP >= 40);
+    for (let i = 0; i < 120; i += 1) assert.equal(c.tryAdd('203.0.113.7'), true);
+    assert.ok(MAX_CONNECTIONS_PER_IP >= 120);
   });
 
   test('one address past the limit is refused; others aren’t affected', () => {

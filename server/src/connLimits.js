@@ -12,7 +12,7 @@
 //     JOIN_WITHIN_MS is closed (the app always asks straight after
 //     connecting; people knocking or on "You left · Rejoin" have asked)
 
-export const MAX_CONNECTIONS_PER_IP = 50;
+export const MAX_CONNECTIONS_PER_IP = 150;
 export const JOIN_WITHIN_MS = 60_000;
 
 /**

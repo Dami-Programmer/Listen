@@ -8708,9 +8708,14 @@ body:has(.mc) .reactions-layer {
   line-height: 1.04;
   font-weight: 800;
   color: var(--ld-hi);
+  /* when it wraps (phones), two even lines, not one word left alone */
+  text-wrap: balance;
 }
-.ld-hero h1 .dim {
-  font-weight: 500;
+/* "Even in big meetings." — under the headline, quieter: smaller, grey */
+.ld-sub {
+  margin: 14px 0 0;
+  font: 600 clamp(22px, 2.6vw, 34px) / 1.2 var(--ld-display);
+  letter-spacing: -0.01em;
   color: var(--ld-dim);
 }
 .ld-lead {
@@ -9065,9 +9070,6 @@ body:has(.mc) .reactions-layer {
   }
   .ld-hero {
     padding: 56px 16px 40px;
-  }
-  .ld-hero h1 br {
-    display: none; /* one flowing headline on a phone */
   }
   .ld-lead {
     font-size: 16.5px;

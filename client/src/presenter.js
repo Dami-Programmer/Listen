@@ -66,7 +66,10 @@ async function loadPdf(file) {
     import('pdfjs-dist/build/pdf.worker.min.mjs?url'),
   ]);
   pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
-  const doc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+  // isEvalSupported: false — pdf.js otherwise builds font code on the fly
+  // (new Function), which the site's security policy doesn't allow.
+  const doc = await pdfjs.getDocument({ data: await file.arrayBuffer(), isEvalSupported: false })
+    .promise;
 
   // Render pages on demand, keeping a few recent ones so flipping back is instant.
   const cache = new Map();

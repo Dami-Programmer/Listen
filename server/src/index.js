@@ -595,6 +595,74 @@ app.get('/files/:id', async (req, res) => {
   }
 });
 
+// --- Security-policy reports ----------------------------------------------------
+// The website's Content-Security-Policy (set as a header in Render's settings
+// for the static site) lists where the site may load things from. While it's
+// in "report only" mode, nothing is blocked: browsers just send a report here
+// for anything it WOULD block, so the list can be checked against real use
+// before it's switched on for real. Logged as "[csp] …" — search Render's
+// logs for it.
+//
+// Browsers send two formats: the older { "csp-report": {…} } and the newer
+// [{ type: "csp-violation", body: {…} }]. Only what would be blocked, by
+// which rule, and the KIND of page are logged — never the page's address
+// (room names stay private) or anything after a "?".
+const CSP_LIMIT = { max: 50, perMs: 10 * 60 * 1000 }; // per IP
+const cspHits = new Map(); // ip -> timestamps inside the window
+const cspSeen = new Map(); // logged line -> when (each distinct one once an hour)
+
+const pageKindOf = (url) => {
+  try {
+    const { pathname, searchParams } = new URL(url);
+    if (pathname === '/demo') return 'demo';
+    if (pathname === '/privacy') return 'privacy';
+    if (searchParams.get('rec')) return 'recording';
+    if (pathname === '/' && !searchParams.get('room')) return 'landing';
+    if (pathname === '/start' && !searchParams.get('room')) return 'home';
+    return 'meeting';
+  } catch {
+    return 'unknown';
+  }
+};
+// "https://x.test/a/b?secret" -> "https://x.test/a/b"; keywords like
+// "inline" / "eval" / "data" stay as they are
+const blockedOf = (v) =>
+  oneLine(String(v ?? ''), 300)
+    .replace(/[?#].*$/, '')
+    .slice(0, 200) || '(unknown)';
+
+app.post(
+  '/csp-reports',
+  express.json({
+    type: ['application/csp-report', 'application/reports+json', 'application/json'],
+    limit: '16kb',
+  }),
+  (req, res) => {
+    const now = Date.now();
+    const recent = (cspHits.get(req.ip) ?? []).filter((t) => now - t < CSP_LIMIT.perMs);
+    if (recent.length >= CSP_LIMIT.max) return res.status(204).end();
+    recent.push(now);
+    cspHits.set(req.ip, recent);
+
+    const raw = req.body;
+    const reports = Array.isArray(raw)
+      ? raw.filter((r) => r?.type === 'csp-violation').map((r) => r.body ?? {})
+      : raw?.['csp-report']
+        ? [raw['csp-report']]
+        : [];
+    for (const r of reports.slice(0, 10)) {
+      const directive = oneLine(r.effectiveDirective ?? r['effective-directive'] ?? '', 60);
+      const blocked = blockedOf(r.blockedURL ?? r['blocked-uri']);
+      const page = pageKindOf(r.documentURL ?? r['document-uri']);
+      const line = `[csp] would block ${blocked} (${directive || 'unknown rule'}) on ${page}`;
+      if (now - (cspSeen.get(line) ?? 0) < 60 * 60 * 1000) continue;
+      cspSeen.set(line, now);
+      console.warn(line);
+    }
+    res.status(204).end();
+  },
+);
+
 // Forget visitors whose rate-limit window has passed, so the map doesn't grow
 // for ever on a long-running server.
 setInterval(() => {
@@ -602,6 +670,10 @@ setInterval(() => {
   for (const [ip, hits] of clientErrorHits) {
     if (hits.every((t) => now - t >= CLIENT_ERROR_LIMIT.perMs)) clientErrorHits.delete(ip);
   }
+  for (const [ip, hits] of cspHits) {
+    if (hits.every((t) => now - t >= CSP_LIMIT.perMs)) cspHits.delete(ip);
+  }
+  for (const [line, at] of cspSeen) if (now - at >= 60 * 60 * 1000) cspSeen.delete(line);
 }, CLIENT_ERROR_LIMIT.perMs).unref();
 
 const server = http.createServer(app);

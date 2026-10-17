@@ -29,53 +29,14 @@
       content="A Turnly meeting: the person talking, the line of raised hands, and everyone else"
     />
     <meta name="twitter:card" content="summary_large_image" />
-    <!-- Pick light or dark BEFORE the page paints, so a light-mode user never
-         sees a flash of dark while the app loads. Same rule as theme.js: the
-         saved choice ('light' / 'dark'), or else the device's own setting.
-         Keep the key 'listen.theme' in sync with theme.js. -->
-    <script>
-      (function () {
-        var choice = null;
-        try {
-          choice = localStorage.getItem('listen.theme');
-        } catch (e) {
-          /* storage blocked: follow the device */
-        }
-        if (choice !== 'light' && choice !== 'dark') {
-          choice = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-        }
-        document.documentElement.dataset.theme = choice;
-      })();
-    </script>
+    <!-- Light / dark and this page's fonts, before the page draws (boot.js). -->
+    <script src="/boot.js"></script>
     <!-- Tab icon (the Turnly mark), and the icon for "Add to Home Screen". -->
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="512x512" href="/favicon-512.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <!-- Only the fonts this page uses (it used to load all five families on
-         every page). Picked here, before the page draws, from the address —
-         the same pages main.jsx shows:
-           landing page (/) + privacy page   Barlow, Manrope, IBM Plex Mono
-           everything else (the app: home    Inter, Plus Jakarta Sans
-           screen, meetings, recordings,
-           the landing page's demo frames) -->
-    <script>
-      (function () {
-        var path = location.pathname;
-        var q = new URLSearchParams(location.search);
-        var landing =
-          path === '/privacy' ||
-          (path === '/' && !q.get('room') && !q.has('profile') && !q.get('rec'));
-        var families = landing
-          ? 'family=Barlow:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800'
-          : 'family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800';
-        var link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = 'https://fonts.googleapis.com/css2?' + families + '&display=swap';
-        document.head.appendChild(link);
-      })();
-    </script>
   </head>
   <body>
     <div id="root"></div>
