@@ -49,6 +49,7 @@ import {
   sweepChatFiles,
   chatFileIdOf,
 } from './chatFiles.js';
+import { JOIN_WITHIN_MS, clientIp, createConnectionCounter } from './connLimits.js';
 import {
   claimName,
   isHostKey,
@@ -222,6 +223,9 @@ console.log(
 );
 
 const app = express();
+// Don't announce "X-Powered-By: Express" — it only helps someone probing for
+// known weaknesses.
+app.disable('x-powered-by');
 app.use(cors({ origin: CLIENT_ORIGIN }));
 app.use(express.json());
 
@@ -603,9 +607,10 @@ setInterval(() => {
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: CLIENT_ORIGIN, methods: ['GET', 'POST'] },
-  // Chat attachments travel as data: URLs — allow frames well over the 1 MB
-  // default (a 5 MB file is ~6.7 MB base64, plus JSON overhead).
-  maxHttpBufferSize: 12 * 1024 * 1024,
+  // The biggest messages: a chat file (5 MB is ~6.7 MB as a data: URL, plus
+  // JSON) and a recording piece (up to 8 MB). 10 MB fits both, and no more —
+  // every connection may send messages this big (see connLimits.js).
+  maxHttpBufferSize: 10 * 1024 * 1024,
   // Notice a dead connection (internet gone, laptop lid shut) within ~20 s
   // instead of the default ~45 s: the server pings every 10 s and gives up
   // after 10 s without an answer. That's when "Reconnecting…" shows for
@@ -995,8 +1000,36 @@ function enforceMedia(roomId) {
   }
 }
 
+// --- connection limits (connLimits.js) -----------------------------------------
+// At most MAX_CONNECTIONS_PER_IP open connections per visitor address; one
+// more is refused before it can send anything.
+const connections = createConnectionCounter();
+io.use((socket, next) => {
+  const { ip, from } = clientIp(socket.handshake);
+  if (!connections.tryAdd(ip)) {
+    // (logged with the header the address came from, so a wrong guess about
+    // the proxy — everyone looking like one address — would show up here)
+    console.warn(`[socket] too many connections from ${ip} (${from}); refused`);
+    return next(new Error('too many connections'));
+  }
+  socket.data.ip = ip;
+  socket.on('disconnect', () => connections.remove(ip));
+  next();
+});
+
 io.on('connection', (socket) => {
   console.log(`[socket] connected ${socket.id}`);
+
+  // A connection must ask to join (or rejoin) a meeting soon, or it's closed
+  // — the app always asks straight after connecting (connLimits.js).
+  const joinDeadline = setTimeout(() => {
+    console.warn(`[socket] ${socket.id} never asked to join; closing it`);
+    socket.disconnect(true);
+  }, JOIN_WITHIN_MS);
+  socket.onAny((event) => {
+    if (event === EVENTS.JOIN_ROOM || event === EVENTS.RESUME) clearTimeout(joinDeadline);
+  });
+  socket.on('disconnect', () => clearTimeout(joinDeadline));
 
   // Remember which room this socket joined so disconnect can clean up and,
   // when the host leaves, we can tell the room who was promoted.
