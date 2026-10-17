@@ -8903,6 +8903,32 @@ body:has(.mc) .reactions-layer {
     color 0.2s;
 }
 
+/* phones and tablets: always fully open and still — no dots, no folding, no
+   sliding in (LandingDock.jsx shows it from the start). Same test as MOBILE
+   in LandingDock.jsx: no hover, or a finger as the main pointer, or a narrow
+   screen. `.ld-dock.ld-dock` so these beat every rule above. */
+@media (hover: none), (pointer: coarse), (max-width: 640px) {
+  .ld-dock.ld-dock,
+  .ld-dock.ld-dock .ld-dock-bg,
+  .ld-dock.ld-dock .ld-dock-btn,
+  .ld-dock.ld-dock .ld-dock-sep {
+    transition: none;
+  }
+  .ld-dock.ld-dock .ld-dock-bg {
+    inset: 0;
+  }
+  .ld-dock.ld-dock .ld-dock-dots {
+    display: none;
+  }
+  .ld-dock.ld-dock .ld-dock-btn,
+  .ld-dock.ld-dock .ld-dock-sep {
+    opacity: 1;
+    scale: 1;
+    translate: 0 0;
+    pointer-events: auto;
+  }
+}
+
 /* opening: the icons fly out nearest-the-middle first (--d, a small delay
    per icon from LandingDock.jsx) — only for the fly-out (opacity, scale,
    translate), never the magnify (transform), which must keep up with the
@@ -9751,43 +9777,34 @@ html:has(.landing) {
 }
 @media (max-width: 1180px) {
   /* Smaller screens and phones: the tabs no longer fit on one row, so they
-     wrap onto as many rows as needed — as pills, since an underline only
-     reads on a single row. Every tab stays visible; nothing to swipe for.
-     (This used to be one row you swiped sideways, with the scrollbar
-     hidden: the last tabs just looked cut off, and a mouse couldn't reach
-     them.) */
+     wrap onto as many rows as needed — every tab stays visible, nothing to
+     swipe for. Same underline style as wide screens, but one line across
+     the whole block would only sit under the LAST row, so here each tab
+     draws its own: a thin grey line under every tab (so each row reads as
+     an underlined row), and the 2px gold one under the selected tab.
+     (The lines are background stripes along each tab's bottom edge, so the
+     gold one can sit exactly on top of the grey one.) */
   .ld-steplist {
-    gap: 8px;
+    gap: 6px 0;
     margin-bottom: 20px;
     border-bottom: none;
   }
   .ld-stepitem {
     margin-bottom: 0;
-    padding: 9px 15px;
-    border: 1px solid var(--ld-line);
-    border-radius: 9999px;
+    padding: 12px 12px;
+    border-bottom: none;
     font-size: 15px;
-    transition:
-      color 0.2s ease,
-      border-color 0.25s ease,
-      background-color 0.25s ease;
+    background: linear-gradient(var(--ld-line), var(--ld-line)) left bottom / 100% 1px no-repeat;
   }
   .ld-stepitem.on {
-    border-color: var(--ld-gold);
-    background: color-mix(in srgb, var(--ld-gold) 14%, transparent);
-  }
-  .ld-stepitem:focus-visible {
-    outline-offset: 2px;
+    background: linear-gradient(var(--ld-gold), var(--ld-gold)) left bottom / 100% 2px no-repeat;
   }
 }
 @media (max-width: 640px) {
-  /* phones: smaller pills, so more fit on each row */
-  .ld-steplist {
-    gap: 6px;
-  }
+  /* phones: a little smaller, so more fit on each row */
   .ld-stepitem {
     gap: 5px;
-    padding: 7px 11px;
+    padding: 10px 9px;
     font-size: 13.5px;
   }
   /* (".ld-stepitem" in front: the number's own rule comes later in this file) */

@@ -59,23 +59,35 @@ const LINKS = [
 // The dock's icons and its divider (not the glass or the dots).
 const ICONS = ':scope > .ld-dock-btn, :scope > .ld-dock-sep';
 
+// Phones and tablets: the dock is simply always there, fully open — no dots,
+// no spreading, no sliding in (index.css, "phones and tablets"). Their top
+// bar has no section links, so this is the page's navigation from the very
+// first screen. "Phone or tablet" = no hover, OR a finger as the main
+// pointer (some Android phones claim they can hover), OR a narrow screen.
+// Keep this in step with the @media rule in index.css.
+const MOBILE = '(hover: none), (pointer: coarse), (max-width: 640px)';
+const isMobile = () => window.matchMedia?.(MOBILE).matches === true;
+
 /** @param {string} props.start  where "Start a meeting" goes ('/start') */
 export default function LandingDock({ start }) {
-  const [shown, setShown] = useState(false);
-  const [open, setOpen] = useState(false); // tapped open (phones)
+  const [shown, setShown] = useState(isMobile);
+  // opened by a tap/click on the dots (on a computer, hover opens it anyway)
+  const [open, setOpen] = useState(false);
   const dockRef = useRef(null);
 
   // Show once the demo picture's top has come up past the middle of the
   // screen. A plain scroll check (at most once a frame) rather than an
   // IntersectionObserver, so it also works when the page loads already
-  // scrolled down (back button, #features link).
+  // scrolled down (back button, #features link). On phones and tablets it's
+  // always shown — checked every time too, since a window can be narrowed
+  // or a tablet turned after the page loads.
   useEffect(() => {
     const picture = document.querySelector('.ld-hero-show');
     if (!picture) return undefined;
     let frame = 0;
     const check = () => {
       frame = 0;
-      setShown(picture.getBoundingClientRect().top < window.innerHeight * 0.5);
+      setShown(isMobile() || picture.getBoundingClientRect().top < window.innerHeight * 0.5);
     };
     const onScroll = () => {
       if (!frame) frame = requestAnimationFrame(check);
