@@ -587,40 +587,54 @@ button.ghost.danger:hover:not(:disabled) {
   height: 100dvh;
   background: var(--bg, #10161c);
   color: var(--text, #f5f7fa);
+  /* the header across the top, then the main row (call + chat) below it */
   display: flex;
+  flex-direction: column;
   /* the chat panel slides in from past the right edge — clip it there */
   overflow-x: hidden;
   font-family: 'Inter', system-ui, sans-serif;
 }
-/* The left column keeps exactly the spacing the whole screen used to have, so
-   the stage looks the same as before. */
+/* Below the header: the call on the left, the chat card on the right. */
+.cs-main-row {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+/* The left column: the video and the control bar. */
 .cs-stage-col {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 16px 40px 24px;
+  padding: 8px 40px 24px;
 }
 
 .callscreen .err {
   margin: 0;
 }
 
-/* --- header ---------------------------------------------------------- */
+/* --- header ----------------------------------------------------------
+   Left: the white Turnly mark, the meeting's name beside it, then any
+   status chips. Right (.cs-top-right): soft rounded buttons. */
 .cs-topbar {
   display: flex;
-  align-items: flex-start;
-  gap: 56px;
+  align-items: center;
+  gap: 24px;
+  min-height: 64px;
   flex-shrink: 0;
+  /* the full width of the screen, over the call AND the chat */
+  padding: 12px 40px 4px;
 }
-.cs-brand-col {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center; /* level with the meeting title next to it */
-  height: 92px;
+/* the Turnly mark on its own: white in dark mode, near-black in light */
+.cs-mark {
+  width: 30px;
+  height: 30px;
   flex-shrink: 0;
+  filter: brightness(0) invert(1);
+}
+:root[data-theme='light'] .cs-mark {
+  filter: brightness(0);
 }
 /* the logo is a wide image (mark + name + tagline): fix its height, the
    width follows — tall enough for "Every voice gets a turn." to be read */
@@ -638,23 +652,31 @@ button.ghost.danger:hover:not(:disabled) {
 .cs-title-row {
   display: flex;
   align-items: center;
-  gap: 20px;
-  height: 92px;
+  gap: 12px;
+  min-width: 0; /* a long meeting name shortens with … instead of pushing the buttons off */
 }
 .cs-title-row h1 {
   margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
   font-size: 18px;
   font-weight: 600;
   line-height: 27px;
   letter-spacing: -0.18px;
   color: var(--text, #f5f7fa);
 }
+/* Room mode: two calm status colours, no glow — muted GREEN for Open
+   (anyone can talk), muted AMBER for Moderated (turns are managed). A soft
+   tint, a faint edge in the same hue, and the word in a deeper shade of it.
+   (Light mode has its own shades further down.) */
 .cs-mode-badge {
   padding: 5px 20px;
   border-radius: 9999px;
-  border: 1px solid rgba(39, 196, 243, 0.25);
-  background: rgba(39, 196, 243, 0.2);
-  color: var(--text, #f5f7fa);
+  border: 1px solid rgba(63, 185, 80, 0.28);
+  background: rgba(63, 185, 80, 0.12);
+  color: #56d364;
   font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
   font-size: 20px;
   font-weight: 600;
@@ -678,9 +700,9 @@ button.ghost.danger:hover:not(:disabled) {
   transform: scale(0.95);
 }
 .cs-mode-badge.moderated {
-  border-color: rgba(255, 196, 64, 0.3);
-  background: rgba(255, 196, 64, 0.18);
-  box-shadow: 0 0 18px -4px rgba(255, 196, 64, 0.35);
+  border-color: rgba(210, 153, 34, 0.3);
+  background: rgba(210, 153, 34, 0.12);
+  color: #e3b341;
 }
 .cs-mode-label {
   grid-area: 1 / 1;
@@ -712,122 +734,6 @@ button.ghost.danger:hover:not(:disabled) {
 button.cs-mode-badge:hover {
   filter: brightness(1.2);
 }
-/* join-request pill, top right */
-.cs-join-req {
-  margin: 16px 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 4px 4px 4px 20px;
-  border-radius: 9999px;
-  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.16);
-  background: rgba(var(--ink, 255, 255, 255), 0.02);
-  animation:
-    cs-jr-in 1.5s cubic-bezier(0.22, 1, 0.36, 1) both,
-    cs-jr-glow 2s ease-in-out 1.5s infinite;
-}
-/* the admit button rings like an incoming call while the pill is waiting */
-.cs-join-req:not(.leaving) .cs-jr-admit {
-  animation:
-    cs-ring 1.6s ease-in-out 1.5s infinite,
-    cs-admit-glow 1.6s ease-in-out 1.5s infinite;
-}
-@keyframes cs-admit-glow {
-  0%,
-  100% {
-    border-color: rgba(134, 239, 172, 0.35);
-    box-shadow: 0 0 6px 0 rgba(134, 239, 172, 0.25);
-  }
-  50% {
-    border-color: rgba(134, 239, 172, 0.9);
-    box-shadow:
-      0 0 16px 3px rgba(134, 239, 172, 0.55),
-      inset 0 0 10px rgba(134, 239, 172, 0.25);
-  }
-}
-@keyframes cs-jr-glow {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(39, 196, 243, 0);
-    border-color: rgba(var(--ink, 255, 255, 255), 0.16);
-  }
-  50% {
-    box-shadow: 0 0 0 6px rgba(39, 196, 243, 0.12);
-    border-color: rgba(39, 196, 243, 0.5);
-  }
-}
-@keyframes cs-ring {
-  0%,
-  60%,
-  100% {
-    transform: rotate(0);
-  }
-  10%,
-  30%,
-  50% {
-    transform: rotate(-12deg);
-  }
-  20%,
-  40% {
-    transform: rotate(12deg);
-  }
-}
-.cs-join-req.leaving {
-  animation: cs-jr-out 0.32s cubic-bezier(0.55, 0, 0.75, 0.3) both;
-  pointer-events: none;
-}
-@keyframes cs-jr-in {
-  from {
-    opacity: 0;
-    transform: translateX(40px);
-  }
-}
-@keyframes cs-jr-out {
-  to {
-    opacity: 0;
-    transform: translateX(40px);
-  }
-}
-.cs-join-req span {
-  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-  font-size: 16px;
-  color: var(--text-muted, #8d98a5);
-  white-space: nowrap;
-}
-.cs-join-req strong {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text, #f5f7fa);
-  margin-right: 4px;
-}
-.cs-jr-btn {
-  width: 58px;
-  height: 58px;
-  padding: 0;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  color: #fff;
-  flex-shrink: 0;
-}
-.cs-jr-btn svg {
-  width: 22px;
-  height: 22px;
-  stroke-width: 2.4;
-}
-.cs-jr-deny {
-  margin-right: -12px;
-  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.12);
-  background: linear-gradient(180deg, #6a2536, #3e1520);
-}
-.cs-jr-admit {
-  border: 1px solid rgba(134, 239, 172, 0.35);
-  background: linear-gradient(180deg, #1d3a2a, #10231a);
-  color: #86efac;
-}
-.cs-jr-btn:hover {
-  filter: brightness(1.25);
-}
 
 /* --- stage ----------------------------------------------------------- */
 .cs-body {
@@ -845,7 +751,8 @@ button.cs-mode-badge:hover {
   overflow: hidden;
   background: #151b23;
   border: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.8);
+  /* a soft, small shadow — lighter still in light mode (--shadow-k) */
+  box-shadow: 0 12px 30px -16px rgba(0, 0, 0, calc(0.6 * var(--shadow-k, 1)));
 }
 .cs-main-tile > .tile {
   position: absolute;
@@ -1020,7 +927,8 @@ button.cs-mode-badge:hover {
   overflow: hidden;
   background: #151b23;
   border: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.8);
+  /* a soft, small shadow — lighter still in light mode (--shadow-k) */
+  box-shadow: 0 12px 30px -16px rgba(0, 0, 0, calc(0.6 * var(--shadow-k, 1)));
   transition:
     border-color 0.2s ease,
     box-shadow 0.25s ease;
@@ -1429,33 +1337,28 @@ button.cs-mode-badge:hover {
     animation: none;
   }
   /* keep a near-instant animation so onAnimationEnd still fires */
-  .cs-join-req {
-    animation: cs-jr-in 1ms both;
-  }
-  .cs-join-req.leaving {
-    animation: cs-jr-out 1ms both;
-  }
-  .cs-join-req:not(.leaving) .cs-jr-admit {
-    animation: none;
-  }
 }
 
 @media (max-width: 900px) {
-  /* Narrow screens: stack the chat panel under the stage instead of beside. */
+  /* Narrow screens: stack the chat card under the call instead of beside. */
   .callscreen {
     height: auto;
     min-height: 100dvh;
     flex-direction: column;
   }
+  .cs-main-row {
+    flex-direction: column;
+  }
   .cs-stage-col {
-    padding: 12px 16px 16px;
+    padding: 8px 16px 16px;
   }
   .cs-topbar {
     flex-wrap: wrap;
     gap: 12px 24px;
+    padding: 12px 16px 4px;
   }
-  .cs-join-req {
-    margin: 0;
+  .cs-panel {
+    margin: 0 16px 16px;
   }
   .cs-body {
     flex-direction: column;
@@ -1884,21 +1787,12 @@ button.ghost:hover:not(:disabled) {
   transform: translateY(-1px) scale(0.95);
 }
 
-/* join-request accept / deny */
-.cs-jr-btn:hover:not(:disabled) {
-  filter: brightness(1.25);
-  transform: scale(1.07);
-}
-.cs-jr-deny:hover:not(:disabled) {
-  box-shadow: 0 0 16px 2px rgba(255, 45, 74, 0.45);
-}
-
-/* host mode badge */
+/* host mode badge: on hover, just a slightly deeper tint (no glowing ring) */
 button.cs-mode-badge:hover {
-  box-shadow: 0 0 0 4px rgba(39, 196, 243, 0.12);
+  background: rgba(63, 185, 80, 0.18);
 }
 button.cs-mode-badge.moderated:hover {
-  box-shadow: 0 0 0 4px rgba(255, 196, 64, 0.14);
+  background: rgba(210, 153, 34, 0.18);
 }
 
 /* pre-join lobby */
@@ -1949,10 +1843,13 @@ button.cs-mode-badge.moderated:hover {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 28px 28px 24px;
-  /* the thin divider between the stage and the panel */
-  border-left: 1px solid rgba(var(--ink, 255, 255, 255), 0.07);
-  background: var(--bg, #10161c);
+  padding: 12px 20px 18px;
+  /* a card under the header: rounded, a faint edge, a touch lighter than the
+     page, with a gap from the screen's edge and bottom */
+  margin: 8px 24px 24px 0;
+  border-radius: 18px;
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.08);
+  background: rgba(var(--ink, 255, 255, 255), 0.035);
   /* glides in from the right when the chat button opens it */
   animation: cp-slide-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -2671,9 +2568,6 @@ button.cs-mode-badge.moderated:hover {
 }
 img.pj-initials {
   object-fit: cover;
-}
-.cs-jr-avatar {
-  margin-left: -12px;
 }
 
 /* Lobby picker: "Your picture" row + the character search panel. */
@@ -3676,8 +3570,18 @@ img.pj-initials {
   display: block;
 }
 
-/* Call controls: solid white tiles with a visible edge and a lift shadow. */
-:root[data-theme='light'] .cs-controls button:not(.cs-hangup):not(.dp-caret) {
+/* Call controls: solid white tiles with a visible edge and a lift shadow —
+   now only the buttons in the bar's pop-ups (device lists, reactions…): the
+   bar's own buttons are the glass pill's ("control pill", end of file). */
+:root[data-theme='light']
+  .cs-controls
+  button:not(.cs-hangup):not(.dp-caret):not(
+    .cs-controls-center > button,
+    .cs-controls-center > .dp > button,
+    .cs-controls-center > .reaction-wrap > button,
+    .cs-door-btn,
+    .cs-chat-btn
+  ) {
   border-color: rgba(15, 23, 32, 0.16);
   color: #16202a;
   box-shadow:
@@ -3685,11 +3589,27 @@ img.pj-initials {
     0 1px 2px rgba(15, 23, 32, 0.1),
     0 8px 18px -8px rgba(15, 23, 32, 0.3);
 }
-:root[data-theme='light'] .cs-controls button.on:not(.cs-hangup) {
+:root[data-theme='light']
+  .cs-controls
+  button.on:not(.cs-hangup):not(
+    .cs-controls-center > button,
+    .cs-controls-center > .dp > button,
+    .cs-controls-center > .reaction-wrap > button,
+    .cs-door-btn,
+    .cs-chat-btn
+  ) {
   border-color: rgba(11, 127, 168, 0.45);
   color: #0a6f94;
 }
-:root[data-theme='light'] .cs-controls button:hover:not(:disabled):not(.cs-hangup) {
+:root[data-theme='light']
+  .cs-controls
+  button:hover:not(:disabled):not(.cs-hangup):not(
+    .cs-controls-center > button,
+    .cs-controls-center > .dp > button,
+    .cs-controls-center > .reaction-wrap > button,
+    .cs-door-btn,
+    .cs-chat-btn
+  ) {
   filter: brightness(0.97);
 }
 /* The mic / camera pill and its ^ arrow. */
@@ -3723,16 +3643,23 @@ img.pj-initials {
   color: #3d4955;
 }
 
-/* Room mode badge ("Open" / "Moderated"): deeper tint and a real edge. */
+/* Room mode badge ("Open" / "Moderated"): the same green / amber, in shades
+   that read on a light page — pale tint, deep text. */
 :root[data-theme='light'] .cs-mode-badge {
-  border-color: rgba(11, 127, 168, 0.35);
-  background: #d5f0fa;
-  color: #0b4f68;
+  border-color: rgba(26, 127, 55, 0.25);
+  background: #e6f4ea;
+  color: #1a7f37;
 }
 :root[data-theme='light'] .cs-mode-badge.moderated {
-  border-color: rgba(176, 120, 0, 0.4);
-  background: #fff0c7;
-  color: #6b4a00;
+  border-color: rgba(154, 103, 0, 0.28);
+  background: #fdf3d8;
+  color: #8a5a00;
+}
+:root[data-theme='light'] button.cs-mode-badge:hover {
+  background: #d8efdf;
+}
+:root[data-theme='light'] button.cs-mode-badge.moderated:hover {
+  background: #faeac0;
 }
 
 /* Join button while disabled: a clear grey, not a ghostly cyan. */
@@ -4188,53 +4115,6 @@ img.pj-initials {
   display: grid;
   place-items: center;
   flex-shrink: 0;
-}
-.mc-knock {
-  margin-left: auto;
-  min-width: 0;
-  height: 46px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 6px 0 16px;
-  border-radius: 999px;
-  background: rgba(70, 66, 82, 0.62);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  animation: mc-pop 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-.mc-knock-text {
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.65);
-  margin-right: 6px;
-}
-.mc-knock-text b {
-  font-size: 17px;
-  font-weight: 500;
-  color: #fff;
-}
-.mc-knock-text em {
-  font-style: normal;
-  color: #fff;
-}
-.mc .mc-knock-yes {
-  width: 36px;
-  height: 36px;
-  display: grid;
-  place-items: center;
-}
-.mc .mc-knock-no {
-  width: 36px;
-  height: 36px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: #f0453a;
-  color: #fff;
 }
 .mc-status {
   margin: 8px 0 0;
@@ -5276,10 +5156,6 @@ img.pj-initials {
   margin-left: 0;
   gap: 5px;
 }
-/* more room between accept (green) and decline (red) on the join request */
-.mc .mc-knock-no {
-  margin-left: 14px;
-}
 
 /* --- creator profile card (ProfileCard.jsx) --------------------------------
    Dark card in both themes: picture + name + role, what Listen is about,
@@ -5493,49 +5369,7 @@ img.pj-initials {
   max-width: calc(100vw - 32px);
   box-sizing: border-box;
 }
-
-/* --- "X want to join" notice: slide in / out, living buttons ---------------- */
-.mc-knock {
-  animation: mc-knock-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-.mc-knock.leaving {
-  animation: mc-knock-out 0.32s cubic-bezier(0.64, 0, 0.78, 0) both;
-  pointer-events: none;
-}
-@keyframes mc-knock-in {
-  from {
-    opacity: 0;
-    transform: translateX(115%);
-  }
-}
-@keyframes mc-knock-out {
-  to {
-    opacity: 0;
-    transform: translateX(115%);
-  }
-}
-/* accept: a green ring pulsing out of it, and the phone giving a little wiggle */
-.mc .mc-knock-yes {
-  border-radius: 50%;
-  animation: mc-ring-green 1.6s ease-out 0.4s infinite;
-  transition: transform 0.15s ease;
-}
-.mc-knock-yes svg {
-  transform-origin: 50% 60%;
-  animation: mc-wiggle 2.4s ease-in-out 0.6s infinite;
-}
-/* decline: breathes gently, with a softer red ring */
-.mc .mc-knock-no {
-  animation:
-    mc-breathe 1.6s ease-in-out 0.4s infinite,
-    mc-ring-red 1.6s ease-out 1.2s infinite;
-  transition: transform 0.15s ease;
-}
-.mc .mc-knock-yes:active,
-.mc .mc-knock-no:active {
-  transform: scale(0.86);
-  animation-play-state: paused;
-}
+/* a green ring pulsing out of a button, like an incoming call (the picture-in-picture window's "let in" button — Pip.jsx) */
 @keyframes mc-ring-green {
   0% {
     box-shadow: 0 0 0 0 rgba(47, 191, 113, 0.55);
@@ -5543,55 +5377,6 @@ img.pj-initials {
   70%,
   100% {
     box-shadow: 0 0 0 12px rgba(47, 191, 113, 0);
-  }
-}
-@keyframes mc-ring-red {
-  0% {
-    box-shadow: 0 0 0 0 rgba(240, 69, 58, 0.45);
-  }
-  70%,
-  100% {
-    box-shadow: 0 0 0 10px rgba(240, 69, 58, 0);
-  }
-}
-@keyframes mc-breathe {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.07);
-  }
-}
-@keyframes mc-wiggle {
-  0%,
-  60%,
-  100% {
-    transform: rotate(0);
-  }
-  65% {
-    transform: rotate(-14deg);
-  }
-  72% {
-    transform: rotate(12deg);
-  }
-  79% {
-    transform: rotate(-10deg);
-  }
-  86% {
-    transform: rotate(6deg);
-  }
-  93% {
-    transform: rotate(0);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .mc-knock,
-  .mc-knock.leaving,
-  .mc .mc-knock-yes,
-  .mc-knock-yes svg,
-  .mc .mc-knock-no {
-    animation: none;
   }
 }
 
@@ -5757,32 +5542,6 @@ img.pj-initials {
     --mc-stage-bottom,
     calc(76px + 196px + (100vw - 22px) / 3 + 10px + env(safe-area-inset-bottom))
   );
-}
-
-/* desktop / tablet join request: decline breathes with a soft red ring,
-   off-beat with the admit button's ringing (as on phones) */
-.cs-join-req:not(.leaving) .cs-jr-deny {
-  animation:
-    mc-breathe 1.6s ease-in-out 1.5s infinite,
-    cs-deny-ring 1.6s ease-out 2.3s infinite;
-}
-@keyframes cs-deny-ring {
-  0% {
-    box-shadow: 0 0 0 0 rgba(240, 69, 58, 0.4);
-  }
-  70%,
-  100% {
-    box-shadow: 0 0 0 9px rgba(240, 69, 58, 0);
-  }
-}
-.cs-join-req .cs-jr-btn:active:not(:disabled) {
-  transform: scale(0.88);
-  animation-play-state: paused;
-}
-@media (prefers-reduced-motion: reduce) {
-  .cs-join-req:not(.leaving) .cs-jr-deny {
-    animation: none;
-  }
 }
 /* pop-out (floating video) button, next to the layout swap */
 .mc .mc-popout {
@@ -7365,10 +7124,12 @@ body:has(.mc) .reactions-layer {
   bottom: calc(100% + 10px);
   z-index: 60;
   transform: translateX(-50%);
-  display: flex;
+  /* two rows of 7 (REACTIONS in shared/index.js) */
+  display: grid;
+  grid-template-columns: repeat(7, 42px);
   gap: 4px;
   padding: 6px;
-  border-radius: 9999px;
+  border-radius: 18px;
   background: var(--surface-pop, #1d242c);
   border: 1px solid rgba(var(--ink, 255, 255, 255), 0.12);
   box-shadow: 0 14px 32px -10px rgba(0, 0, 0, calc(0.6 * var(--shadow-k, 1)));
@@ -7408,6 +7169,8 @@ body:has(.mc) .reactions-layer {
   position: static;
 }
 .mc-comment .reaction-row {
+  /* slightly smaller picks, so all 14 fit within a phone's width */
+  grid-template-columns: repeat(7, 36px);
   left: auto;
   right: 0;
   transform: none;
@@ -9229,7 +8992,7 @@ body:has(.mc) .reactions-layer {
   color: #3d4550;
 }
 .ld-hero-shots.light .ld-frame-tag {
-  color: #a86a00; /* the yellow tag, darker so it reads on white */
+  color: #6b7480; /* grey that reads on the light window bar */
 }
 .ld-hero-desktop {
   display: block;
@@ -9289,8 +9052,7 @@ body:has(.mc) .reactions-layer {
   margin: 0 auto;
   padding: 56px 24px;
 }
-.ld-section h2,
-.ld-final h2 {
+.ld-section h2 {
   margin: 0 0 28px;
   font-size: clamp(28px, 3.6vw, 40px);
   font-weight: 800;
@@ -9404,49 +9166,154 @@ body:has(.mc) .reactions-layer {
   }
 }
 
-/* 7. last call + footer */
-.ld-final {
-  max-width: calc(var(--ld-max) - 48px);
-  margin: 40px auto 0;
-  padding: 56px 24px;
-  border-radius: 28px;
-  text-align: center;
-  background: linear-gradient(
-    135deg,
-    rgba(var(--ld-hi-rgb, 255, 255, 255), 0.16),
-    rgba(var(--ld-hi-rgb, 255, 255, 255), 0.16)
-  );
-  border: 1px solid var(--ld-line);
-}
-.ld-final h2 {
-  margin-bottom: 10px;
-}
-.ld-final p {
-  margin: 0 0 26px;
-  color: rgba(var(--ld-hi-rgb, 255, 255, 255), 0.72);
-  font-size: 17px;
-}
+/* 7. the footer (Landing.jsx): a big headline + Start a meeting, Email |
+   Social, a thin line, the small print, and a giant TURNLY at the very
+   bottom — cut off by the page's edge and dissolving into blur. Colours are
+   the landing page's own (--ld-*), so it suits light and dark. */
 .ld-foot {
-  max-width: var(--ld-max);
+  overflow: hidden; /* (the giant word is cut off at the bottom) */
+}
+.ld-foot-in {
+  /* wide enough for the giant TURNLY at its biggest (~1120px) to fit whole */
+  max-width: 1240px;
   margin: 0 auto;
-  /* 96px at the bottom: room so the floating dock never covers its links */
-  padding: 32px 24px 96px;
+  padding: 104px 24px 0;
+}
+.ld-foot-title {
+  margin: 0;
+  font: 600 clamp(44px, 6.6vw, 84px) / 1.02 var(--ld-font);
+  letter-spacing: -0.035em;
+  color: var(--ld-hi);
+}
+/* the end of "are." fading to grey, like the reference */
+.ld-foot-fade {
+  background: linear-gradient(90deg, var(--ld-hi) 0%, var(--ld-hi) 35%, var(--ld-dim) 75%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.ld-foot-cta {
+  margin-top: 34px;
+}
+/* Email (left) | Social (right), then the thin line */
+.ld-foot-contact {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+  margin-top: 64px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--ld-line);
+}
+.ld-foot-label {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ld-dim);
+}
+.ld-foot-email {
+  font-size: 19px;
+  color: var(--ld-hi);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.ld-foot-email:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+/* the round social icons: solid circles in the text colour */
+.ld-foot-social {
+  display: flex;
+  gap: 8px;
+}
+.ld-foot-social a {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--ld-hi);
+  color: var(--ld-page);
+  transition: transform 0.15s ease;
+}
+.ld-foot-social a:hover {
+  transform: scale(1.1);
+}
+.ld-foot-social svg {
+  width: 17px;
+  height: 17px;
+}
+/* the small print: Based in … · Privacy & terms · Made by … | © Turnly */
+.ld-foot-small {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  margin-top: 26px;
+  font-size: 13px;
+  color: var(--ld-dim);
+}
+.ld-foot-left {
   display: flex;
   flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 14px;
-  color: var(--ld-dim, #8a8a8a);
+  gap: 6px 22px;
 }
-.ld-foot a {
-  color: var(--ld-hi, #fff);
+.ld-foot-small a {
+  color: var(--ld-hi);
+  font-weight: 500;
   text-decoration: none;
 }
-/* the right-hand side: Privacy & terms · Made by … */
-.ld-foot-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 18px;
+.ld-foot-small a:hover {
+  text-decoration: underline;
+}
+/* the giant TURNLY: only its top shows (the box is shorter than the word),
+   fading out downward, with a blur that grows toward the bottom edge */
+.ld-foot-giant {
+  position: relative;
+  height: min(15vw, 210px); /* (grows with the screen, like the word) */
+  margin-top: 20px;
+  overflow: hidden;
+}
+.ld-foot-giant span {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+  /* sized from the screen width, so the whole word always fits across */
+  font: 700 min(24vw, 330px) / 0.8 var(--ld-font);
+  letter-spacing: -0.04em;
+  white-space: nowrap;
+  color: var(--ld-hi);
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 35%,
+    rgba(0, 0, 0, 0.6) 70%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(to bottom, #000 35%, rgba(0, 0, 0, 0.6) 70%, transparent 100%);
+}
+.ld-foot-giant::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  height: 55%;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 75%);
+  mask-image: linear-gradient(to bottom, transparent, #000 75%);
+}
+/* phones: Email above Social, and the small print stacked */
+@media (max-width: 640px) {
+  .ld-foot-in {
+    padding-top: 72px;
+  }
+  .ld-foot-contact {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .ld-foot-small {
+    flex-direction: column;
+  }
 }
 
 /* --- the privacy page (PrivacyPage.jsx): one readable column --- */
@@ -9561,9 +9428,6 @@ body:has(.mc) .reactions-layer {
   .ld-cta .ld-btn {
     width: 100%;
   }
-  .ld-final {
-    margin: 24px 16px 0;
-  }
 }
 @media (prefers-reduced-motion: reduce) {
   .ld-stars span {
@@ -9630,13 +9494,10 @@ html:has(.landing) {
   display: inline-block;
   padding: 6px 10px;
   border-radius: 8px;
-  background: rgba(245, 184, 61, 0.12);
-  color: #f2c25c;
+  background: rgba(var(--ld-hi-rgb, 255, 255, 255), 0.06);
+  color: var(--ld-text-2);
   font-size: 13px;
-  font-weight: 600;
-}
-:root[data-theme='light'] .ld-sim {
-  color: #8a5a00;
+  font-weight: 500;
 }
 
 /* --- the live demo page (/demo — demo/DemoApp.jsx) ------------------------ */
@@ -9675,13 +9536,15 @@ html:has(.landing) {
    the story on the left, the real app live on the right.
    ========================================================================= */
 .landing {
-  --ld-gold: #e0a422;
+  /* the one accent: plain white (near-black in light mode) — only for thin
+     lines and the selected tab's underline; all text is white or grey */
+  --ld-accent: #ffffff;
   --ld-text-2: #a3a29d;
   --ld-band: #0a0a09;
   --ld-section: clamp(1.9rem, 1.1rem + 2.6vw, 3.1rem);
 }
 :root[data-theme='light'] .landing {
-  --ld-gold: #8a6a2a;
+  --ld-accent: #0d0d0d;
   --ld-text-2: #4a4945;
   --ld-band: #faf9f6;
 }
@@ -9711,11 +9574,11 @@ html:has(.landing) {
   height: 1px;
 }
 .ld-label::before {
-  background: linear-gradient(90deg, transparent, var(--ld-gold));
+  background: linear-gradient(90deg, transparent, var(--ld-accent));
   opacity: 0.55;
 }
 .ld-label::after {
-  background: linear-gradient(90deg, var(--ld-gold), transparent);
+  background: linear-gradient(90deg, var(--ld-accent), transparent);
   opacity: 0.55;
 }
 .ld-section .ld-label {
@@ -9819,7 +9682,7 @@ html:has(.landing) {
   color: var(--ld-hi);
 }
 .ld-stepitem.on {
-  border-bottom-color: var(--ld-gold);
+  border-bottom-color: var(--ld-accent);
   color: var(--ld-hi);
   font-weight: 600;
 }
@@ -9857,7 +9720,7 @@ html:has(.landing) {
     background: linear-gradient(var(--ld-line), var(--ld-line)) left bottom / 100% 1px no-repeat;
   }
   .ld-stepitem.on {
-    background: linear-gradient(var(--ld-gold), var(--ld-gold)) left bottom / 100% 2px no-repeat;
+    background: linear-gradient(var(--ld-accent), var(--ld-accent)) left bottom / 100% 2px no-repeat;
   }
 }
 @media (max-width: 640px) {
@@ -9875,7 +9738,7 @@ html:has(.landing) {
 .ld-stepitem-n {
   font: 500 12.5px/1 var(--ld-mono);
   letter-spacing: 0.1em;
-  color: var(--ld-gold);
+  color: var(--ld-dim);
 }
 .ld-stepbody {
   display: flex;
@@ -9918,7 +9781,7 @@ html:has(.landing) {
 }
 .ld-frame-tag {
   margin-left: auto;
-  color: #f2c25c;
+  color: #9aa4af;
   font-weight: 600;
 }
 .ld-frame-stage {
@@ -10016,7 +9879,7 @@ html:has(.landing) {
   margin: 0 0 26px;
   font: 500 12.5px/1.4 var(--ld-mono);
   letter-spacing: 0.14em;
-  color: var(--ld-gold);
+  color: var(--ld-text-2);
 }
 .ld-eyebrow span {
   color: var(--ld-text-2);
@@ -10062,7 +9925,7 @@ html:has(.landing) {
 .ld-tryit {
   margin: 6px 0 0;
   padding-left: 14px;
-  border-left: 2px solid var(--ld-gold);
+  border-left: 2px solid var(--ld-accent);
   font-size: 15px;
   line-height: 1.55;
   color: var(--ld-text-2);
@@ -10073,7 +9936,7 @@ html:has(.landing) {
   font: 500 11.5px/1.4 var(--ld-mono);
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--ld-gold);
+  color: var(--ld-hi);
 }
 .ld-replay {
   margin-top: 6px;
@@ -10220,4 +10083,629 @@ html:has(.landing) {
   .ss-cup.full {
     animation: none;
   }
+}
+
+/* --- join request pill (JoinRequestPill.jsx) --------------------------------
+   "Request to join · Andrew Nelson  (✕) (✓)" — a dark pill at the top centre
+   of the screen, for the host / co-host, on computers and phones. Dark in
+   both themes (like a phone's incoming-call banner).
+   In: slides DOWN from above the screen's top edge and settles with a tiny
+   bounce. Out (let in / turned away): slides back UP, a little quicker. */
+.jr-pill {
+  position: fixed;
+  top: max(14px, env(safe-area-inset-top));
+  left: 50%;
+  /* over everything, even the guided tour (.tour, 3000): someone waiting at
+     the door must always be seen, and answerable */
+  z-index: 3100;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 24px);
+  padding: 7px 8px 7px 7px;
+  border-radius: 999px;
+  /* see-through dark glass: the call shows through, blurred */
+  background: rgba(24, 24, 30, 0.55);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  backdrop-filter: blur(22px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 14px 40px -10px rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-family: var(--font, 'Inter', system-ui, sans-serif);
+  transform: translateX(-50%); /* (centred; the animations below keep this) */
+  /* In: two animations at once — the slide down (0.9s, easing gently to a
+     stop) and a fade in on its own, gentler timing (0.8s), so it visibly
+     fades in rather than just appearing. */
+  animation:
+    jr-slide-down 0.9s cubic-bezier(0.16, 1, 0.3, 1) both,
+    jr-fade-in 0.8s ease both;
+}
+/* Out: slides back up (0.6s, speeding up as it goes) while fading out.
+   (JoinRequestPill.jsx waits for jr-slide-up to finish before showing the
+   next person.) */
+.jr-pill.leaving {
+  animation:
+    jr-slide-up 0.6s cubic-bezier(0.55, 0, 0.75, 0.3) both,
+    jr-fade-out 0.5s ease both;
+}
+@keyframes jr-slide-down {
+  from {
+    transform: translate(-50%, calc(-100% - 30px));
+  }
+  to {
+    transform: translate(-50%, 0);
+  }
+}
+@keyframes jr-slide-up {
+  from {
+    transform: translate(-50%, 0);
+  }
+  to {
+    transform: translate(-50%, calc(-100% - 30px));
+  }
+}
+@keyframes jr-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes jr-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+.jr-avatar {
+  flex-shrink: 0;
+}
+/* "Request to join" small and grey on top, the name under it */
+.jr-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+  padding-right: 4px;
+}
+.jr-text small {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+}
+.jr-text small em {
+  font-style: normal;
+}
+.jr-text b {
+  font-size: 15.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* the two round buttons: red ✕ (turn away), blue ✓ (let in) */
+.jr-btn {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: #fff;
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    filter 0.15s ease;
+}
+.jr-btn svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.6;
+}
+.jr-deny {
+  background: #f0453a;
+}
+.jr-admit {
+  background: #2f7cf6;
+}
+.jr-btn:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+.jr-btn:active:not(:disabled) {
+  transform: scale(0.9);
+}
+.jr-btn:disabled {
+  cursor: default;
+}
+/* less motion asked for: no sliding (it stays put, centred) — just a quick fade */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes jr-slide-down {
+    from,
+    to {
+      transform: translate(-50%, 0);
+    }
+  }
+  @keyframes jr-slide-up {
+    from,
+    to {
+      transform: translate(-50%, 0);
+    }
+  }
+  .jr-pill,
+  .jr-pill.leaving {
+    animation-duration: 0.25s;
+  }
+}
+
+/* --- control pill (desktop call screen, App.jsx) ------------------------------
+   The call controls as one glass pill in the middle — like the landing page's
+   dock: round borderless icon buttons, a thin line between "your camera and
+   mic" and the meeting's actions, and one big round red Leave at the end.
+   The door lock (bottom-left) and chat (bottom-right) stay in their corners,
+   each a matching glass circle.
+   Hover: buttons grow a little IN PLACE as the mouse passes (useHoverGrow.js
+   sets --grow) — no lift, no sliding up.
+   Colours come from the theme (--ink / --text), so it works light and dark.
+   (These selectors are a step more specific than the bar's older "every
+   button is a 56px tile" rules, which still style the pop-ups.) */
+.cs-controls .cs-controls-center {
+  gap: 12px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: rgba(var(--ink, 255, 255, 255), 0.06);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.12);
+  box-shadow:
+    var(--ctl-lift),
+    inset 0 1px 0 rgba(var(--ink, 255, 255, 255), 0.08);
+}
+/* The soft shadow under the pill and the two corner circles, so the controls
+   lift off the page: three layers — a faint close one for a crisp edge, a
+   middle one, and a wide, very light one underneath. Light mode gets its own
+   (gentler, cool-grey) values. */
+.cs-controls {
+  --ctl-lift:
+    0 1px 2px rgba(0, 0, 0, 0.25), 0 6px 14px -4px rgba(0, 0, 0, 0.25),
+    0 18px 40px -12px rgba(0, 0, 0, 0.35);
+}
+:root[data-theme='light'] .cs-controls {
+  --ctl-lift:
+    0 1px 2px rgba(15, 23, 32, 0.06), 0 6px 14px -4px rgba(15, 23, 32, 0.08),
+    0 18px 40px -12px rgba(15, 23, 32, 0.14);
+}
+/* the pill's own buttons, and the two corner circles */
+.cs-controls .cs-controls-center > button,
+.cs-controls .cs-controls-center > .dp > button:not(.dp-caret),
+.cs-controls .cs-controls-center > .reaction-wrap > button,
+.cs-controls .cs-door-btn,
+.cs-controls .cs-chat-btn {
+  width: 46px;
+  height: 46px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  color: rgba(var(--ink, 255, 255, 255), 0.75);
+  filter: none;
+  transform: scale(var(--grow, 1));
+  transform-origin: 50% 50%; /* grows from its centre: stays in line */
+  transition:
+    transform 0.09s ease-out,
+    background 0.2s ease,
+    color 0.2s ease;
+}
+.cs-controls .cs-controls-center > button:hover:not(:disabled),
+.cs-controls .cs-controls-center > .dp > button:not(.dp-caret):hover:not(:disabled),
+.cs-controls .cs-controls-center > .reaction-wrap > button:hover:not(:disabled),
+.cs-controls .cs-door-btn:hover:not(:disabled),
+.cs-controls .cs-chat-btn:hover:not(:disabled) {
+  filter: none;
+  box-shadow: none;
+  transform: scale(var(--grow, 1));
+  color: var(--text, #f5f7fa);
+  background: rgba(var(--ink, 255, 255, 255), 0.09);
+}
+/* pressed: a quick squeeze, on top of any hover growth */
+.cs-controls .cs-controls-center > button:active:not(:disabled),
+.cs-controls .cs-controls-center > .dp > button:not(.dp-caret):active:not(:disabled),
+.cs-controls .cs-controls-center > .reaction-wrap > button:active:not(:disabled),
+.cs-controls .cs-door-btn:active:not(:disabled),
+.cs-controls .cs-chat-btn:active:not(:disabled) {
+  transform: scale(calc(var(--grow, 1) * 0.9));
+}
+/* switched on (camera share, grid view, captions, hand raised, door locked,
+   chat open…): a soft filled circle */
+.cs-controls .cs-controls-center > button.on,
+.cs-controls .cs-controls-center > .reaction-wrap > button.on,
+.cs-controls .cs-door-btn.on,
+.cs-controls .cs-chat-btn.on {
+  color: var(--text, #f5f7fa);
+  background: rgba(var(--ink, 255, 255, 255), 0.14);
+  /* neutral edge — not the old cyan "on" border from the tile-style rules */
+  border-color: rgba(var(--ink, 255, 255, 255), 0.16);
+}
+.cs-controls .cs-controls-center > button:disabled,
+.cs-controls .cs-controls-center > .dp > button:disabled {
+  opacity: 0.4;
+}
+/* recording: the record button's dot turns red (and a faint red circle) */
+.cs-controls .cs-controls-center > .cs-rec-btn.on {
+  color: #ff5a5f;
+  background: rgba(229, 72, 77, 0.14);
+}
+/* the ^ device menus sit just before camera / mic, without a box round them */
+.cs-controls .cs-controls-center > .dp {
+  border: 0;
+  background: none;
+  gap: 2px;
+}
+.cs-controls .cs-controls-center > .dp > .dp-caret {
+  width: 18px;
+  height: 46px;
+  border-radius: 8px;
+  color: rgba(var(--ink, 255, 255, 255), 0.45);
+}
+/* the thin line between "camera, mic" and the meeting's actions */
+.cs-sep {
+  width: 1px;
+  height: 24px;
+  margin: 0 4px;
+  background: rgba(var(--ink, 255, 255, 255), 0.14);
+}
+/* Leave: the one big round button, red, at the end */
+.cs-controls .cs-controls-center > .cs-hangup {
+  width: 52px;
+  height: 52px;
+  margin-left: 4px;
+  color: #fff;
+  background: #e5484d;
+  box-shadow: 0 8px 20px -6px rgba(229, 72, 77, 0.55);
+}
+.cs-controls .cs-controls-center > .cs-hangup:hover:not(:disabled) {
+  color: #fff;
+  background: #f0555a;
+  box-shadow: 0 10px 24px -6px rgba(229, 72, 77, 0.7);
+}
+.cs-controls .cs-controls-center > .cs-hangup svg {
+  width: 24px;
+  height: 24px;
+}
+/* the corners: the same glass as the pill, as a circle */
+.cs-controls .cs-door-btn,
+.cs-controls .cs-chat-btn {
+  width: 58px;
+  height: 58px;
+  background: rgba(var(--ink, 255, 255, 255), 0.06);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.12);
+  box-shadow: var(--ctl-lift); /* the same soft shadow as the pill */
+}
+/* (and they keep it on hover / press — the buttons' shared hover rule
+   above clears shadows, which suits the pill's flat buttons, not these) */
+.cs-controls .cs-door-btn:hover:not(:disabled),
+.cs-controls .cs-chat-btn:hover:not(:disabled),
+.cs-controls .cs-door-btn:active:not(:disabled),
+.cs-controls .cs-chat-btn:active:not(:disabled) {
+  box-shadow: var(--ctl-lift);
+}
+/* smaller windows: a little tighter so the pill still fits */
+@media (max-width: 1100px) {
+  .cs-controls .cs-controls-center {
+    gap: 6px;
+    padding: 6px 8px;
+  }
+}
+
+/* --- meeting header, right side (App.jsx, .cs-top-right) ----------------------
+   Soft rounded buttons, all the same height (38px): room mode (host),
+   "N participants ▾" with the first few faces, "Share link", light / dark,
+   the tour's ?, and your own picture at the end. A faint tint of the text
+   colour, so they suit light and dark. */
+.cs-top-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.cs-top-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(var(--ink, 255, 255, 255), 0.06);
+  color: var(--text, #f5f7fa);
+  font:
+    500 13px/1 'Inter',
+    system-ui,
+    sans-serif;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+.cs-top-btn:hover,
+.cs-top-btn.on {
+  background: rgba(var(--ink, 255, 255, 255), 0.11);
+}
+.cs-top-btn svg {
+  width: 16px;
+  height: 16px;
+}
+/* the faces in "N participants": overlapping circles, each with a ring of
+   the page colour so they read as separate */
+.cs-face-stack {
+  display: flex;
+}
+.cs-face-stack > * {
+  box-shadow: 0 0 0 2px var(--bg, #0f1115);
+  border-radius: 50%;
+}
+.cs-face-stack > * + * {
+  margin-left: -8px;
+}
+.cs-top-chev {
+  opacity: 0.7;
+  transition: transform 0.2s ease;
+}
+.cs-people-pill.on .cs-top-chev {
+  transform: rotate(180deg);
+}
+/* the light / dark switch and the tour's ?: round, same size and tint */
+.cs-top-right .theme-btn,
+.cs-top-right .tour-replay {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  background: rgba(var(--ink, 255, 255, 255), 0.06);
+  box-shadow: none;
+  color: var(--text, #f5f7fa);
+}
+.cs-top-right .theme-btn:hover,
+.cs-top-right .tour-replay:hover {
+  background: rgba(var(--ink, 255, 255, 255), 0.11);
+}
+/* (light mode gives .theme-btn a white pill elsewhere — not here) */
+:root[data-theme='light'] .cs-top-right .theme-btn {
+  border: 0;
+  background: rgba(var(--ink, 255, 255, 255), 0.06);
+  box-shadow: none;
+}
+/* the room mode switch (Open / Moderated): same height and type size as
+   its neighbours; it keeps its own colours and rolling animation */
+.cs-top-right .cs-mode-badge {
+  height: 38px;
+  padding: 0 16px;
+  align-content: center;
+  font-size: 13px;
+}
+/* you: your picture, with a thin ring */
+.cs-me {
+  display: grid;
+  margin-left: 4px;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 2px var(--bg, #0f1115),
+    0 0 0 3.5px rgba(var(--ink, 255, 255, 255), 0.25);
+}
+
+/* --- chat panel: group-chat look (App.jsx panel head, ChatPanel.jsx) ----------
+   ✕ on the left with "Chat" centred; then every message on the left with
+   its avatar, a "Grace to Everyone   11:30 AM" line on top (names blue,
+   "to" grey), and filled, rounded grey bubbles. Yours look the same, named
+   "You". (Overrides the older outlined / mirrored styles above.) */
+.cs-panel .cp-head {
+  position: relative;
+  justify-content: center;
+  height: 44px;
+}
+.cs-panel .cp-close {
+  position: absolute;
+  left: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  border: 0;
+  background: transparent;
+}
+.cs-panel .cp-close:hover {
+  background: rgba(var(--ink, 255, 255, 255), 0.08);
+}
+.cp-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text, #f5f7fa);
+}
+/* (now only the people list's anchor — no visible row) */
+.cs-panel .cp-people-row {
+  margin-top: 0;
+}
+.cs-panel .cp-log {
+  gap: 18px;
+}
+/* every group on the left, full width */
+.cs-panel .cp-group,
+.cs-panel .cp-group.mine {
+  align-items: stretch;
+}
+.cs-panel .cp-group-row {
+  align-items: flex-start;
+  max-width: 100%;
+}
+.cp-group-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+/* "Grace to Everyone            11:30 AM" */
+.cp-who {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 12px;
+  line-height: 1.3;
+}
+.cp-who-name {
+  color: #6aa8ff;
+  font-weight: 500;
+}
+:root[data-theme='light'] .cp-who-name {
+  color: #1f6fd1;
+}
+.cp-who-to {
+  color: var(--text-muted, #8d98a5);
+}
+.cp-who-time {
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--text-muted, #8d98a5);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.cs-panel .cp-bubbles,
+.cs-panel .cp-group.mine .cp-bubbles {
+  align-items: flex-start;
+  gap: 4px;
+}
+/* filled bubbles: a soft tint of the text colour (works light and dark) */
+.cs-panel .cp-bubble {
+  border: 0;
+  border-radius: 14px;
+  padding: 8px 13px;
+  background: rgba(var(--ink, 255, 255, 255), 0.09);
+}
+.cs-panel .cp-file:hover {
+  background: rgba(var(--ink, 255, 255, 255), 0.14);
+}
+/* the ✎ / 🗑 buttons sit just to the right of the bubble */
+.cs-panel .cp-actions {
+  order: 2;
+}
+/* new / unsent messages grow from, and shrink to, the left for everyone */
+.cs-panel .cp-group.mine .cp-item.chat-new {
+  transform-origin: bottom left;
+}
+.cs-panel .cp-group.mine .cp-item.unsending {
+  transform-origin: left center;
+}
+/* the whole group being unsent: its avatar and name line fade with it */
+.cs-panel .cp-group.unsending .cp-who,
+.cs-panel .cp-group.unsending .cp-group-row > .avatar {
+  pointer-events: none;
+  animation: cp-unsend 0.3s ease-in forwards;
+}
+
+/* --- the call area when it's narrow
+   A small window, or the chat panel open beside a medium one: the header
+   buttons drop their words ("Share link" → just 🔗, "5 participants" → the
+   faces and "5"), and the control pill's buttons get a little smaller and
+   closer, so nothing overlaps and the meeting name keeps its room.
+   (The control pill also tightens when the chat card is open beside it on a
+   window up to 1240px — the rules just below; the header spans the whole
+   width now, so it never needs to. Plain screen-width rules: a CSS
+   "container" here would also move the tour, toasts and pop-ups that sit
+   inside the call area.) */
+@media (max-width: 980px) {
+  .cs-top-label {
+    display: none;
+  }
+  .cs-top-btn {
+    padding: 0 12px;
+  }
+  .cs-controls .cs-controls-center {
+    gap: 4px;
+    padding: 5px 8px;
+  }
+  .cs-controls .cs-controls-center > button,
+  .cs-controls .cs-controls-center > .dp > button:not(.dp-caret),
+  .cs-controls .cs-controls-center > .reaction-wrap > button {
+    width: 40px;
+    height: 40px;
+  }
+  .cs-controls .cs-controls-center > .cs-hangup {
+    width: 46px;
+    height: 46px;
+  }
+  .cs-controls .cs-door-btn,
+  .cs-controls .cs-chat-btn {
+    width: 50px;
+    height: 50px;
+  }
+  .cs-sep {
+    margin: 0 2px;
+  }
+}
+@media (max-width: 1240px) {
+  .callscreen:has(.cs-panel) .cs-controls .cs-controls-center {
+    gap: 4px;
+    padding: 5px 8px;
+  }
+  .callscreen:has(.cs-panel) .cs-controls .cs-controls-center > button,
+  .callscreen:has(.cs-panel) .cs-controls .cs-controls-center > .dp > button:not(.dp-caret),
+  .callscreen:has(.cs-panel) .cs-controls .cs-controls-center > .reaction-wrap > button {
+    width: 40px;
+    height: 40px;
+  }
+  .callscreen:has(.cs-panel) .cs-controls .cs-controls-center > .cs-hangup {
+    width: 46px;
+    height: 46px;
+  }
+  .callscreen:has(.cs-panel) .cs-controls .cs-door-btn,
+  .callscreen:has(.cs-panel) .cs-controls .cs-chat-btn {
+    width: 50px;
+    height: 50px;
+  }
+  .callscreen:has(.cs-panel) .cs-sep {
+    margin: 0 2px;
+  }
+}
+/* the tightest case — the chat panel open in a ~1000px window (a landscape
+   tablet, a small window): a little less padding round the call area, and
+   the pill's buttons one size smaller, so it clears both corner buttons and
+   the meeting name keeps some room */
+@media (max-width: 1100px) {
+  .callscreen:has(.cs-panel) .cs-stage-col {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+  .callscreen:has(.cs-panel) .cs-controls .cs-controls-center {
+    gap: 2px;
+    padding: 4px 6px;
+  }
+  .callscreen:has(.cs-panel) .cs-controls .cs-controls-center > button,
+  .callscreen:has(.cs-panel) .cs-controls .cs-controls-center > .dp > button:not(.dp-caret),
+  .callscreen:has(.cs-panel) .cs-controls .cs-controls-center > .reaction-wrap > button {
+    width: 36px;
+    height: 36px;
+  }
+  .callscreen:has(.cs-panel) .cs-controls .cs-controls-center > .cs-hangup {
+    width: 42px;
+    height: 42px;
+  }
+  .callscreen:has(.cs-panel) .cs-controls .cs-controls-center > .dp > .dp-caret {
+    width: 14px;
+  }
+}
+/* light mode: the chat card is white on the off-white page */
+:root[data-theme='light'] .cs-panel {
+  background: #fff;
+}
+/* phones: the reaction picks one size smaller (two rows of 7 fit the screen) */
+.mc-comment .reaction-row .reaction-pick {
+  width: 36px;
+  height: 36px;
+  font-size: 21px;
 }

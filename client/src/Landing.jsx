@@ -76,6 +76,38 @@ const FAQ = [
 ];
 // ---------------------------------------------------------------------------
 
+// The footer's round "Social" icons: [link, label, icon]. Links live in
+// profile.js. (Simple drawn icons, no image files.)
+const IG = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <rect x="3" y="3" width="18" height="18" rx="5" />
+    <circle cx="12" cy="12" r="4" />
+    <path d="M17.5 6.5h.01" />
+  </svg>
+);
+const TIKTOK = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M16.6 3h-3.1v12.3a2.8 2.8 0 1 1-2.8-2.8c.3 0 .6 0 .9.1V9.4a6 6 0 1 0 5 5.9V9.1a7.6 7.6 0 0 0 4.4 1.4V7.4a4.4 4.4 0 0 1-4.4-4.4Z" />
+  </svg>
+);
+const WHATSAPP = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.4.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.7 11.9 11.9 0 0 0 4.6 4c1.7.7 2.4.8 3.2.7.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.2-.2-.5-.3Z" />
+  </svg>
+);
+const WEB = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <circle cx="12" cy="12" r="9" />
+    <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+  </svg>
+);
+const SOCIAL = [
+  [PROFILE.instagram, 'Instagram', IG],
+  [PROFILE.tiktok, 'TikTok', TIKTOK],
+  [PROFILE.contact, 'WhatsApp', WHATSAPP],
+  [PROFILE.portfolio, 'Portfolio', WEB],
+];
+
 // A section's label: small spaced capitals between two fading lines
 // ("——  FEATURES  ——").
 function SectionLabel({ as: Tag = 'p', children }) {
@@ -233,33 +265,74 @@ export default function Landing() {
         ))}
       </section>
 
-      {/* --- 7. last call --- */}
-      <section className="ld-final">
-        <h2>Ready when you are.</h2>
-        <p>Start a meeting and share the link. It takes a few seconds.</p>
-        <a
-          href={START}
-          className="ld-btn"
-          onClick={() => {
-            markStartClick(); // the water-filling splash on the start page (StartSplash.jsx)
-            trackEvent('start clicked', { where: 'bottom' });
-          }}
-        >
-          Start a meeting
-        </a>
-      </section>
-
+      {/* --- 7. the footer: last call, contact, and a giant TURNLY ---
+          A big two-line headline (the end of "are." fades to grey) with
+          Start a meeting; Email | Social; a thin line; the small print; and
+          the TURNLY wordmark cut off by the bottom edge, dissolving into
+          blur. The details come from profile.js. */}
       <footer className="ld-foot">
-        <span>© {new Date().getFullYear()} Turnly. Every voice gets a turn.</span>
-        <span className="ld-foot-links">
-          <a href="/privacy">Privacy &amp; terms</a>
-          <span>
-            Made by{' '}
-            <a href={PROFILE.portfolio} target="_blank" rel="noreferrer">
-              {PROFILE.name}
-            </a>
-          </span>
-        </span>
+        <div className="ld-foot-in">
+          <h2 className="ld-foot-title">
+            Ready when
+            <br />
+            you <span className="ld-foot-fade">are.</span>
+          </h2>
+          <a
+            href={START}
+            className="ld-btn ld-foot-cta"
+            onClick={() => {
+              markStartClick(); // the water-filling splash on the start page (StartSplash.jsx)
+              trackEvent('start clicked', { where: 'bottom' });
+            }}
+          >
+            <span aria-hidden="true">▶</span> Start a meeting
+          </a>
+
+          <div className="ld-foot-contact">
+            <div>
+              <p className="ld-foot-label">Email</p>
+              <a className="ld-foot-email" href={`mailto:${PROFILE.email}`}>
+                {PROFILE.email}
+              </a>
+            </div>
+            <div>
+              <p className="ld-foot-label">Social</p>
+              <div className="ld-foot-social">
+                {SOCIAL.map(([href, label, Icon]) => (
+                  <a
+                    key={label}
+                    href={href}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={label}
+                    title={label}
+                  >
+                    <Icon />
+                  </a>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="ld-foot-small">
+            <span className="ld-foot-left">
+              <span>Based in {PROFILE.basedIn}</span>
+              <a href="/privacy">Privacy &amp; terms</a>
+              <span>
+                Made by{' '}
+                <a href={PROFILE.portfolio} target="_blank" rel="noreferrer">
+                  {PROFILE.name}
+                </a>
+              </span>
+            </span>
+            <span>© {new Date().getFullYear()} Turnly</span>
+          </div>
+
+          {/* the giant wordmark (decoration — the name is already above) */}
+          <div className="ld-foot-giant" aria-hidden="true">
+            <span>TURNLY</span>
+          </div>
+        </div>
       </footer>
 
       {/* --- the floating dock at the bottom: appears once you reach the demo

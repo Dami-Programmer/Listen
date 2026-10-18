@@ -10,13 +10,13 @@
 // the app's in-memory model). Images are downscaled to <=1600px JPEG before
 // sending, so the CHAT_FILE_MAX_BYTES cap mostly bites non-image files.
 //
-// Look (matches the "Design Sprint Meeting" chat design):
-//   - other people's messages sit on the left with their avatar; yours sit on
-//     the right with no avatar
-//   - consecutive messages from the same person are GROUPED: one avatar and
-//     one "• Name 11:34 AM" line under the whole group, and short bubbles flow
-//     side by side (like "Meetingnote.doct" + "Aa" in the design)
-//   - bubbles are outlined, not filled
+// Look (a group chat):
+//   - everyone's messages sit on the left, with their avatar — yours too,
+//     named "You"
+//   - consecutive messages from the same person are GROUPED under one line
+//     at the top: "Grace to Everyone" (names in blue, "to" in grey) with the
+//     time on the right
+//   - bubbles are filled: a soft grey tint, rounded
 //   - the composer is one rounded box: text on top, attach on the bottom-left,
 //     emoji + send on the bottom-right. Stickers live in a tab of the emoji
 //     picker (the design has no separate sticker button).
@@ -519,9 +519,8 @@ export default function ChatPanel({
             );
           }
           const mine = g.from === selfId;
-          const lastTs = g.items[g.items.length - 1].ts;
           // Every message in this group is being unsent -> fade the whole
-          // group (avatar + "• Name time" line too), not just the bubbles.
+          // group (avatar + name line too), not just the bubbles.
           const allUnsent = g.items.every((m) => m.unsent);
           return (
             // Keyed by the group's first message id: stays stable as it grows.
@@ -529,88 +528,96 @@ export default function ChatPanel({
               key={g.items[0].id}
               className={`cp-group${mine ? ' mine' : ''}${allUnsent ? ' unsending' : ''}`}
             >
+              {/* Everyone's messages on the left, like a group chat:
+                  [avatar]  Grace to Everyone            11:30 AM
+                            [bubble]
+                            [bubble]                                  */}
               <div className="cp-group-row">
-                {/* Avatar only for other people; it sits at the bottom of the
-                    group, next to their latest message. */}
-                {!mine && <Avatar name={g.name} src={avatarOf(g.from)} size={38} />}
-                <div className="cp-bubbles">
-                  {g.items.map((m) => {
-                    const editing = editingId === m.id;
-                    // My own, still-live message, not mid-edit -> it gets the
-                    // ✎ Edit (text only) and 🗑 Unsend buttons. Someone
-                    // else's, when I'm a moderator -> just 🗑 Delete.
-                    const canAct = (mine || canModerate) && !m.unsent && !editing;
-                    return (
-                      <div
-                        key={m.id}
-                        className={[
-                          'cp-item',
-                          // Messages already here when the panel opened
-                          // don't animate; new arrivals get the bounce-in.
-                          !initialIds.has(m.id) && 'chat-new',
-                          m.unsent && 'unsending',
-                          actionsFor === m.id && 'show-actions',
-                        ]
-                          .filter(Boolean)
-                          .join(' ')}
-                        // Touch screens: tap your message to show its buttons.
-                        onClick={
-                          canAct
-                            ? () => setActionsFor((id) => (id === m.id ? null : m.id))
-                            : undefined
-                        }
-                        // When the unsend fade-out finishes, stop drawing it.
-                        // (Only the item's OWN animation — not ones bubbling
-                        // up from inside it, like the bounce-in's.)
-                        onAnimationEnd={(e) => {
-                          if (m.unsent && e.target === e.currentTarget) {
-                            setGoneIds((ids) => new Set(ids).add(m.id));
+                <Avatar name={g.name} src={avatarOf(g.from)} size={32} />
+                <div className="cp-group-body">
+                  {/* "Grace to Everyone" (names blue, "to" grey) and the time
+                      the group started, on the right */}
+                  <div className="cp-who">
+                    <span className="cp-who-name">{mine ? 'You' : g.name}</span>
+                    <span className="cp-who-to">to</span>
+                    <span className="cp-who-name">Everyone</span>
+                    <time className="cp-who-time">{timeOf(g.items[0].ts)}</time>
+                  </div>
+                  <div className="cp-bubbles">
+                    {g.items.map((m) => {
+                      const editing = editingId === m.id;
+                      // My own, still-live message, not mid-edit -> it gets the
+                      // ✎ Edit (text only) and 🗑 Unsend buttons. Someone
+                      // else's, when I'm a moderator -> just 🗑 Delete.
+                      const canAct = (mine || canModerate) && !m.unsent && !editing;
+                      return (
+                        <div
+                          key={m.id}
+                          className={[
+                            'cp-item',
+                            // Messages already here when the panel opened
+                            // don't animate; new arrivals get the bounce-in.
+                            !initialIds.has(m.id) && 'chat-new',
+                            m.unsent && 'unsending',
+                            actionsFor === m.id && 'show-actions',
+                          ]
+                            .filter(Boolean)
+                            .join(' ')}
+                          // Touch screens: tap your message to show its buttons.
+                          onClick={
+                            canAct
+                              ? () => setActionsFor((id) => (id === m.id ? null : m.id))
+                              : undefined
                           }
-                        }}
-                      >
-                        {canAct && (
-                          // Sits on the bubble's left (mine are right-aligned).
-                          // Hidden until you hover the message (see CSS).
-                          <span className="cp-actions">
-                            {mine && m.kind === 'text' && (
+                          // When the unsend fade-out finishes, stop drawing it.
+                          // (Only the item's OWN animation — not ones bubbling
+                          // up from inside it, like the bounce-in's.)
+                          onAnimationEnd={(e) => {
+                            if (m.unsent && e.target === e.currentTarget) {
+                              setGoneIds((ids) => new Set(ids).add(m.id));
+                            }
+                          }}
+                        >
+                          {canAct && (
+                            // Shown just to the RIGHT of the bubble (CSS
+                            // `order` — every message is on the left now).
+                            // Hidden until you hover the message (see CSS).
+                            <span className="cp-actions">
+                              {mine && m.kind === 'text' && (
+                                <button
+                                  type="button"
+                                  className="cp-action"
+                                  onClick={(e) => {
+                                    e.stopPropagation(); // don't toggle the buttons
+                                    startEdit(m);
+                                  }}
+                                  aria-label="Edit message"
+                                  title="Edit"
+                                >
+                                  <Pencil />
+                                </button>
+                              )}
                               <button
                                 type="button"
-                                className="cp-action"
+                                className="cp-action danger"
                                 onClick={(e) => {
-                                  e.stopPropagation(); // don't toggle the buttons
-                                  startEdit(m);
+                                  e.stopPropagation();
+                                  if (mine) unsend(m);
+                                  else remove(m);
                                 }}
-                                aria-label="Edit message"
-                                title="Edit"
+                                aria-label={mine ? 'Unsend message' : `Delete ${m.name}’s message`}
+                                title={mine ? 'Unsend' : 'Delete'}
                               >
-                                <Pencil />
+                                <Trash />
                               </button>
-                            )}
-                            <button
-                              type="button"
-                              className="cp-action danger"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (mine) unsend(m);
-                                else remove(m);
-                              }}
-                              aria-label={mine ? 'Unsend message' : `Delete ${m.name}’s message`}
-                              title={mine ? 'Unsend' : 'Delete'}
-                            >
-                              <Trash />
-                            </button>
-                          </span>
-                        )}
-                        {editing ? renderEditor(m) : renderBody(m)}
-                      </div>
-                    );
-                  })}
+                            </span>
+                          )}
+                          {editing ? renderEditor(m) : renderBody(m)}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-              {/* "• Christiana Jona 11:34 AM" / "• You 12:00 PM" */}
-              <div className="cp-meta">
-                <span className="cp-meta-dot" aria-hidden="true" />
-                {mine ? 'You' : g.name} {timeOf(lastTs)}
               </div>
             </div>
           );

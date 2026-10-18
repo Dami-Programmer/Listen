@@ -18,7 +18,7 @@ import Logo from './Logo.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
 import { PROFILE } from './profile.js';
 
-const CONTACT = 'garrywilliams20@protonmail.com';
+const CONTACT = 'Newtzdesign2020@gmail.com';
 const UPDATED = '17 October 2026';
 
 export default function PrivacyPage() {

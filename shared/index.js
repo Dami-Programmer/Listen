@@ -348,17 +348,36 @@ export const ROLES = {
   LISTENER: 'listener',
 };
 
-// The sticker set for in-call chat. The server checks a 'sticker' message's
-// text against this exact list, so the picker and the validation can never
-// drift apart. Plain emoji so there are no image assets to host or licence.
-// The reactions anyone can send (see EVENTS.REACT).
-export const REACTIONS = ['👍', '👏', '🙏', '❤️', '😂', '🎉'];
+// The reactions anyone can send (see EVENTS.REACT) — the picker shows them
+// in this order, two rows of 7. The server checks each one against this
+// exact list, so the picker and the check can never drift apart.
+export const REACTIONS = [
+  // the everyday ones first
+  '👍',
+  '👏',
+  '🙏',
+  '❤️',
+  '😂',
+  '🎉',
+  '🙌', // praise / yes!
+  // and more for meetings, classes and groups
+  '🔥',
+  '💯',
+  '😮', // wow
+  '🤔', // thinking about it
+  '👀', // watching / interested
+  '✅', // agreed / done
+  '😢', // moved / sad
+];
 
 // Questions and polls (see EVENTS.Q_ASK / POLL_START).
 export const QUESTION_MAX_CHARS = 280;
 export const POLL_MAX_OPTIONS = 6;
 export const POLL_TEXT_MAX_CHARS = 140;
 
+// The sticker set for in-call chat. The server checks a 'sticker' message's
+// text against this exact list, so the picker and the validation can never
+// drift apart. Plain emoji so there are no image assets to host or licence.
 export const STICKERS = [
   '🎉',
   '👍',

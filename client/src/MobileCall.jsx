@@ -48,6 +48,7 @@ import { CaptionsBar, CcIcon } from './CaptionsBar.jsx';
 import NextUp from './NextUp.jsx';
 import { ReactionButton } from './Reactions.jsx';
 import NoiseToggle, { NoiseBadge } from './NoiseToggle.jsx';
+import JoinRequestPill from './JoinRequestPill.jsx';
 import { BreakoutBanner } from './Breakouts.jsx';
 import TabSwap from './TabSwap.jsx';
 import { strongNoiseSupported } from './webrtc.js';
@@ -685,7 +686,8 @@ export default function MobileCall({ call }) {
               {recording ? <StopRecordIcon /> : <RecordIcon />}
             </button>
             {recording && <RecBadge recording={recording} compact />}
-            <KnockNotice
+            {/* someone knocking: the pill slides down from the top (JoinRequestPill.jsx) */}
+            <JoinRequestPill
               knocker={knocker}
               extra={Math.max(0, waiting.length - 1)}
               onAdmit={act.admit}
@@ -1317,57 +1319,6 @@ function SwapLabel({ on, off, onLabel }) {
         {onLabel}
       </span>
     </span>
-  );
-}
-
-// "<name> want to join" with accept / decline. Slides in from the right; when
-// the knock is answered (or the person gives up) it slides back out before it
-// goes. A new person knocking slides in fresh.
-function KnockNotice({ knocker, extra, onAdmit, onDeny }) {
-  const [shown, setShown] = useState(knocker); // what's on screen right now
-  const [leaving, setLeaving] = useState(false);
-  if (knocker && (knocker.id !== shown?.id || leaving)) {
-    setShown(knocker);
-    setLeaving(false);
-  } else if (!knocker && shown && !leaving) {
-    setLeaving(true);
-  }
-  if (!shown) return null;
-  return (
-    <div
-      key={shown.id}
-      className={`mc-knock${leaving ? ' leaving' : ''}`}
-      role="status"
-      onAnimationEnd={(e) => {
-        if (leaving && e.target === e.currentTarget) {
-          setShown(null);
-          setLeaving(false);
-        }
-      }}
-    >
-      <span className="mc-knock-text">
-        <b>{shown.name}</b> want to join
-        {extra > 0 && !leaving && <em> +{extra}</em>}
-      </span>
-      <button
-        type="button"
-        className="mc-knock-yes"
-        onClick={() => onAdmit(shown.id)}
-        disabled={leaving}
-        aria-label={`Let ${shown.name} in`}
-      >
-        <AcceptCall />
-      </button>
-      <button
-        type="button"
-        className="mc-knock-no"
-        onClick={() => onDeny(shown.id)}
-        disabled={leaving}
-        aria-label={`Turn ${shown.name} away`}
-      >
-        <PhoneGlyph />
-      </button>
-    </div>
   );
 }
 
@@ -2492,39 +2443,6 @@ function PopOutIcon() {
     >
       <rect x="2.5" y="4.5" width="19" height="15" rx="2.5" />
       <rect x="12" y="11.5" width="7" height="5.5" rx="1" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
-const PHONE_D =
-  'M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25c1.1.37 2.3.57 3.6.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1.02z';
-
-function PhoneGlyph() {
-  return (
-    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-      <path
-        d={PHONE_D}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function AcceptCall() {
-  return (
-    <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true">
-      <path d={PHONE_D} fill="#2fbf71" />
-      <path
-        d="M14 10l6-6m0 0h-4.5M20 4v4.5"
-        fill="none"
-        stroke="#2d8cf0"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
     </svg>
   );
 }

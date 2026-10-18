@@ -45,17 +45,18 @@ function talkThenPass(api, room, id) {
 }
 
 const OPEN_PANEL = {
-  people: { desktop: [['.cs-chat-btn'], ['.cp-people-btn']], phone: [] },
+  // (the header's "N participants" button opens the chat panel AND its people list)
+  people: { desktop: [['.cs-people-pill']], phone: [] },
   questions: {
     desktop: [['.cs-chat-btn'], ['.cp-tab', 'Questions']],
     phone: [['.mc-people'], ['.mc-tab', 'Questions']],
   },
   breakouts: {
-    desktop: [['.cs-chat-btn'], ['.cp-people-btn'], ['.cp-report-btn', 'Breakout']],
+    desktop: [['.cs-people-pill'], ['.cp-report-btn', 'Breakout']],
     phone: [['.mc-people'], ['.cp-report-btn', 'Breakout']],
   },
   report: {
-    desktop: [['.cs-chat-btn'], ['.cp-people-btn'], ['.cp-report-btn', 'Meeting report']],
+    desktop: [['.cs-people-pill'], ['.cp-report-btn', 'Meeting report']],
     phone: [['.mc-people'], ['.cp-report-btn', 'Meeting report']],
   },
   // phones: the chat feed is already on screen, nothing to open
