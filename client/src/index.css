@@ -9187,6 +9187,33 @@ body:has(.mc) .reactions-layer {
    black bezel like the live phone demo. */
 .ld-hero-shots {
   position: relative; /* the phone is placed against this panel */
+  /* The bottom of the picture melts into the page instead of stopping at a
+     hard edge: fully there down to just past halfway, then fading to
+     nothing at the bottom. (A mask: black = shown, transparent = gone — so
+     it fades into whatever the page colour is, light or dark.) */
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 52%,
+    rgba(0, 0, 0, 0.45) 78%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(to bottom, #000 52%, rgba(0, 0, 0, 0.45) 78%, transparent 100%);
+}
+/* …and goes soft as it fades: a blur over the bottom third, none at its top
+   edge and strongest at the bottom (its own mask ramps the blur in), so the
+   last rows look out of focus like a picture dissolving. Sits over the
+   window AND the phone. */
+.ld-hero-shots::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  height: 36%;
+  z-index: 2;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 70%);
+  mask-image: linear-gradient(to bottom, transparent, #000 70%);
 }
 /* light theme: the light-mode picture gets a light window bar to match
    (the frame is dark by default, for the live demos) */
