@@ -95,6 +95,7 @@ export function createDemoServer(socket, scene) {
   const floorOrder = new Map(); // botId -> seq
   const timers = new Set();
   let ended = false;
+  let arranging = false; // a scene is setting up (before the visitor's join is answered)
 
   const peers = new BotPeers(
     (botId, msg) => {
@@ -177,6 +178,29 @@ export function createDemoServer(socket, scene) {
     };
     addChatMessage(room, message);
     toApp(roomId, EVENTS.CHAT_MESSAGE, message);
+  }
+
+  // A pretend participant posts in the chat. `fields` = what's in the
+  // message: { text } or { kind: 'file', file }, plus optionally `minsAgo`
+  // (how long before now it was "sent" — the chat demo's history from before
+  // the visitor joined) and `edited` (shows "(edited)").
+  function say(room, botId, { minsAgo = 0, edited = false, ...fields }) {
+    const ts = Date.now() - minsAgo * 60_000;
+    const message = {
+      id: `${ts.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      from: botId,
+      name: room.participants[botId]?.name ?? 'Guest',
+      ts,
+      kind: 'text',
+      ...fields,
+      ...(edited ? { editedAt: ts + 30_000 } : {}),
+    };
+    addChatMessage(room, message);
+    // While a scene is still setting up, the visitor hasn't joined yet: the
+    // message reaches them in the chat history that comes with joining —
+    // sending it now as well would show it twice.
+    if (!arranging) toApp(here, EVENTS.CHAT_MESSAGE, message);
+    return message;
   }
 
   // Who among the pretend participants is talking: the one most recently
@@ -345,7 +369,9 @@ export function createDemoServer(socket, scene) {
         here = MAIN;
         const r = getRoom(MAIN);
         setLock(r, false);
+        arranging = true; // (see say())
         scene.arrange?.(api, r);
+        arranging = false;
         talk(r);
         setTalking(r.speaking);
         ok({
@@ -766,6 +792,7 @@ export function createDemoServer(socket, scene) {
     after,
     broadcast,
     postNote,
+    say,
     askQuestion,
     voteQuestion,
     room: () => getRoom(here ?? MAIN),

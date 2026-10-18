@@ -54,8 +54,60 @@ const OPEN_PANEL = {
     desktop: [['.cs-chat-btn'], ['.cp-people-btn'], ['.cp-report-btn', 'Breakout']],
     phone: [['.mc-people'], ['.cp-report-btn', 'Breakout']],
   },
-  mic: { desktop: [['[aria-label="Choose microphone"]']], phone: [] },
+  report: {
+    desktop: [['.cs-chat-btn'], ['.cp-people-btn'], ['.cp-report-btn', 'Meeting report']],
+    phone: [['.mc-people'], ['.cp-report-btn', 'Meeting report']],
+  },
+  // phones: the chat feed is already on screen, nothing to open
+  chat: { desktop: [['.cs-chat-btn']], phone: [] },
 };
+
+// --- the chat demo -----------------------------------------------------------
+// What was said before the visitor joined (so they see "catching up" — the
+// history every late joiner gets). [who, minutes ago, message fields]
+const CHAT_HISTORY = [
+  ['grace', 12, { text: 'Welcome everyone! We’re on chapter 3 tonight 📖' }],
+  [
+    'ada',
+    10,
+    {
+      kind: 'file',
+      // a picture from this site, as "a photo someone shared"
+      file: { name: 'welcome-slide.jpg', type: 'image/jpeg', size: 182_000, url: '/og-image.jpg' },
+    },
+  ],
+  [
+    'tunde',
+    9,
+    {
+      kind: 'file',
+      // a real (tiny) file, so Download really downloads something
+      file: {
+        name: 'Reading plan.txt',
+        type: 'text/plain',
+        size: 64,
+        url: `data:text/plain;charset=utf-8,${encodeURIComponent(
+          'Week 3 reading plan\nChapter 3, pages 40-48\nBring one question for the group.\n',
+        )}`,
+      },
+    },
+  ],
+  ['grace', 7, { text: 'Page 42, verse 6', edited: true }],
+  ['sam', 4, { text: 'Thanks Tunde, that plan helps 🙏' }],
+];
+
+// --- the meeting report demo ---------------------------------------------------
+// A meeting that's been going for a while, so the report has something to
+// show: [who, joined (minutes ago), talked (seconds), hands raised, turns]
+// Mia never got a word in — the kind of thing the report is for.
+const REPORT_PEOPLE = [
+  ['sam', 42, 760, 2, 2],
+  ['grace', 42, 555, 0, 0],
+  ['ada', 40, 365, 3, 2],
+  ['tunde', 38, 200, 1, 1],
+  ['ben', 20, 45, 1, 1],
+  ['mia', 35, 0, 2, 0],
+];
 
 const raise = {
   title: 'Sunday Bible Study',
@@ -138,8 +190,31 @@ export const SCENES = {
   }),
   link: call({ lobby: 'claim' }),
   schedule: call({ lobby: 'schedule' }),
-  noise: call({ open: OPEN_PANEL.mic }),
+  report: call({
+    populate: addAll(['grace', 'sam', 'ada', 'tunde', 'ben', 'mia']),
+    arrange(api, room) {
+      const now = Date.now();
+      const ago = (mins) => now - mins * 60_000;
+      room.createdAt = ago(42); // the meeting started 42 minutes ago…
+      if (room.stats['demo-you']) room.stats['demo-you'].joinedAt = ago(42); // …with you, the host
+      for (const [who, joined, talkSecs, hands, turns] of REPORT_PEOPLE) {
+        const s = room.stats[api.bot(who)];
+        if (!s) continue;
+        Object.assign(s, { joinedAt: ago(joined), talkMs: talkSecs * 1000, hands, turns });
+      }
+    },
+    open: OPEN_PANEL.report,
+  }),
   phones: { ...raise, title: 'Sunday Bible Study' },
+  chat: call({
+    title: 'Sunday Bible Study',
+    arrange(api, room) {
+      for (const [who, minsAgo, fields] of CHAT_HISTORY) {
+        api.say(room, api.bot(who), { minsAgo, ...fields });
+      }
+    },
+    open: OPEN_PANEL.chat,
+  }),
 };
 
 for (const [id, scene] of Object.entries(SCENES)) scene.id = id;

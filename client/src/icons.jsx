@@ -266,6 +266,18 @@ export const RecordIcon = (p) => (
   </svg>
 );
 
+// Noise reduction on: a sparkle (the usual "smart audio" sign) — the little
+// badge on the mic button (NoiseBadge in NoiseToggle.jsx).
+export const Sparkle = (p) => (
+  <svg {...s} {...p}>
+    <path
+      d="M12 3c.6 4.2 2.8 6.4 7 7-4.2.6-6.4 2.8-7 7-.6-4.2-2.8-6.4-7-7 4.2-.6 6.4-2.8 7-7Z"
+      fill="currentColor"
+      stroke="none"
+    />
+  </svg>
+);
+
 export const StopRecordIcon = (p) => (
   <svg {...s} {...p}>
     <circle cx="12" cy="12" r="9" />

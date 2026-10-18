@@ -25,7 +25,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { EVENTS, MODES, ROLES } from '@listen/shared';
-import { socket } from './socket.js';
+import { IS_DEMO, socket } from './socket.js';
 import { useSfu } from './sfu.js';
 // Calls that go wrong are reported to the server's logs (see errorReport.js).
 import { reportCallProblem } from './errorReport.js';
@@ -75,13 +75,20 @@ function constraintsFor(media) {
 }
 
 // Strong noise reduction (noiseReduction.js): on or off, remembered on this
-// device. Off unless turned on — it costs a little battery.
+// device. ON unless this device turned it off — on phones, tablets and
+// computers alike (one noisy room spoils the call for everyone, and most
+// people never open the mic menu). Someone who switched it off keeps it off.
+//
+// Never in the landing page's live demos (IS_DEMO): their saved settings are
+// pretend (always empty), so it would switch on in every demo frame and make
+// each one download and run the noise model for nothing.
 const STRONG_NOISE_KEY = 'turnly.strongNoise';
 function wantsStrongNoise() {
+  if (IS_DEMO) return false;
   try {
-    return localStorage.getItem(STRONG_NOISE_KEY) === '1';
+    return localStorage.getItem(STRONG_NOISE_KEY) !== '0';
   } catch {
-    return false;
+    return true; // storage blocked: still on (just not remembered)
   }
 }
 function saveStrongNoise(on) {

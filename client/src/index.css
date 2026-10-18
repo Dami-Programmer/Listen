@@ -1247,6 +1247,45 @@ button.cs-mode-badge:hover {
 .cs-controls button:hover:not(:disabled) {
   filter: brightness(1.2);
 }
+/* the mic button holds the "noise reduction on" badge in its corner */
+.cs-controls .cs-mic-btn {
+  position: relative;
+}
+/* "Noise reduction on" (NoiseBadge in NoiseToggle.jsx): a small green circle
+   with a white sparkle, on the top-right corner of the mic button — desktop
+   control bar and the phone's dial. The ring round it is the page colour, so
+   it reads as sitting ON the button. */
+.nr-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #1fb46a;
+  color: #fff;
+  box-shadow: 0 0 0 2px var(--bg, #0f1115);
+  pointer-events: none;
+}
+.nr-badge svg {
+  width: 11px;
+  height: 11px;
+}
+/* the phone dial's mic is bigger: a slightly bigger badge */
+.mc .mc-dial-item .nr-badge {
+  top: -3px;
+  right: -3px;
+  width: 20px;
+  height: 20px;
+  box-shadow: 0 0 0 2px #14101a;
+}
+/* (.mc-btn in it: beats the dial's "every icon 26px" rule further down) */
+.mc .mc-dial-item .mc-btn .nr-badge svg {
+  width: 12px;
+  height: 12px;
+}
 .cs-controls button.on {
   background: linear-gradient(
     180deg,
@@ -9523,12 +9562,6 @@ html:has(.landing) {
 /* =========================================================================
    Landing page live demos (LandingDemos.jsx) — small shared pieces
    ========================================================================= */
-.ld-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
 .ld-act {
   display: inline-flex;
   align-items: center;
@@ -9577,47 +9610,6 @@ html:has(.landing) {
 }
 :root[data-theme='light'] .ld-sim {
   color: #8a5a00;
-}
-
-.ld-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 14px 6px 6px;
-  border-radius: 9999px;
-  border: 1px solid var(--ld-line);
-  background: rgba(var(--ink, 255, 255, 255), 0.05);
-  color: var(--text, #f5f7fa);
-  font:
-    600 14px/1 var(--ld-display, 'Inter'),
-    system-ui,
-    sans-serif;
-  cursor: pointer;
-}
-.ld-switch-knob {
-  position: relative;
-  width: 40px;
-  height: 24px;
-  border-radius: 9999px;
-  background: rgba(var(--ink, 255, 255, 255), 0.2);
-  transition: background 0.25s ease;
-}
-.ld-switch-knob::after {
-  content: '';
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #fff;
-  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.ld-switch.on .ld-switch-knob {
-  background: var(--ld-hi, #fff);
-}
-.ld-switch.on .ld-switch-knob::after {
-  transform: translateX(16px);
 }
 
 /* --- the live demo page (/demo — demo/DemoApp.jsx) ------------------------ */
@@ -10055,9 +10047,6 @@ html:has(.landing) {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ld-gold);
-}
-.ld-noise {
-  margin-top: 2px;
 }
 .ld-replay {
   margin-top: 6px;

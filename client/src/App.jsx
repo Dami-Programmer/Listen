@@ -40,7 +40,7 @@ import Tour from './Tour.jsx';
 import { hasSeenTour, useTour } from './useTour.js';
 import TourButton from './TourButton.jsx';
 import { trackEvent } from './analytics.js';
-import NoiseToggle from './NoiseToggle.jsx';
+import NoiseToggle, { NoiseBadge } from './NoiseToggle.jsx';
 import { BreakoutBanner, BreakoutPanel } from './Breakouts.jsx';
 import TabSwap from './TabSwap.jsx';
 import RecBadge from './RecBadge.jsx';
@@ -835,6 +835,9 @@ export function CallView({ state, chat, typers, selfId, onLeave, media, iceServe
     // I'm the one recording: receive everyone at a decent size (sfu.js).
     recording: Boolean(state?.recording?.id) && state.recording.recorderId === selfId,
   });
+  // Strong noise reduction is cleaning my mic (on by default — webrtc.js):
+  // shows as a sparkle badge on the mic button.
+  const noiseOn = strongNoiseSupported && strongNoise;
 
   // Leave the call, telling <App/> how the mic and camera were — so if you
   // hit Rejoin on the "You left the meeting" screen, they come back the same.
@@ -1722,14 +1725,18 @@ export function CallView({ state, chat, typers, selfId, onLeave, media, iceServe
               }
             >
               <button
+                // cs-mic-btn: holds the noise badge in its corner (index.css)
+                className="cs-mic-btn"
                 onClick={toggleMic}
                 disabled={isListener}
-                aria-label={micOn ? 'Mute' : 'Unmute'}
-                title={
+                aria-label={`${micOn ? 'Mute' : 'Unmute'}${noiseOn ? ' · Noise reduction on' : ''}`}
+                title={`${
                   isListener ? 'Raise your hand to ask for the floor' : micOn ? 'Mute' : 'Unmute'
-                }
+                }${noiseOn ? ' · Noise reduction on' : ''}`}
               >
                 {micOn && !isListener ? <Mic /> : <MicOff />}
+                {/* the "noise reduction is on" sparkle (NoiseToggle.jsx) */}
+                {noiseOn && <NoiseBadge />}
               </button>
             </DevicePicker>
             {/* Host / co-host run the floor, so they never raise a hand. For

@@ -47,7 +47,7 @@ import RecBadge from './RecBadge.jsx';
 import { CaptionsBar, CcIcon } from './CaptionsBar.jsx';
 import NextUp from './NextUp.jsx';
 import { ReactionButton } from './Reactions.jsx';
-import NoiseToggle from './NoiseToggle.jsx';
+import NoiseToggle, { NoiseBadge } from './NoiseToggle.jsx';
 import { BreakoutBanner } from './Breakouts.jsx';
 import TabSwap from './TabSwap.jsx';
 import { strongNoiseSupported } from './webrtc.js';
@@ -113,6 +113,9 @@ export default function MobileCall({ call }) {
     openBreakouts,
     act,
   } = call;
+  // Strong noise reduction is cleaning my mic (on by default — webrtc.js):
+  // shows as a sparkle badge on the dial's mic button.
+  const noiseOn = strongNoiseSupported && strongNoise;
 
   const host = participants.find((p) => p.role === ROLES.HOST);
   const peerOf = (id) => participants.find((p) => p.id === id);
@@ -942,13 +945,13 @@ export default function MobileCall({ call }) {
               node: (
                 <HoldButton
                   className={`mc-btn mc-mic${micOn && !isListener ? '' : ' off'}${isListener ? ' locked' : ''}`}
-                  label={
+                  label={`${
                     isListener
                       ? 'Listening only. Raise your hand to speak'
                       : micOn
                         ? 'Mute (hold for more microphones)'
                         : 'Unmute'
-                  }
+                  }${noiseOn ? ' · Noise reduction on' : ''}`}
                   onTap={toggleMic}
                   onHold={() => {
                     setDialOpen(false);
@@ -956,6 +959,8 @@ export default function MobileCall({ call }) {
                   }}
                 >
                   <MicFilled off={!micOn || isListener} />
+                  {/* the "noise reduction is on" sparkle (NoiseToggle.jsx) */}
+                  {noiseOn && <NoiseBadge />}
                 </HoldButton>
               ),
             },

@@ -232,7 +232,7 @@ function DemoScreen({ scene, phone, run, label }) {
 
 // The words for one step / feature: label, heading, text, ticks, "Try it",
 // and Replay.
-function StoryBody({ item, index, onReplay, extra, headingId }) {
+function StoryBody({ item, index, onReplay, headingId }) {
   return (
     <>
       <p className="ld-eyebrow">
@@ -254,7 +254,6 @@ function StoryBody({ item, index, onReplay, extra, headingId }) {
         </p>
       )}
       {item.note && <p className="ld-sim">{item.note}</p>}
-      {extra}
       <button type="button" className="ld-replay" onClick={onReplay}>
         ↺ Replay this demo
       </button>
@@ -371,7 +370,7 @@ const STEP_STORIES = [
 
 // One band: a list on the left (click one to preview it), its words under
 // the list, and the real app playing it on the right.
-function PickOne({ items, name, extras = {} }) {
+function PickOne({ items, name }) {
   const narrow = useNarrow();
   const [active, setActive] = useState(0);
   const [run, setRun] = useState(0); // bump = start the demo over
@@ -406,12 +405,7 @@ function PickOne({ items, name, extras = {} }) {
               role="tabpanel"
               aria-labelledby={`ld-pick-${item.scene}`}
             >
-              <StoryBody
-                item={item}
-                index={active}
-                extra={extras[item.scene]}
-                onReplay={() => setRun((n) => n + 1)}
-              />
+              <StoryBody item={item} index={active} onReplay={() => setRun((n) => n + 1)} />
             </div>
           </div>
           <DemoScreen
@@ -502,15 +496,14 @@ const FEATURE_STORIES = [
     note: 'This is a demo, so nothing gets booked. The calendar buttons do work, so only press them if you want the sample event.',
   },
   {
-    scene: 'noise',
-    heading: 'Leave the noise\nbehind.',
-    points: [
-      'Strong noise removal, built in',
-      'Switch it on from the mic menu',
-      'Works on phones and computers',
-    ],
-    tryIt: 'Flip Strong noise reduction in the open mic menu. That’s the real setting.',
-    note: 'Want to hear the difference? Play the sample below. We make the sound in your browser, and your microphone isn’t used.',
+    // (took the place of "Noise reduction", which is now simply on for
+    // everyone — webrtc.js)
+    scene: 'report',
+    heading: 'See who spoke,\nand for how long.',
+    points: ['Who came, and when', 'Talk time for every person', 'Download it as a spreadsheet'],
+    tryIt:
+      'The report is open: watch the talk times tick up, or press Download for the spreadsheet.',
+    note: 'This is a demo, so the people and their numbers are made up.',
   },
   {
     scene: 'phones',
@@ -523,6 +516,19 @@ const FEATURE_STORIES = [
     ],
     tryIt: 'Tap ✋ to raise your hand, or tap the people icon to see the line.',
   },
+  {
+    scene: 'chat',
+    heading: 'Joined late?\nCatch up in the chat.',
+    points: [
+      'New people see the messages from before they joined',
+      'Send photos and files',
+      'Edit or unsend your messages',
+      'Hosts can delete messages or mute someone’s chat',
+    ],
+    tryIt:
+      'Send a message, then edit it. Tap the photo to open it. As the host, hover someone’s message to delete it.',
+    note: 'This is a demo, so nothing you send leaves your browser.',
+  },
 ];
 
 export function FeatureTour({ features }) {
@@ -534,103 +540,5 @@ export function FeatureTour({ features }) {
     label: title.toUpperCase(),
     text,
   }));
-  return <PickOne items={items} name="Features" extras={{ noise: <NoiseSample /> }} />;
-}
-
-// =============================================================================
-// Noise reduction: a clearly made-up sound to hear the difference
-// =============================================================================
-
-// A "voice" plus fan noise, generated in the browser; the switch turns the
-// noise down like the filter would. The visitor's microphone is never used,
-// and nothing plays until they press Play.
-function NoiseSample() {
-  const [playing, setPlaying] = useState(false);
-  const [on, setOn] = useState(false);
-  const audio = useRef(null); // { ctx, noise }
-
-  const stop = () => {
-    audio.current?.ctx.close();
-    audio.current = null;
-    setPlaying(false);
-  };
-  useEffect(() => () => audio.current?.ctx.close(), []); // leaving stops the sound
-
-  const play = () => {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    const ctx = new AC();
-    const out = ctx.createGain();
-    out.gain.value = 0.6;
-    out.connect(ctx.destination);
-    // the "voice": a buzzy tone shaped like speech, in syllables
-    const voice = ctx.createOscillator();
-    voice.type = 'sawtooth';
-    voice.frequency.value = 150;
-    const vib = ctx.createOscillator();
-    vib.frequency.value = 5;
-    const vibDepth = ctx.createGain();
-    vibDepth.gain.value = 12;
-    vib.connect(vibDepth).connect(voice.frequency);
-    const mouth = ctx.createBiquadFilter();
-    mouth.type = 'bandpass';
-    mouth.frequency.value = 900;
-    mouth.Q.value = 1.2;
-    const level = ctx.createGain();
-    level.gain.value = 0.12;
-    const syl = ctx.createOscillator();
-    syl.frequency.value = 3.5;
-    const sylDepth = ctx.createGain();
-    sylDepth.gain.value = 0.12;
-    syl.connect(sylDepth).connect(level.gain);
-    voice.connect(mouth).connect(level).connect(out);
-    // the "fan": steady rushing noise
-    const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    let last = 0;
-    for (let i = 0; i < data.length; i += 1) {
-      last = (last + 0.04 * (Math.random() * 2 - 1)) / 1.04;
-      data[i] = last * 3.5;
-    }
-    const hiss = ctx.createBufferSource();
-    hiss.buffer = buf;
-    hiss.loop = true;
-    const noise = ctx.createGain();
-    noise.gain.value = on ? 0.02 : 0.5;
-    hiss.connect(noise).connect(out);
-    for (const n of [voice, vib, syl, hiss]) n.start();
-    audio.current = { ctx, noise };
-    setPlaying(true);
-  };
-
-  const toggle = () => {
-    const next = !on;
-    setOn(next);
-    const a = audio.current;
-    if (a) a.noise.gain.setTargetAtTime(next ? 0.02 : 0.5, a.ctx.currentTime, 0.08);
-  };
-
-  return (
-    <div className="ld-noise">
-      <div className="ld-row">
-        <button
-          type="button"
-          className={`ld-act${playing ? '' : ' primary'}`}
-          onClick={playing ? stop : play}
-        >
-          {playing ? '■ Stop sound' : '▶ Play sample sound'}
-        </button>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={on}
-          className={`ld-switch${on ? ' on' : ''}`}
-          onClick={toggle}
-        >
-          <span className="ld-switch-knob" />
-          Filter {on ? 'on' : 'off'}
-        </button>
-      </div>
-    </div>
-  );
+  return <PickOne items={items} name="Features" />;
 }

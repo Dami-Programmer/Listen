@@ -43,11 +43,16 @@ const FEATURES = [
     'Pick a time and send the invite. People’s calendars remind them 10 minutes before.',
   ],
   [
-    '🎧',
-    'Noise reduction',
-    'The fan, the traffic, the kids in the next room. Turnly quietens all of it.',
+    '📊',
+    'Meeting report',
+    'See who came, who spoke and for how long. Spot who never got a word in.',
   ],
   ['📱', 'Works on phones', 'No app to install. Open the link and you’re in.'],
+  [
+    '💬',
+    'Chat',
+    'Everyone who joins sees what’s already been said, so nobody has to ask “what did I miss?”. Share photos and files, fix a typo, or take a message back.',
+  ],
 ];
 
 const AUDIENCES = [
