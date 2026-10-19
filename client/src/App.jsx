@@ -25,7 +25,6 @@ import { confirmDialog } from './confirm.js';
 import InviteCard from './InviteCard.jsx';
 import DevicePicker from './DevicePicker.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
-import Logo from './Logo.jsx';
 import { PipView } from './Pip.jsx';
 import { usePip } from './usePip.js';
 import { newMeetingCode } from './meeting.js';
@@ -568,7 +567,15 @@ export default function App() {
   }
 
   if (waiting) {
-    return <WaitingScreen roomId={roomId} forHost={waitingForHost} onCancel={handleLeave} />;
+    return (
+      <WaitingScreen
+        roomId={roomId}
+        forHost={waitingForHost}
+        name={name}
+        avatar={avatar}
+        onCancel={handleLeave}
+      />
+    );
   }
 
   if (left) {
@@ -628,44 +635,45 @@ export default function App() {
 // --- the locked-room lobby -----------------------------------------------
 // `forHost`: a fixed room whose host hasn't arrived — "Waiting for the host
 // to start". (When they arrive, it's the usual knock: they let you in.)
-function WaitingScreen({ roomId, forHost = false, onCancel }) {
-  const line = forHost
-    ? 'Waiting for the host to start this meeting.'
-    : 'Waiting for the host to let you in.';
-  const isMobile = useIsMobile();
-  // Phones: same white page as the mobile lobby.
-  if (isMobile) {
-    return (
-      <main className="prejoin pjm pjm-wait" aria-live="polite">
-        <div className="pjm-wait-body">
-          <div className="pjm-wait-dots" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-          </div>
-          <h1>{forHost ? 'Almost there 👋' : 'Knock knock 👋'}</h1>
-          <p>{line}</p>
-          <code>{roomId}</code>
-          <button type="button" className="pjm-wait-cancel" onClick={onCancel}>
-            Cancel
-          </button>
-        </div>
-      </main>
-    );
-  }
+// One layout for desktop and phone (index.css, "Waiting to be let in"): the
+// Turnly mark top-left, then centred: your picture with soft rings going out
+// from it (you're knocking), the title, a line saying what happens next, the
+// meeting's code, three hopping dots, and Cancel.
+function WaitingScreen({ roomId, forHost = false, name = '', avatar, onCancel }) {
   return (
-    <main className="page">
-      <Logo />
-      <p className="tagline">Moderated group calls.</p>
-
-      <div className="card join" aria-live="polite">
-        <p>
-          <strong>{forHost ? 'Almost there 👋' : 'Knock knock 👋'}</strong>
+    <main className="wait-screen" aria-live="polite">
+      <header className="wait-brand">
+        <img src="/turnly-mark-96.png" alt="" />
+        <span>Turnly</span>
+      </header>
+      <div className="wait-center">
+        <div className="wait-knock" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+          <Avatar name={name.trim() || '?'} src={avatar} size={96} />
+        </div>
+        <h1>{forHost ? 'Almost there' : 'Knock knock'}</h1>
+        <p className="wait-sub">
+          {forHost
+            ? 'The host hasn’t started this meeting yet. You’ll join as soon as they arrive.'
+            : 'The host knows you’re here. You’ll be let in as soon as they say yes.'}
         </p>
-        <p className="tagline">
-          {line} <code>{roomId}</code>
-        </p>
-        <button className="ghost" onClick={onCancel}>
+        <div className="wait-meeting">
+          <span className="wait-meeting-ic">
+            <Cam />
+          </span>
+          <span>
+            Meeting <code>{roomId}</code>
+          </span>
+        </div>
+        <div className="wait-dots" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </div>
+        <p className="wait-hint">Keep this page open.</p>
+        <button type="button" className="wait-cancel" onClick={onCancel}>
           Cancel
         </button>
       </div>
