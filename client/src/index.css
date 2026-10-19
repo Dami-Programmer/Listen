@@ -12292,3 +12292,246 @@ html:has(.landing) {
   height: 15px;
   color: var(--text-muted, #8d98a5);
 }
+
+/* ============================================================================
+   "You left the meeting" (LeftScreen.jsx) — the same quiet look as the
+   lobby: the Turnly mark top-left, a plain countdown ring, one solid white
+   button (black in light mode), an outline button, quiet rows for the
+   recording and the report, and the review as a hairline card. No cyan.
+   ========================================================================== */
+.left-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font:
+    700 17px 'Plus Jakarta Sans',
+    system-ui,
+    sans-serif;
+  letter-spacing: -0.02em;
+}
+.left-brand img {
+  width: 26px;
+  height: 26px;
+  filter: brightness(0) invert(1);
+}
+:root[data-theme='light'] .left-brand img {
+  filter: brightness(0);
+}
+.left-card {
+  max-width: 440px;
+  padding: 32px 0;
+}
+.left-card h1 {
+  margin: 20px 0 8px;
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.035em;
+}
+.left-card p {
+  margin: 0 0 28px;
+  max-width: 340px;
+  font-size: 15px;
+  line-height: 1.5;
+}
+/* the ring: plain text colour on a hairline track */
+.left-ring-bar {
+  stroke: var(--text, #f5f7fa);
+}
+.left-ring-track {
+  stroke: rgba(var(--ink, 255, 255, 255), 0.1);
+}
+.left-ring circle {
+  stroke-width: 3;
+}
+.left-ring span {
+  font:
+    600 16px 'Inter',
+    system-ui,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+/* Rejoin: solid white (black in light mode) · Home: an outline */
+.left-rejoin,
+.left-home {
+  height: 54px;
+  font:
+    600 15.5px 'Plus Jakarta Sans',
+    system-ui,
+    sans-serif;
+}
+.left-rejoin {
+  background: var(--text, #f5f7fa);
+  color: var(--bg, #10161c);
+  box-shadow: none;
+}
+.left-home {
+  border-color: rgba(var(--ink, 255, 255, 255), 0.14);
+}
+.left-rejoin:hover:not(:disabled) {
+  filter: none;
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+.left-home:hover:not(:disabled) {
+  filter: none;
+  background: rgba(var(--ink, 255, 255, 255), 0.05);
+  transform: none;
+}
+
+/* "This meeting was recorded": a quiet row with a red record dot */
+.left-rec {
+  margin-top: 20px;
+  border-color: rgba(var(--ink, 255, 255, 255), 0.08);
+  background: var(--surface, #161c23);
+}
+.left-rec:hover {
+  background: rgba(var(--ink, 255, 255, 255), 0.05);
+}
+.left-rec svg {
+  width: 22px;
+  height: 22px;
+}
+.left-rec b {
+  font-size: 14px;
+  font-weight: 500;
+}
+.left-rec span {
+  font-size: 12px;
+}
+
+/* the meeting report: a row that opens into the table */
+.left-report {
+  margin-top: 20px;
+  padding: 0;
+  border-color: rgba(var(--ink, 255, 255, 255), 0.08);
+  background: var(--surface, #161c23);
+  overflow: hidden;
+}
+.left-rec + .left-report {
+  margin-top: 10px;
+}
+.left-report summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  list-style: none;
+  font-weight: 400;
+}
+.left-report summary::-webkit-details-marker {
+  display: none;
+}
+.left-report summary:hover {
+  background: rgba(var(--ink, 255, 255, 255), 0.03);
+}
+.left-report-tile {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: rgba(var(--ink, 255, 255, 255), 0.06);
+  color: var(--text-soft, #b7c0ca);
+}
+.left-report-tile svg {
+  width: 18px;
+  height: 18px;
+}
+.left-report-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.left-report-text b {
+  font-size: 14px;
+  font-weight: 500;
+}
+.left-report-text small {
+  font-size: 12px;
+  color: var(--text-muted, #8d98a5);
+}
+.left-report-chev {
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted, #8d98a5);
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.left-report[open] .left-report-chev {
+  transform: rotate(180deg);
+}
+.left-report .report {
+  margin: 0;
+  padding: 4px 14px 14px;
+}
+
+/* the review: a hairline card, the box like the lobby's fields */
+.left-review {
+  margin-top: 20px;
+  padding: 18px;
+  gap: 4px;
+}
+.left-review label {
+  font-weight: 600;
+  font-size: 15px;
+}
+.left-review textarea {
+  margin-top: 4px;
+  border-radius: 14px;
+  border-color: rgba(var(--ink, 255, 255, 255), 0.08);
+  background: var(--bg, #10161c);
+  font-size: 15px;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+:root[data-theme='light'] .left-review textarea {
+  background: #f7f9fb;
+}
+.left-review textarea::placeholder {
+  color: var(--text-faint, #6c7682);
+}
+.left-review textarea:focus {
+  border-color: rgba(var(--ink, 255, 255, 255), 0.22);
+  box-shadow: 0 0 0 4px rgba(var(--ink, 255, 255, 255), 0.06);
+}
+/* Send: solid once there's something to send, faint until then */
+.left-review-send {
+  margin-top: 8px;
+  height: 40px;
+  border: none;
+  background: var(--text, #f5f7fa);
+  color: var(--bg, #10161c);
+}
+.left-review-send:hover:not(:disabled) {
+  background: var(--text, #f5f7fa);
+  opacity: 0.9;
+  filter: none;
+}
+.left-review-send:disabled {
+  opacity: 0.3;
+}
+/* after sending: a green tick and the thank-you */
+.left-card .left-thanks {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.left-thanks svg {
+  width: 18px;
+  height: 18px;
+  padding: 3px;
+  border-radius: 50%;
+  background: rgba(63, 185, 80, 0.15);
+  color: #3fb950;
+}
+@media (max-width: 560px) {
+  .left-card {
+    padding: 24px 0;
+  }
+  .left-card h1 {
+    font-size: 26px;
+  }
+}

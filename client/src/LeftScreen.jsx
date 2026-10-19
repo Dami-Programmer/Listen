@@ -14,10 +14,9 @@
 // camera) closed when you left.
 
 import { useEffect, useState } from 'react';
-import Logo from './Logo.jsx';
 import { SIGNALING_URL } from './socket.js';
 import { recordingLink } from './meeting.js';
-import { RecordIcon } from './icons.jsx';
+import { BarChart, Check, ChevronDown, RecordIcon } from './icons.jsx';
 import { ReportTable } from './MeetingReport.jsx';
 import useIsMobile from './useIsMobile.js';
 
@@ -126,7 +125,11 @@ export default function LeftScreen({
 
   return (
     <main className="left-screen">
-      <Logo />
+      {/* the Turnly mark (white; black in light mode) + the name, like the lobby */}
+      <div className="left-brand">
+        <img src="/turnly-mark-96.png" alt="" />
+        <span>Turnly</span>
+      </div>
       <div className="left-card" aria-live="polite">
         <div className="left-ring" aria-hidden="true">
           <svg viewBox="0 0 48 48" width="56" height="56">
@@ -178,7 +181,17 @@ export default function LeftScreen({
         {/* Host / co-host: who came and who spoke (they can't ask later). */}
         {report && (
           <details className="left-report" onToggle={(e) => setReadingReport(e.currentTarget.open)}>
-            <summary>Meeting report: who spoke, and for how long</summary>
+            {/* a quiet row: icon tile · name + grey line · chevron that turns */}
+            <summary>
+              <span className="left-report-tile">
+                <BarChart />
+              </span>
+              <span className="left-report-text">
+                <b>Meeting report</b>
+                <small>Who spoke, and for how long</small>
+              </span>
+              <ChevronDown className="left-report-chev" />
+            </summary>
             <ReportTable report={report} />
           </details>
         )}
@@ -186,7 +199,7 @@ export default function LeftScreen({
         {/* The review. Once sent, the box turns into a thank-you. */}
         {status === 'sent' ? (
           <p className="left-thanks" role="status">
-            Thanks for the feedback! 💙
+            <Check /> Thanks for the feedback!
           </p>
         ) : (
           <form className="left-review" onSubmit={sendReview}>
