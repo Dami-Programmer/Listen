@@ -12535,3 +12535,29 @@ html:has(.landing) {
     font-size: 26px;
   }
 }
+
+/* Phones and tablets: the whole TURNLY, not cut off and fading at the
+   bottom edge — and room under it for the dock (LandingDock.jsx), which is
+   always on screen there over the bottom ~70px. (Same test as the dock's
+   MOBILE query.) */
+@media (hover: none), (pointer: coarse), (max-width: 640px) {
+  .ld-foot {
+    padding-bottom: calc(88px + env(safe-area-inset-bottom));
+  }
+  .ld-foot-giant {
+    height: auto;
+    margin-top: 28px;
+    text-align: center;
+  }
+  /* the whole word, still fading out and blurring toward its bottom, like
+     on desktop — just not cut off */
+  .ld-foot-giant span {
+    position: static;
+    display: block;
+    transform: none;
+    line-height: 1;
+  }
+  .ld-foot-giant::after {
+    height: 60%;
+  }
+}
