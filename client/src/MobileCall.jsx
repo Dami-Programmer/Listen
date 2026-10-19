@@ -507,15 +507,21 @@ export default function MobileCall({ call }) {
     },
     {
       target: '.mc-people',
-      title: 'People',
+      title: 'People, questions and polls',
       text: isModerator
-        ? 'Everyone in the call, who’s knocking, raised hands, and your host controls.'
-        : 'See everyone in the call and get the invite link.',
+        ? 'Everyone in the call, who’s knocking and raised hands. Host tools too: breakout rooms, the meeting report, and a ⋯ menu on each person. The Questions and Poll tabs are here as well.'
+        : 'Everyone in the call and the invite link. The Questions tab: ask, and upvote what you want answered. The Poll tab: vote when the host starts one.',
     },
     {
       target: '.mc-comment',
       title: 'Chat',
-      text: 'Message everyone here. Use 📎 for photos and files. Press and hold your own message to edit or delete it.',
+      text: 'Message everyone here. Use 📎 for photos and files. Press and hold your own message to edit or delete it. People who join late still see what was said.',
+      before: closeDial,
+    },
+    {
+      target: '.mc-react',
+      title: 'Reactions',
+      text: 'Send a quick 👍 👏 ❤️ 🎉 that floats up on everyone’s screen, without unmuting.',
       before: closeDial,
     },
     {
@@ -541,13 +547,23 @@ export default function MobileCall({ call }) {
       title: 'Microphone',
       text: isListener
         ? 'Your mic is off while you’re listening. Raise your hand to ask for the floor.'
-        : 'Mutes or unmutes you. Press and hold to pick another microphone.',
+        : `Mutes or unmutes you. Press and hold to pick another microphone${
+            strongNoiseSupported
+              ? ' or turn noise reduction off. It’s on by default: the small sparkle on the mic.'
+              : '.'
+          }`,
       before: openDial,
     },
     showShare && {
       target: '.mc-dial-item .mc-cast',
       title: 'Present',
       text: 'Show everyone photos or a PDF (or your screen, where your phone allows it).',
+      before: openDial,
+    },
+    {
+      target: '.mc-dial-item .mc-cc',
+      title: 'Live captions',
+      text: 'Shows what people say as text on your screen. Everyone sees when captions are on.',
       before: openDial,
     },
     !grid && {

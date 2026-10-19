@@ -1329,9 +1329,16 @@ export function CallView({ state, chat, typers, selfId, onLeave, media, iceServe
   const canShareScreen = !isListener && Boolean(navigator.mediaDevices?.getDisplayMedia);
   const tourSteps = [
     {
-      target: '.cs-invite-btn',
+      target: '.cs-share-btn',
       title: 'Invite people',
-      text: 'Copies this meeting’s link so you can send it to others.',
+      text: 'Gets this meeting’s link, ready to copy and send to others.',
+    },
+    {
+      target: '.cs-people-pill',
+      title: 'Everyone in the meeting',
+      text: isModerator
+        ? 'See who’s here and who has a hand up. Host tools live here too: breakout rooms, the meeting report (who spoke, and for how long), and a ⋯ menu on each person to make them cohost, mute their chat or remove them.'
+        : 'See who’s in the meeting, and who’s host.',
     },
     isHost && {
       target: '.cs-mode-badge',
@@ -1351,9 +1358,13 @@ export function CallView({ state, chat, typers, selfId, onLeave, media, iceServe
     {
       target: '.cs-controls-center > .dp:nth-child(2)',
       title: 'Microphone',
-      text: isListener
-        ? 'Your mic is off while you’re listening. The arrow beside it picks another microphone.'
-        : 'Mutes or unmutes you. The little arrow beside it picks another microphone.',
+      text: `${
+        isListener ? 'Your mic is off while you’re listening.' : 'Mutes or unmutes you.'
+      } The little arrow beside it picks another microphone${
+        strongNoiseSupported
+          ? ' and turns noise reduction on or off. It’s on by default: the small sparkle on the mic.'
+          : '.'
+      }`,
     },
     !isModerator && {
       target: '.cs-controls-center button[aria-label$="hand"]',
@@ -1361,9 +1372,9 @@ export function CallView({ state, chat, typers, selfId, onLeave, media, iceServe
       text: 'In a moderated meeting, ask to speak. The host sees you in the queue.',
     },
     {
-      target: '.cs-hangup',
-      title: 'Leave',
-      text: 'Leaves the call. Changed your mind? You get a minute to rejoin.',
+      target: '.cs-react-btn',
+      title: 'Reactions',
+      text: 'Send a quick 👍 👏 ❤️ 🎉 that floats up on everyone’s screen, without unmuting.',
     },
     canShareScreen && {
       target:
@@ -1382,14 +1393,24 @@ export function CallView({ state, chat, typers, selfId, onLeave, media, iceServe
       text: 'Switch between one big video and a grid of everyone.',
     },
     {
-      target: '.cs-chat-btn',
-      title: 'Chat and people',
-      text: isModerator
-        ? 'Opens the chat. The people button at its top lists everyone, with raised hands and your host controls.'
-        : 'Opens the chat. The people button at its top lists everyone in the call.',
+      target: '.cs-controls-center button[aria-label$="captions"]',
+      title: 'Live captions',
+      text: 'Shows what people say as text at the bottom of the call. Everyone sees a “Captions on” sign while they’re running.',
     },
     {
-      target: '.cs-title-row .theme-btn',
+      target: '.cs-hangup',
+      title: 'Leave',
+      text: 'Leaves the call. Changed your mind? You get a minute to rejoin.',
+    },
+    {
+      target: '.cs-chat-btn',
+      title: 'Chat, questions and polls',
+      text: isModerator
+        ? 'Opens the side panel. Chat: photos and files too, and people who join late still see what was said. Questions: anyone can ask, everyone upvotes. Poll: ask everyone something and see the results live.'
+        : 'Opens the side panel. Chat: photos and files too, and people who join late still see what was said. Questions: ask, and upvote the ones you want answered. Poll: vote when the host starts one.',
+    },
+    {
+      target: '.cs-top-right .theme-btn',
       title: 'Light or dark',
       text: 'Switch the look: match your device, light, or dark.',
     },
@@ -1546,7 +1567,8 @@ export function CallView({ state, chat, typers, selfId, onLeave, media, iceServe
           {/* the invite link pop-up (InviteCard) — what "Invite" used to be */}
           <button
             type="button"
-            className={`cs-top-btn${inviteOpen ? ' on' : ''}`}
+            // cs-share-btn: the tour's "Invite people" step points here
+            className={`cs-top-btn cs-share-btn${inviteOpen ? ' on' : ''}`}
             onClick={() => setInviteOpen((v) => !v)}
             aria-expanded={inviteOpen}
             title="Get the invite link"
