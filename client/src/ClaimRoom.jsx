@@ -8,8 +8,9 @@
 //         also remembered on this device. "Use it now" fills in the room.
 
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { SIGNALING_URL } from './socket.js';
-import { Copy, Check, X } from './icons.jsx';
+import { Copy, Check, LinkIcon, X } from './icons.jsx';
 import { nameFromTitle, nameLinks, saveHostKey } from './roomNames.js';
 
 // Wait this long after typing stops before checking the name.
@@ -116,7 +117,10 @@ export default function ClaimRoom({ onClose, onUse }) {
     invalid: '3-30 letters, numbers or hyphens',
   }[check];
 
-  return (
+  // Drawn straight onto the page (a portal), not inside the lobby: the
+  // lobby's rise-in animation would otherwise shrink the full-screen dark
+  // backdrop to the lobby's own box.
+  return createPortal(
     <div className="confirm-backdrop" onClick={onClose}>
       <div
         className="confirm-card claim-card"
@@ -125,10 +129,21 @@ export default function ClaimRoom({ onClose, onUse }) {
         aria-labelledby="claim-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="report-head">
-          <h2 id="claim-title" className="confirm-title">
-            {claimed ? 'Your permanent link' : 'A permanent link for your group'}
-          </h2>
+        {/* icon tile · title + one grey line · round ✕ */}
+        <div className="report-head dlg-head">
+          <span className={`dlg-icon${claimed ? ' ok' : ''}`} aria-hidden="true">
+            {claimed ? <Check /> : <LinkIcon />}
+          </span>
+          <div className="dlg-head-text">
+            <h2 id="claim-title" className="confirm-title">
+              {claimed ? 'Your permanent link' : 'A permanent link for your group'}
+            </h2>
+            <p className="dlg-sub">
+              {claimed
+                ? 'Share the first link. Keep the second one to yourself.'
+                : 'Same link every time, and you’re always the host.'}
+            </p>
+          </div>
           <button type="button" className="report-x" onClick={onClose} aria-label="Close">
             <X />
           </button>
@@ -136,11 +151,8 @@ export default function ClaimRoom({ onClose, onUse }) {
 
         {!claimed ? (
           <form className="claim-form" onSubmit={claim}>
-            <p className="confirm-msg">
-              Your group meets at the same link every time, and you’re always the host.
-            </p>
-            <label className="poll-label">
-              Your group’s name
+            <label className="poll-label field">
+              <span>Your group’s name</span>
               <input
                 value={title}
                 onChange={(e) => {
@@ -152,8 +164,9 @@ export default function ClaimRoom({ onClose, onUse }) {
                 autoFocus
               />
             </label>
-            <label className="poll-label">
-              Your link
+            {/* the site's address in grey, then the name you type */}
+            <label className="poll-label field">
+              <span>Your link</span>
               <span className="claim-url">
                 <span className="claim-origin">{window.location.host}/</span>
                 <input
@@ -175,9 +188,14 @@ export default function ClaimRoom({ onClose, onUse }) {
               {status && <span className={`claim-status ${check}`}>{status}</span>}
             </label>
             {error && <p className="qa-error">{error}</p>}
-            <button type="submit" className="qa-send claim-go" disabled={busy}>
-              {busy ? 'Claiming…' : 'Claim this link'}
-            </button>
+            <div className="dlg-foot">
+              <button type="button" className="confirm-btn cancel" onClick={onClose}>
+                Cancel
+              </button>
+              <button type="submit" className="qa-send claim-go" disabled={busy}>
+                {busy ? 'Claiming…' : 'Claim this link'}
+              </button>
+            </div>
           </form>
         ) : (
           <div className="claim-form">
@@ -191,16 +209,19 @@ export default function ClaimRoom({ onClose, onUse }) {
               value={links.host}
               hint="Keep it to yourself: whoever opens it is the host. It’s saved on this device; open it once on any other device you host from. It can’t be shown again."
             />
-            <button
-              type="button"
-              className="qa-send claim-go"
-              onClick={() => onUse(claimed.name, title.trim())}
-            >
-              Use it now
-            </button>
+            <div className="dlg-foot">
+              <button
+                type="button"
+                className="qa-send claim-go"
+                onClick={() => onUse(claimed.name, title.trim())}
+              >
+                Use it now
+              </button>
+            </div>
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

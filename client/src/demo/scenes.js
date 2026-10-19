@@ -52,12 +52,12 @@ const OPEN_PANEL = {
     phone: [['.mc-people'], ['.mc-tab', 'Questions']],
   },
   breakouts: {
-    desktop: [['.cs-people-pill'], ['.cp-report-btn', 'Breakout']],
-    phone: [['.mc-people'], ['.cp-report-btn', 'Breakout']],
+    desktop: [['.cs-people-pill'], ['.pp-tool', 'Breakout']],
+    phone: [['.mc-people'], ['.pp-tool', 'Breakout']],
   },
   report: {
-    desktop: [['.cs-people-pill'], ['.cp-report-btn', 'Meeting report']],
-    phone: [['.mc-people'], ['.cp-report-btn', 'Meeting report']],
+    desktop: [['.cs-people-pill'], ['.pp-tool', 'Meeting report']],
+    phone: [['.mc-people'], ['.pp-tool', 'Meeting report']],
   },
   // phones: the chat feed is already on screen, nothing to open
   chat: { desktop: [['.cs-chat-btn']], phone: [] },

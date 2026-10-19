@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AVATAR_MAX_CHARS, AVATAR_SIZE_PX } from '@listen/shared';
 import Avatar from './Avatar.jsx';
+import { Search, UploadIcon, X } from './icons.jsx';
 
 // Crop the middle square out of an image file and shrink it to a JPEG data URL.
 async function fileToAvatar(file) {
@@ -109,7 +110,13 @@ async function searchCharacters(q, signal) {
   return merged;
 }
 
-export default function AvatarPicker({ name, avatar, onChange }) {
+// `hint`: the lobby's card layout. The "Your picture" label moves inside the
+// row, next to the picture, with this small grey line under it, and the two
+// buttons become quiet text buttons. Without it, the older plain layout.
+// `stacked` (the phone lobby): the two buttons go on their own row under the
+// picture, as two equal outline pills with an icon and their full names —
+// beside the picture there isn't room for them on a phone.
+export default function AvatarPicker({ name, avatar, onChange, hint, stacked = false }) {
   const fileRef = useRef(null);
   const [searching, setSearching] = useState(false); // the search panel is open
   const [query, setQuery] = useState('');
@@ -168,13 +175,40 @@ export default function AvatarPicker({ name, avatar, onChange }) {
   }
 
   return (
-    <div className="ap">
-      <span className="ap-label">Your picture</span>
+    <div className={`ap${hint ? ' ap-card' : ''}${stacked ? ' ap-stacked' : ''}`}>
+      {!hint && <span className="ap-label">Your picture</span>}
       <div className="ap-row">
-        <Avatar name={name.trim() || '?'} src={avatar} size={56} />
+        {hint ? (
+          // card layout: "Remove" is a small ✕ on the picture's corner, so
+          // the row keeps room for its label and two buttons
+          <span className="ap-pic">
+            <Avatar name={name.trim() || '?'} src={avatar} size={40} />
+            {avatar && (
+              <button
+                type="button"
+                className="ap-pic-x"
+                onClick={() => onChange(null)}
+                aria-label="Remove picture"
+                title="Remove picture"
+              >
+                <X />
+              </button>
+            )}
+          </span>
+        ) : (
+          <Avatar name={name.trim() || '?'} src={avatar} size={56} />
+        )}
+        {/* card layout: the label and its grey line, beside the picture */}
+        {hint && (
+          <div className="ap-text">
+            <b>Your picture</b>
+            <small>{hint}</small>
+          </div>
+        )}
         <div className="ap-actions">
           <button type="button" className="ap-btn" onClick={() => fileRef.current?.click()}>
-            Upload photo
+            {stacked && <UploadIcon />}
+            {hint && !stacked ? 'Upload' : 'Upload photo'}
           </button>
           <button
             type="button"
@@ -182,9 +216,10 @@ export default function AvatarPicker({ name, avatar, onChange }) {
             onClick={() => setSearching((v) => !v)}
             aria-expanded={searching}
           >
+            {stacked && <Search />}
             Find a character
           </button>
-          {avatar && (
+          {avatar && !hint && (
             <button type="button" className="ap-btn ap-remove" onClick={() => onChange(null)}>
               Remove
             </button>

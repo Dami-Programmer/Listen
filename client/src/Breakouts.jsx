@@ -15,7 +15,7 @@
 import { useEffect, useState } from 'react';
 import { EVENTS } from '@listen/shared';
 import { socket } from './socket.js';
-import { X } from './icons.jsx';
+import { People, X } from './icons.jsx';
 import TabSwap from './TabSwap.jsx';
 
 const LENGTHS = [5, 10, 15, 20, 30, 45, 60, 0]; // minutes; 0 = until ended
@@ -156,10 +156,19 @@ export function BreakoutPanel({ state, onClose }) {
         aria-labelledby="bo-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="report-head">
-          <h2 id="bo-title" className="confirm-title">
-            Breakout rooms
-          </h2>
+        {/* icon tile · title + one grey line · round ✕ */}
+        <div className="report-head dlg-head">
+          <span className="dlg-icon" aria-hidden="true">
+            <People />
+          </span>
+          <div className="dlg-head-text">
+            <h2 id="bo-title" className="confirm-title">
+              Breakout rooms
+            </h2>
+            <p className="dlg-sub">
+              {running ? 'Rooms are running.' : 'Split the meeting into small groups.'}
+            </p>
+          </div>
           <button type="button" className="report-x" onClick={onClose} aria-label="Close">
             <X />
           </button>
@@ -207,8 +216,8 @@ export function BreakoutPanel({ state, onClose }) {
             ) : (
               <>
                 <div className="sched-row bo-row">
-                  <label className="poll-label">
-                    Rooms
+                  <label className="poll-label field">
+                    <span>Rooms</span>
                     <select value={rooms} onChange={(e) => setRooms(Number(e.target.value))}>
                       {Array.from({ length: roomChoices }, (_, i) => i + 1).map((n) => (
                         <option key={n} value={n}>
@@ -217,8 +226,8 @@ export function BreakoutPanel({ state, onClose }) {
                       ))}
                     </select>
                   </label>
-                  <label className="poll-label">
-                    For
+                  <label className="poll-label field">
+                    <span>For</span>
                     <select value={minutes} onChange={(e) => setMinutes(Number(e.target.value))}>
                       {LENGTHS.map((m) => (
                         <option key={m} value={m}>
@@ -250,9 +259,14 @@ export function BreakoutPanel({ state, onClose }) {
                   )}
                 </TabSwap>
                 {error && <p className="qa-error">{error}</p>}
-                <button type="submit" className="qa-send claim-go">
-                  Start breakout rooms
-                </button>
+                <div className="dlg-foot">
+                  <button type="button" className="confirm-btn cancel" onClick={onClose}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="qa-send claim-go">
+                    Start breakout rooms
+                  </button>
+                </div>
               </>
             )}
           </form>

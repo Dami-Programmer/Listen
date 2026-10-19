@@ -8,14 +8,18 @@
 //         link. Whoever schedules is the host: guests who arrive early wait.
 
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { SIGNALING_URL } from './socket.js';
-import { Copy, Check, X } from './icons.jsx';
+import { Calendar, Copy, Check, Lock, X } from './icons.jsx';
 import { inviteLink } from './meeting.js';
 import { hostKeyFor, ownedNames, saveHostKey } from './roomNames.js';
 import { downloadIcs, googleCalendarUrl, inviteText, whenText } from './calendar.js';
 
 const LENGTHS = [30, 45, 60, 90, 120, 180]; // minutes
 const pad = (n) => String(n).padStart(2, '0');
+// 30 → "30 min", 60 → "1 h", 90 → "1 h 30", 180 → "3 h"
+const lengthLabel = (m) =>
+  m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60}` : ''}`;
 
 // The private host link: the room's link + its host key.
 function hostLinkOf(room, key) {
@@ -107,7 +111,10 @@ export default function ScheduleMeeting({ onClose, defaultTitle = '' }) {
 
   const event = done && { ...done, link: inviteLink(done.room) };
 
-  return (
+  // Drawn straight onto the page (a portal), not inside the lobby: the
+  // lobby's rise-in animation would otherwise shrink the full-screen dark
+  // backdrop to the lobby's own box.
+  return createPortal(
     <div className="confirm-backdrop" onClick={onClose}>
       <div
         className="confirm-card claim-card"
@@ -116,10 +123,21 @@ export default function ScheduleMeeting({ onClose, defaultTitle = '' }) {
         aria-labelledby="sched-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="report-head">
-          <h2 id="sched-title" className="confirm-title">
-            {done ? 'Meeting scheduled' : 'Schedule a meeting'}
-          </h2>
+        {/* icon tile · title + one grey line · round ✕ */}
+        <div className="report-head dlg-head">
+          <span className={`dlg-icon${done ? ' ok' : ''}`} aria-hidden="true">
+            {done ? <Check /> : <Calendar />}
+          </span>
+          <div className="dlg-head-text">
+            <h2 id="sched-title" className="confirm-title">
+              {done ? 'Meeting scheduled' : 'Schedule a meeting'}
+            </h2>
+            <p className="dlg-sub">
+              {done
+                ? 'Send the invite to everyone coming.'
+                : 'Pick a time. You’ll get an invite to share.'}
+            </p>
+          </div>
           <button type="button" className="report-x" onClick={onClose} aria-label="Close">
             <X />
           </button>
@@ -127,8 +145,8 @@ export default function ScheduleMeeting({ onClose, defaultTitle = '' }) {
 
         {!done ? (
           <form className="claim-form" onSubmit={schedule}>
-            <label className="poll-label">
-              Meeting name
+            <label className="poll-label field">
+              <span>Meeting name</span>
               <input
                 value={title}
                 onChange={(e) => {
@@ -141,28 +159,38 @@ export default function ScheduleMeeting({ onClose, defaultTitle = '' }) {
               />
             </label>
             <div className="sched-row">
-              <label className="poll-label">
-                Date
+              <label className="poll-label field">
+                <span>Date</span>
                 <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
               </label>
-              <label className="poll-label">
-                Time
+              <label className="poll-label field">
+                <span>Time</span>
                 <input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
               </label>
-              <label className="poll-label">
+            </div>
+            {/* Length: one tap on a segmented row instead of a dropdown */}
+            <div className="field-group">
+              <span className="field-group-label" id="sched-length">
                 Length
-                <select value={length} onChange={(e) => setLength(Number(e.target.value))}>
-                  {LENGTHS.map((m) => (
-                    <option key={m} value={m}>
-                      {m < 60 ? `${m} min` : `${m / 60} h${m % 60 ? ' 30' : ''}`}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              </span>
+              <div className="seg" role="radiogroup" aria-labelledby="sched-length">
+                {LENGTHS.map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    role="radio"
+                    aria-checked={length === m}
+                    className={length === m ? 'on' : ''}
+                    onClick={() => setLength(m)}
+                  >
+                    {lengthLabel(m)}
+                  </button>
+                ))}
+              </div>
             </div>
             {names.length > 0 && (
-              <label className="poll-label">
-                Where
+              <label className="poll-label field">
+                <span>Where</span>
                 <select value={where} onChange={(e) => setWhere(e.target.value)}>
                   <option value="">A new meeting link</option>
                   {names.map((n) => (
@@ -174,21 +202,41 @@ export default function ScheduleMeeting({ onClose, defaultTitle = '' }) {
               </label>
             )}
             {error && <p className="qa-error">{error}</p>}
-            <button type="submit" className="qa-send claim-go" disabled={busy}>
-              {busy ? 'Scheduling…' : 'Schedule'}
-            </button>
+            {/* Cancel + Schedule, right-aligned under a thin line */}
+            <div className="dlg-foot">
+              <button type="button" className="confirm-btn cancel" onClick={onClose}>
+                Cancel
+              </button>
+              <button type="submit" className="qa-send claim-go" disabled={busy}>
+                {busy ? 'Scheduling…' : 'Schedule'}
+              </button>
+            </div>
           </form>
         ) : (
           <div className="claim-form">
-            <p className="sched-summary">
-              <b>{event.title}</b>
-              <span>
-                {whenText(event.startsAt)} · {event.durationMin} min
-              </span>
-              <a href={event.link}>{event.link}</a>
-            </p>
+            {/* the meeting at a glance: a little calendar tile, the name and
+                time, then the link with "Copy invite" beside it */}
+            <div className="sched-summary">
+              <div className="sched-sum-top">
+                <span className="sched-date" aria-hidden="true">
+                  <small>
+                    {new Date(event.startsAt).toLocaleString(undefined, { month: 'short' })}
+                  </small>
+                  <b>{new Date(event.startsAt).getDate()}</b>
+                </span>
+                <span className="sched-sum-text">
+                  <b>{event.title}</b>
+                  <span>
+                    {whenText(event.startsAt)} · {lengthLabel(event.durationMin)}
+                  </span>
+                </span>
+              </div>
+              <div className="sched-sum-link">
+                <a href={event.link}>{event.link.replace(/^https?:\/\//, '')}</a>
+                <CopyButton value={inviteText(event)} label="Copy invite" />
+              </div>
+            </div>
             <div className="sched-actions">
-              <CopyButton value={inviteText(event)} label="Copy invite" />
               <a
                 className="claim-copy"
                 href={googleCalendarUrl(event)}
@@ -202,12 +250,14 @@ export default function ScheduleMeeting({ onClose, defaultTitle = '' }) {
               </button>
             </div>
             <p className="claim-link-hint">
-              Send the invite to everyone. Adding it to a calendar reminds them 10 minutes before.
-              You’re the host. Guests who arrive early wait for you.
+              Adding it to a calendar reminds people 10 minutes before. You’re the host. Guests who
+              arrive early wait for you.
             </p>
             {done.hostKey && (
-              <div className="claim-link">
-                <span className="claim-link-label">Your private host link</span>
+              <div className="claim-link private">
+                <span className="claim-link-label">
+                  <Lock /> Your private host link
+                </span>
                 <div className="claim-link-row">
                   <input
                     value={hostLinkOf(done.room, done.hostKey)}
@@ -218,13 +268,20 @@ export default function ScheduleMeeting({ onClose, defaultTitle = '' }) {
                   <CopyButton value={hostLinkOf(done.room, done.hostKey)} label="Copy" />
                 </div>
                 <span className="claim-link-hint">
-                  Saved on this device. To host from another device, open this link there once.
+                  Keep it to yourself: whoever opens it is the host. Saved on this device. To host
+                  from another device, open this link there once.
                 </span>
               </div>
             )}
+            <div className="dlg-foot">
+              <button type="button" className="qa-send" onClick={onClose}>
+                Done
+              </button>
+            </div>
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

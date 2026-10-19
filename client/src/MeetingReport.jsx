@@ -10,7 +10,7 @@
 
 import { useEffect, useState } from 'react';
 import { fetchReport } from './report.js';
-import { Download, X } from './icons.jsx';
+import { Download, FileDoc, X } from './icons.jsx';
 
 // While the dialog is open, refresh this often.
 const REFRESH_MS = 5000;
@@ -131,10 +131,17 @@ export function ReportDialog({ onClose }) {
         aria-labelledby="report-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="report-head">
-          <h2 id="report-title" className="confirm-title">
-            Meeting report
-          </h2>
+        {/* icon tile · title + one grey line · round ✕ */}
+        <div className="report-head dlg-head">
+          <span className="dlg-icon" aria-hidden="true">
+            <FileDoc />
+          </span>
+          <div className="dlg-head-text">
+            <h2 id="report-title" className="confirm-title">
+              Meeting report
+            </h2>
+            <p className="dlg-sub">Who came, when they left, and how much each person talked.</p>
+          </div>
           <button type="button" className="report-x" onClick={onClose} aria-label="Close">
             <X />
           </button>

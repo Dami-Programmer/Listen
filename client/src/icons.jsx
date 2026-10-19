@@ -284,3 +284,86 @@ export const StopRecordIcon = (p) => (
     <rect x="8.5" y="8.5" width="7" height="7" rx="1.2" fill="currentColor" stroke="none" />
   </svg>
 );
+
+// The lobby: the calendar on "Schedule a meeting", the small › at the end of
+// those rows, and the → on the join button.
+export const Calendar = (p) => (
+  <svg {...s} {...p}>
+    <rect x="3.5" y="5" width="17" height="15.5" rx="3" />
+    <path d="M3.5 10h17M8 3v4M16 3v4" />
+  </svg>
+);
+
+// The phone lobby's picture buttons: Upload photo, Find a character.
+export const UploadIcon = (p) => (
+  <svg {...s} {...p}>
+    <path d="M12 15V4M7 9l5-5 5 5M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" />
+  </svg>
+);
+
+export const Search = (p) => (
+  <svg {...s} {...p}>
+    <circle cx="11" cy="11" r="6.5" />
+    <path d="m20 20-4.2-4.2" />
+  </svg>
+);
+
+// "Are you still there?" — the pop-up's icon.
+export const Clock = (p) => (
+  <svg {...s} {...p}>
+    <circle cx="12" cy="13" r="8" />
+    <path d="M12 9v4l2.5 2M9.5 2.5h5" />
+  </svg>
+);
+
+// The people pop-up: Meeting report's bars, the ⋯ button, and its menu's
+// Make cohost (star), Mute chat and Remove (person with a ✕).
+export const BarChart = (p) => (
+  <svg {...s} {...p}>
+    <path d="M5 20V10M12 20V4M19 20v-7" />
+  </svg>
+);
+
+export const MoreDots = (p) => (
+  <svg {...s} {...p}>
+    <circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+    <circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+export const Star = (p) => (
+  <svg {...s} {...p}>
+    <path d="m12 3 2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9Z" />
+  </svg>
+);
+
+export const UserX = (p) => (
+  <svg {...s} {...p}>
+    <path d="M15 20a5 5 0 0 0-10 0M10 12a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM17 8l4 4M21 8l-4 4" />
+  </svg>
+);
+
+export const ArrowUp = (p) => (
+  <svg {...s} {...p}>
+    <path d="M12 19V5M6 11l6-6 6 6" />
+  </svg>
+);
+
+export const ArrowDown = (p) => (
+  <svg {...s} {...p}>
+    <path d="M12 5v14M6 13l6 6 6-6" />
+  </svg>
+);
+
+export const ChevronRight = (p) => (
+  <svg {...s} {...p}>
+    <path d="m9 6 6 6-6 6" />
+  </svg>
+);
+
+export const ArrowRight = (p) => (
+  <svg {...s} {...p}>
+    <path d="M5 12h14M13 6l6 6-6 6" />
+  </svg>
+);

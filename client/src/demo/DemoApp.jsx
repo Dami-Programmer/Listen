@@ -130,7 +130,8 @@ export default function DemoApp() {
     if (phase === 'lobby') {
       opened.current = true;
       (async () => {
-        await press('.pj-claim', scene.lobby === 'claim' ? 'permanent link' : 'Schedule');
+        // .pj-row: the desktop lobby's link rows; .pj-claim: the phone lobby's links
+        await press('.pj-row, .pj-claim', scene.lobby === 'claim' ? 'permanent link' : 'Schedule');
         tell('turnly-demo-ready', { scene: scene.id });
       })();
     } else if (phase === 'call' && state) {

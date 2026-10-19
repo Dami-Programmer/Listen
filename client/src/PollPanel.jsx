@@ -118,8 +118,8 @@ function PollComposer({ onError, error }) {
 
   return (
     <form className="poll-new" onSubmit={start}>
-      <label className="poll-label">
-        Ask everyone
+      <label className="poll-label field">
+        <span>Ask everyone</span>
         <input
           value={question}
           onChange={(e) => setQuestion(e.target.value)}

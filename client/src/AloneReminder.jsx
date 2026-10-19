@@ -11,6 +11,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Clock } from './icons.jsx';
 
 /**
  * @param {object}   props
@@ -61,6 +62,10 @@ export default function AloneReminder({ seconds, onStay, onLeave }) {
         aria-labelledby="alone-title"
         aria-describedby="alone-msg"
       >
+        {/* a round grey clock over the question */}
+        <span className="confirm-icon" aria-hidden="true">
+          <Clock />
+        </span>
         <h2 id="alone-title" className="confirm-title">
           Are you still there?
         </h2>

@@ -4,12 +4,21 @@
 // handed to the call via onSubmit so the call opens exactly as previewed.
 
 import { useEffect, useRef, useState } from 'react';
-import { Cam, CamOff, Mic, MicOff, Speaker } from './icons.jsx';
+import {
+  ArrowRight,
+  Calendar,
+  Cam,
+  CamOff,
+  ChevronRight,
+  LinkIcon,
+  Mic,
+  MicOff,
+  Speaker,
+} from './icons.jsx';
 import AvatarPicker from './AvatarPicker.jsx';
 import Select from './Select.jsx';
 import useIsMobile from './useIsMobile.js';
 import ThemeToggle from './ThemeToggle.jsx';
-import Logo from './Logo.jsx';
 import ProfileCard from './ProfileCard.jsx';
 import { PROFILE } from './profile.js';
 import { IS_DEMO, SIGNALING_URL } from './socket.js';
@@ -22,16 +31,19 @@ import ScheduledBanner from './ScheduledBanner.jsx';
 // nobody is in a call yet on this screen. Not a link inside the landing
 // page's live demo, though: there it would load the landing page inside the
 // demo's own frame.
+// It's the plain Turnly mark (white; black in light mode) with the name
+// beside it, like the call screen's header.
 function HomeLogo({ className }) {
-  if (IS_DEMO)
-    return (
-      <span className={className}>
-        <Logo />
-      </span>
-    );
+  const inner = (
+    <>
+      <img className="pj-mark" src="/turnly-mark-96.png" alt="" />
+      <span className="pj-wordmark">Turnly</span>
+    </>
+  );
+  if (IS_DEMO) return <span className={className}>{inner}</span>;
   return (
     <a href="/" className={`${className} pj-home`} aria-label="Turnly home">
-      <Logo />
+      {inner}
     </a>
   );
 }
@@ -107,25 +119,39 @@ export default function PreJoin({
   slowJoin = false, // ...and it's taking a while (the server is waking up)
 }) {
   const isMobile = useIsMobile();
-  // Under the form: "Get a permanent link for your group" (ClaimRoom.jsx) and
-  // "Schedule a meeting" (ScheduleMeeting.jsx).
+  // Under the form: "Get a permanent link" (ClaimRoom.jsx) and "Schedule a
+  // meeting" (ScheduleMeeting.jsx).
   const [claimOpen, setClaimOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
-  const claimLink = (
-    <div className="pj-extras">
-      <button type="button" className="pj-claim" onClick={() => setClaimOpen(true)}>
-        🔗 Get a permanent link for your group
-      </button>
-      <button type="button" className="pj-claim" onClick={() => setScheduleOpen(true)}>
-        📅 Schedule a meeting
-      </button>
-      {/* the privacy page (not inside the landing page's demo frame) */}
+  // (both lobbies): full-width rows with an icon, a grey line saying what each
+  // does, and a › that nudges on hover — then the privacy link as one small
+  // grey sentence underneath.
+  const extrasRows = (
+    <>
+      <div className="pj-more">
+        <button type="button" className="pj-row" onClick={() => setClaimOpen(true)}>
+          <LinkIcon />
+          <span>
+            <b>Get a permanent link</b>
+            <small>One link your group always uses</small>
+          </span>
+          <ChevronRight className="pj-row-arrow" />
+        </button>
+        <button type="button" className="pj-row" onClick={() => setScheduleOpen(true)}>
+          <Calendar />
+          <span>
+            <b>Schedule a meeting</b>
+            <small>Pick a time and share the invite</small>
+          </span>
+          <ChevronRight className="pj-row-arrow" />
+        </button>
+      </div>
       {!IS_DEMO && (
-        <a className="pj-privacy" href="/privacy">
-          Privacy
-        </a>
+        <p className="pj-legal">
+          By joining you agree to the <a href="/privacy">Privacy &amp; terms</a>.
+        </p>
       )}
-    </div>
+    </>
   );
   const claimDialog = (
     <>
@@ -324,24 +350,27 @@ export default function PreJoin({
   }
 
   if (isMobile) {
+    // Whoever starts the meeting has to name it; invitees only need their name.
+    const missing = !name.trim() || (!invited && !title.trim());
     return (
       <main className="prejoin pjm">
-        <div className="pjm-top">
-          {/* the logo, top left — back to the landing page */}
-          <HomeLogo className="pjm-logo" />
-          {/* the creator credit — opens the profile card */}
+        {/* the Turnly mark + name (back to the landing page), and the
+            creator credit, which opens the profile card */}
+        <header className="pj-top pjm-head">
+          <HomeLogo className="pj-logo" />
           <button type="button" className="pj-credit" onClick={() => setProfileOpen(true)}>
             <img src={PROFILE.photo} alt="" />
             <span>
               Made by <strong>{PROFILE.name}</strong>
             </span>
           </button>
-        </div>
+        </header>
         {profileOpen && <ProfileCard onClose={closeProfile} />}
 
-        <form className="pjm-body" onSubmit={handleSubmit}>
+        {/* the same pieces as the desktop lobby below, stacked for a phone */}
+        <form className="pj-form pjm-form" onSubmit={handleSubmit}>
           {invited && <ScheduledBanner roomId={roomId} />}
-          <div className="pjm-preview">
+          <div className="pj-preview pjm-cam">
             <video
               ref={videoRef}
               autoPlay
@@ -355,75 +384,107 @@ export default function PreJoin({
                   <p className="pj-media-err">{mediaError}</p>
                 ) : !stream ? (
                   <p>Starting camera…</p>
-                ) : avatar ? (
-                  <img className="pj-initials" src={avatar} alt="" />
                 ) : (
-                  <span className="pj-initials">{initials(name)}</span>
+                  <>
+                    {avatar ? (
+                      <img className="pj-initials" src={avatar} alt="" />
+                    ) : (
+                      <span className="pj-initials">{initials(name)}</span>
+                    )}
+                    <p>Camera is off</p>
+                  </>
                 )}
               </div>
             )}
-            <div className={`pjm-meter${micOn ? '' : ' off'}`} ref={meterRef} aria-hidden="true">
-              <i />
-              <i />
-              <i />
+            {/* top-left glass tag: the live mic level and your name */}
+            <span className="pj-name-tag pj-glass">
+              <span className={`pj-meter${micOn ? '' : ' off'}`} ref={meterRef} aria-hidden="true">
+                <i />
+                <i />
+                <i />
+                <i />
+              </span>
+              {name.trim() || 'You'}
+            </span>
+            {/* mic + camera, in one glass pill at the bottom middle */}
+            <div className="pj-toggles pj-glass">
+              <button
+                type="button"
+                className={micOn ? '' : 'off'}
+                onClick={() => setMicOn((v) => !v)}
+                disabled={!stream}
+                aria-label={micOn ? 'Turn microphone off' : 'Turn microphone on'}
+              >
+                {micOn ? <Mic /> : <MicOff />}
+              </button>
+              <button
+                type="button"
+                className={camOn ? '' : 'off'}
+                onClick={() => setCamOn((v) => !v)}
+                disabled={!stream}
+                aria-label={camOn ? 'Turn camera off' : 'Turn camera on'}
+              >
+                {camOn ? <Cam /> : <CamOff />}
+              </button>
             </div>
           </div>
 
-          <div className="pjm-row">
-            <button
-              type="button"
-              className={`pjm-round${camOn ? '' : ' off'}`}
-              onClick={() => setCamOn((v) => !v)}
-              disabled={!stream}
-              aria-label={camOn ? 'Turn camera off' : 'Turn camera on'}
-            >
-              {camOn ? <Cam /> : <CamOff />}
-            </button>
-            <button
-              type="button"
-              className={`pjm-round${micOn ? '' : ' off'}`}
-              onClick={() => setMicOn((v) => !v)}
-              disabled={!stream}
-              aria-label={micOn ? 'Turn microphone off' : 'Turn microphone on'}
-            >
-              {micOn ? <Mic /> : <MicOff />}
-            </button>
-            <button
-              type="submit"
-              className="pjm-join"
-              // Whoever starts the meeting has to name it; invitees only need their name.
-              disabled={joining || !name.trim() || (!invited && !title.trim())}
-            >
-              {joining ? 'Joining…' : 'Join'}
-            </button>
-          </div>
+          <span className={`pj-status ${mediaError ? 'bad' : stream ? 'ok' : ''}`} role="status">
+            <i />
+            {mediaError
+              ? 'Camera or mic isn’t working'
+              : stream
+                ? 'Camera and mic are working'
+                : 'Checking your camera and mic…'}
+          </span>
+          <h1 className="pjm-title">Ready to join?</h1>
 
-          <div className="pjm-fields">
-            {/* An invite link already names the meeting — only the creator sets it. */}
-            {!invited && (
+          {/* An invite link already names the meeting — only the creator sets it. */}
+          {!invited && (
+            <label>
+              <span>Meeting name</span>
               <input
                 value={title}
                 onChange={(e) => onTitle(e.target.value)}
-                placeholder="Meeting name"
-                aria-label="Meeting name"
+                placeholder="e.g. Sunday service"
                 maxLength={80}
                 autoComplete="off"
               />
-            )}
+            </label>
+          )}
+          <label>
+            <span>Your name</span>
             <input
               value={name}
               onChange={(e) => onName(e.target.value)}
-              placeholder="Your name"
-              aria-label="Your name"
+              placeholder="How others will see you"
               autoComplete="off"
             />
-            <AvatarPicker name={name} avatar={avatar} onChange={onAvatar} />
-          </div>
+          </label>
+          {/* the picture card, with its two buttons on their own row */}
+          <AvatarPicker
+            name={name}
+            avatar={avatar}
+            onChange={onAvatar}
+            hint="Shown when your camera is off"
+            stacked
+          />
           {note && <p className="pj-note">{note}</p>}
+          <button type="submit" className="pj-join" disabled={joining || missing}>
+            {joining ? 'Joining…' : invited ? 'Join meeting' : 'Start a new meeting'}
+            {!joining && <ArrowRight />}
+          </button>
+          {missing && !joining && (
+            <p className="pj-hint">
+              {invited
+                ? 'Add your name to continue'
+                : 'Add a meeting name and your name to continue'}
+            </p>
+          )}
           {wakingNote}
           {error && <p className="err">{error}</p>}
         </form>
-        {!invited && claimLink}
+        {!invited && extrasRows}
         {claimDialog}
       </main>
     );
@@ -476,15 +537,20 @@ export default function PreJoin({
               </div>
             )}
 
-            <span className="pj-name-tag">{name.trim() || 'You'}</span>
+            {/* Bottom-left glass tag: the live mic level (four little bars,
+                green while you talk, grey when muted) and your name. */}
+            <span className="pj-name-tag pj-glass">
+              <span className={`pj-meter${micOn ? '' : ' off'}`} ref={meterRef} aria-hidden="true">
+                <i />
+                <i />
+                <i />
+                <i />
+              </span>
+              {name.trim() || 'You'}
+            </span>
 
-            <div className={`pj-meter${micOn ? '' : ' off'}`} ref={meterRef} aria-hidden="true">
-              <i />
-              <i />
-              <i />
-            </div>
-
-            <div className="pj-toggles">
+            {/* mic + camera, in one glass pill at the bottom middle */}
+            <div className="pj-toggles pj-glass">
               <button
                 type="button"
                 className={micOn ? '' : 'off'}
@@ -508,9 +574,12 @@ export default function PreJoin({
             </div>
           </div>
 
+          {/* The three pickers as one strip, split by thin lines. Each shows a
+              small grey "Microphone" / "Camera" / "Speaker" over the device. */}
           <div className="pj-devices">
             <div className="pj-select">
               <Mic />
+              <small className="pj-select-label">Microphone</small>
               <Select
                 value={curAudio}
                 onChange={setAudioId}
@@ -526,6 +595,7 @@ export default function PreJoin({
 
             <div className="pj-select">
               <Cam />
+              <small className="pj-select-label">Camera</small>
               <Select
                 value={curVideo}
                 onChange={setVideoId}
@@ -541,6 +611,7 @@ export default function PreJoin({
 
             <div className="pj-select pj-speaker">
               <Speaker />
+              <small className="pj-select-label">Speaker</small>
               {canPickSpeaker && devices.audiooutput.length > 0 ? (
                 <Select
                   value={speakerId}
@@ -564,11 +635,21 @@ export default function PreJoin({
         </section>
 
         <section className="pj-right">
+          {/* A small status line over the title: a green dot once the camera
+              and mic are open, red if they're blocked, grey while starting. */}
+          <span className={`pj-status ${mediaError ? 'bad' : stream ? 'ok' : ''}`} role="status">
+            <i />
+            {mediaError
+              ? 'Camera or mic isn’t working'
+              : stream
+                ? 'Camera and mic are working'
+                : 'Checking your camera and mic…'}
+          </span>
           <h1>Ready to join?</h1>
           <p className="pj-sub">
             {invited
-              ? 'You’ve been invited to a meeting. Check your camera and mic, then hop in.'
-              : 'Check your camera and mic, then hop in.'}
+              ? 'You’ve been invited to a meeting. Check how you look and sound, then hop in.'
+              : 'Check how you look and sound, then hop in.'}
           </p>
           {/* A scheduled meeting's link: when it's on, + add to calendar. */}
           {invited && <ScheduledBanner roomId={roomId} />}
@@ -583,28 +664,38 @@ export default function PreJoin({
                 <input
                   value={roomId}
                   onChange={(e) => onRoomId(e.target.value)}
-                  placeholder="Leave empty to start a new meeting"
+                  placeholder="Leave empty to start a new one"
                   autoComplete="off"
                 />
               </label>
             )}
+            {/* (each label's small grey title sits inside the top of its box) */}
             <label>
               <span>Your name</span>
               <input
                 value={name}
                 onChange={(e) => onName(e.target.value)}
-                placeholder="e.g. Sam"
+                placeholder="How others will see you"
                 autoComplete="off"
               />
             </label>
-            <AvatarPicker name={name} avatar={avatar} onChange={onAvatar} />
+            <AvatarPicker
+              name={name}
+              avatar={avatar}
+              onChange={onAvatar}
+              hint="Shown when your camera is off"
+            />
+            {/* white button with a →, like the landing page's "Start a meeting" */}
             <button type="submit" className="pj-join" disabled={joining || !name.trim()}>
-              {joining ? 'Joining…' : roomId.trim() ? 'Join now' : 'Start a new meeting'}
+              {joining ? 'Joining…' : roomId.trim() ? 'Join meeting' : 'Start a new meeting'}
+              {!joining && <ArrowRight />}
             </button>
+            {/* why the button is grey, until there's a name */}
+            {!name.trim() && !joining && <p className="pj-hint">Add your name to continue</p>}
             {wakingNote}
             {error && <p className="err">{error}</p>}
           </form>
-          {!invited && claimLink}
+          {!invited && extrasRows}
           {claimDialog}
         </section>
       </div>

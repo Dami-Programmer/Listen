@@ -19,22 +19,33 @@ import Avatar from './Avatar.jsx';
 import VideoTile from './VideoTile.jsx';
 import ImageViewer from './ImageViewer.jsx';
 import {
+  ArrowDown,
+  ArrowUp,
+  BarChart,
   Cam,
+  ChatBubble,
   Check,
+  ChevronRight,
   Copy,
   FileDoc,
+  GridView,
   Hand,
   Lock,
   Unlock,
   ImageIcon,
+  Mic,
   MicOff,
   Paperclip,
   Pencil,
   RecordIcon,
+  SpotlightView,
+  Star,
   StopRecordIcon,
   Trash,
+  UserX,
   X,
 } from './icons.jsx';
+import PersonMenu from './PersonMenu.jsx';
 import { downloadUrl, sendChatFile } from './chatFiles.js';
 import { loadDeck, startPainter } from './presenter.js';
 import { useVideoPip } from './useVideoPip.js';
@@ -56,7 +67,6 @@ import QuestionsPanel from './QuestionsPanel.jsx';
 import PollPanel from './PollPanel.jsx';
 import { ReportDialog } from './MeetingReport.jsx';
 
-const ROLE_LABEL = { host: 'Host', cohost: 'Cohost', speaker: 'Speaker', listener: 'Listener' };
 const ROLE_RANK = { host: 0, cohost: 1, speaker: 2, listener: 3 };
 
 export default function MobileCall({ call }) {
@@ -574,6 +584,8 @@ export default function MobileCall({ call }) {
       )}
 
       <header className="mc-top" ref={headRef}>
+        {/* Row 1: the host's picture + the meeting name (tap: invite people),
+            and — for the host — the room's two settings as glass chips. */}
         <div className="mc-title">
           <button
             type="button"
@@ -581,89 +593,77 @@ export default function MobileCall({ call }) {
             onClick={() => setInviteOpen(true)}
             aria-label="Invite people"
           >
-            {host && <Avatar name={host.name} src={host.avatar} size={40} />}
+            {host && <Avatar name={host.name} src={host.avatar} size={36} />}
             <span className="mc-title-text">
               <h1>{state?.title || state?.roomId}</h1>
+              <small>
+                Tap to invite <ChevronRight />
+              </small>
             </span>
           </button>
-          {isModerator ? (
-            <button
-              type="button"
-              className={`mc-mode${moderated ? ' is-mod' : ''}`}
-              onClick={() => act.changeMode(moderated ? MODES.OPEN : MODES.MODERATED)}
-              aria-label={moderated ? 'Moderated. Tap to open the room' : 'Open. Tap to moderate'}
-            >
-              <SwapLabel on={moderated} off="Open" onLabel="Moderated" />
-            </button>
-          ) : (
-            // Members: raise hand (moderated rooms, while listening) and the
-            // layout swap, both up here — no room controls.
-            <>
-              <button
-                type="button"
-                className={`mc-tophand${handRaised ? ' on' : ''}`}
-                onClick={handRaised ? act.lowerHand : act.raiseHand}
-                disabled={!isListener}
-                aria-label={
-                  !isListener
-                    ? moderated
-                      ? 'You have the floor'
-                      : 'Raising a hand is for moderated rooms'
-                    : handRaised
-                      ? `Lower hand (#${myQueuePos + 1} in line)`
-                      : 'Raise hand'
-                }
-              >
-                <Hand />
-                {handRaised && <b className="mc-badge">{myQueuePos + 1}</b>}
-              </button>
-              <button
-                type="button"
-                className="mc-layout"
-                onClick={toggleLayout}
-                aria-label={grid ? 'Switch to spotlight view' : 'Switch to grid view'}
-              >
-                <SwapScreens />
-              </button>
-              {pip.supported && (
-                <button
-                  type="button"
-                  className={`mc-popout${pip.active ? ' on' : ''}`}
-                  onClick={pip.active ? pip.exit : popOut}
-                  aria-label={pip.active ? 'Bring the video back' : 'Pop out a floating video'}
-                >
-                  <PopOutIcon />
-                </button>
-              )}
-              <TourButton onClick={tour.start} />
-              {/* (just the dot: this row is already full) */}
-              {recording && <RecBadge recording={recording} dotOnly />}
-            </>
-          )}
           {isModerator && (
-            <button
-              type="button"
-              className={`mc-lock${locked ? '' : ' is-open'}`}
-              onClick={act.toggleLock}
-              aria-label={locked ? 'Door locked. Tap to open' : 'Door open. Tap to lock'}
-            >
-              <span className="mc-lock-icon" aria-hidden="true">
-                {locked ? <Lock /> : <Unlock />}
-              </span>
-              <SwapLabel on={!locked} off="locked" onLabel="unlocked" />
-            </button>
+            <div className="mc-chips">
+              {/* Open / Moderated: a green or amber dot */}
+              <button
+                type="button"
+                className={`mc-mode mc-glass${moderated ? ' is-mod' : ''}`}
+                onClick={() => act.changeMode(moderated ? MODES.OPEN : MODES.MODERATED)}
+                aria-label={moderated ? 'Moderated. Tap to open the room' : 'Open. Tap to moderate'}
+              >
+                <i className="mc-dot" aria-hidden="true" />
+                <SwapLabel on={moderated} off="Open" onLabel="Moderated" />
+              </button>
+              {/* the door: locked = people knock to get in */}
+              <button
+                type="button"
+                className={`mc-lock mc-glass${locked ? '' : ' is-open'}`}
+                onClick={act.toggleLock}
+                aria-label={locked ? 'Door locked. Tap to open' : 'Door open. Tap to lock'}
+              >
+                <span className="mc-lock-icon" aria-hidden="true">
+                  {locked ? <Lock /> : <Unlock />}
+                </span>
+                <SwapLabel on={!locked} off="Locked" onLabel="Unlocked" />
+              </button>
+            </div>
           )}
         </div>
 
-        {isModerator && (
-          <div className="mc-row2">
+        {/* Row 2: the tools, in one glass pill with plain white icons —
+            raise hand (members), layout, pop-out, record (host), then a thin
+            line and the "?" tour. */}
+        <div className="mc-row2">
+          <div className="mc-tools mc-glass">
+            {!isModerator && (
+              <>
+                <button
+                  type="button"
+                  className={`mc-tophand${handRaised ? ' on' : ''}`}
+                  onClick={handRaised ? act.lowerHand : act.raiseHand}
+                  disabled={!isListener}
+                  aria-label={
+                    !isListener
+                      ? moderated
+                        ? 'You have the floor'
+                        : 'Raising a hand is for moderated rooms'
+                      : handRaised
+                        ? `Lower hand (#${myQueuePos + 1} in line)`
+                        : 'Raise hand'
+                  }
+                >
+                  <Hand />
+                  {handRaised && <b className="mc-badge">{myQueuePos + 1}</b>}
+                </button>
+                <span className="mc-tools-sep" aria-hidden="true" />
+              </>
+            )}
             <button
               type="button"
               className="mc-layout"
               onClick={toggleLayout}
               aria-label={grid ? 'Switch to spotlight view' : 'Switch to grid view'}
             >
-              <SwapScreens />
+              {grid ? <SpotlightView /> : <GridView />}
             </button>
             {pip.supported && (
               <button
@@ -675,26 +675,33 @@ export default function MobileCall({ call }) {
                 <PopOutIcon />
               </button>
             )}
+            {isModerator && (
+              <button
+                type="button"
+                className={`mc-rec${recording ? ' on' : ''}`}
+                onClick={recording ? stopRecording : startRecording}
+                aria-label={recording ? 'Stop recording' : 'Record the meeting'}
+              >
+                {recording ? <StopRecordIcon /> : <RecordIcon />}
+              </button>
+            )}
+            {/* "● 12:34" while recording (members: just the dot) */}
+            {recording && (
+              <RecBadge recording={recording} compact={isModerator} dotOnly={!isModerator} />
+            )}
+            <span className="mc-tools-sep" aria-hidden="true" />
             <TourButton onClick={tour.start} />
-            {/* Record / stop, and "● 12:34" while recording. */}
-            <button
-              type="button"
-              className={`mc-rec${recording ? ' on' : ''}`}
-              onClick={recording ? stopRecording : startRecording}
-              aria-label={recording ? 'Stop recording' : 'Record the meeting'}
-            >
-              {recording ? <StopRecordIcon /> : <RecordIcon />}
-            </button>
-            {recording && <RecBadge recording={recording} compact />}
-            {/* someone knocking: the pill slides down from the top (JoinRequestPill.jsx) */}
+          </div>
+          {/* someone knocking: the pill slides down from the top (JoinRequestPill.jsx) */}
+          {isModerator && (
             <JoinRequestPill
               knocker={knocker}
               extra={Math.max(0, waiting.length - 1)}
               onAdmit={act.admit}
               onDeny={act.deny}
             />
-          </div>
-        )}
+          )}
+        </div>
         {mediaError && <p className="mc-status err">{mediaError}</p>}
         {/* everyone sees when captions are on (speakers' speech is being
             turned into text — captions.js) */}
@@ -2205,24 +2212,16 @@ function PeopleSheet({
           {tab === 'poll' && <PollPanel poll={poll} isModerator={isModerator} />}
 
           {tab === 'people' && (
-            <>
-              {isModerator && onBreakouts && (
-                <button type="button" className="cp-report-btn" onClick={onBreakouts}>
-                  🧩 Breakout rooms: split into small groups
-                </button>
-              )}
-              {isModerator && (
-                <button type="button" className="cp-report-btn" onClick={onReport}>
-                  📊 Meeting report: who spoke, and for how long
-                </button>
-              )}
+            <div className="mc-people-tab">
+              {/* the same list as the desktop people pop-up (App.jsx): host
+                  tools as quiet rows, then sections split by thin lines */}
               <button type="button" className="mc-invite" onClick={onInvite}>
                 <ShareIcon />
                 Invite people
               </button>
 
               {isListener && (
-                <p className="mc-note">
+                <p className="pp-note">
                   🎧 Listening only:{' '}
                   {handRaised
                     ? `you're #${myQueuePos + 1} in line for the floor.`
@@ -2230,136 +2229,207 @@ function PeopleSheet({
                 </p>
               )}
 
-              {isModerator && waiting.length > 0 && (
-                <>
-                  <h3>Waiting to join ({waiting.length})</h3>
-                  {waiting.map((w) => (
-                    <div className="mc-person" key={w.id}>
-                      <Avatar name={w.name} src={w.avatar} size={36} />
-                      <span className="mc-pname">{w.name}</span>
-                      <span className="mc-pacts">
-                        <button type="button" className="go" onClick={() => act.admit(w.id)}>
-                          Admit
-                        </button>
-                        <button type="button" onClick={() => act.deny(w.id)}>
-                          Deny
-                        </button>
+              {isModerator && (
+                <section className="pp-sec">
+                  <h3 className="pp-sec-title">Host tools</h3>
+                  {onBreakouts && (
+                    <button type="button" className="pp-tool" onClick={onBreakouts}>
+                      <span className="pp-tile">
+                        <GridView />
                       </span>
-                    </div>
-                  ))}
-                </>
+                      <span className="pp-tool-text">
+                        <b>Breakout rooms</b>
+                        <small>Split into small groups</small>
+                      </span>
+                      <ChevronRight className="pp-chev" />
+                    </button>
+                  )}
+                  <button type="button" className="pp-tool" onClick={onReport}>
+                    <span className="pp-tile">
+                      <BarChart />
+                    </span>
+                    <span className="pp-tool-text">
+                      <b>Meeting report</b>
+                      <small>Who spoke, and for how long</small>
+                    </span>
+                    <ChevronRight className="pp-chev" />
+                  </button>
+                </section>
               )}
 
+              {isModerator && waiting.length > 0 && (
+                <section className="pp-sec">
+                  <h3 className="pp-sec-title">
+                    Waiting to join <b>{waiting.length}</b>
+                  </h3>
+                  {waiting.map((w) => (
+                    <div className="pp-person" key={w.id}>
+                      <Avatar name={w.name} src={w.avatar} size={36} />
+                      <span className="pp-who">
+                        <b>{w.name}</b>
+                      </span>
+                      <button type="button" className="pp-btn" onClick={() => act.deny(w.id)}>
+                        Deny
+                      </button>
+                      <button
+                        type="button"
+                        className="pp-btn solid"
+                        onClick={() => act.admit(w.id)}
+                      >
+                        Admit
+                      </button>
+                    </div>
+                  ))}
+                </section>
+              )}
+
+              {/* Raised hands: Grant, and ⋯ to reorder the line or dismiss */}
               {isModerator && moderated && (
-                <>
-                  <h3>
-                    Raised hands ({queued.length})
+                <section className="pp-sec">
+                  <h3 className="pp-sec-title">
+                    Raised hands <b>{queued.length}</b>
                     {participants.some((p) => p.role === ROLES.SPEAKER) && (
-                      <button type="button" className="mc-link" onClick={act.clearFloor}>
+                      <button type="button" className="pp-link" onClick={act.clearFloor}>
                         Clear floor
                       </button>
                     )}
                   </h3>
                   {queued.length === 0 && (
-                    <p className="mc-note">No one’s waiting for the floor.</p>
+                    <p className="pp-empty">No one’s waiting for the floor.</p>
                   )}
                   {queued.map((p, i) => (
-                    <div className="mc-person" key={p.id}>
-                      <span className="mc-qpos">{i + 1}</span>
-                      <span className="mc-pname">{p.name}</span>
-                      <span className="mc-pacts">
-                        <button
-                          type="button"
-                          disabled={i === 0}
-                          onClick={() => act.moveInQueue(p.id, -1)}
-                          aria-label={`Move ${p.name} up`}
-                        >
-                          ↑
-                        </button>
-                        <button
-                          type="button"
-                          disabled={i === queued.length - 1}
-                          onClick={() => act.moveInQueue(p.id, 1)}
-                          aria-label={`Move ${p.name} down`}
-                        >
-                          ↓
-                        </button>
-                        <button type="button" className="go" onClick={() => act.grantFloor(p.id)}>
-                          Grant
-                        </button>
-                        <button type="button" onClick={() => act.dismissHand(p.id)}>
-                          Dismiss
-                        </button>
+                    <div className="pp-person" key={p.id}>
+                      <Avatar name={p.name} src={p.avatar} size={36} />
+                      <span className="pp-who">
+                        <b>{p.name}</b>
+                        <small>{i === 0 ? 'Next in line' : `#${i + 1} in line`}</small>
                       </span>
+                      <button
+                        type="button"
+                        className="pp-btn solid"
+                        onClick={() => act.grantFloor(p.id)}
+                      >
+                        Grant
+                      </button>
+                      <PersonMenu
+                        label={`More for ${p.name}`}
+                        items={[
+                          i > 0 && {
+                            label: 'Move up',
+                            icon: <ArrowUp />,
+                            onClick: () => act.moveInQueue(p.id, -1),
+                          },
+                          i < queued.length - 1 && {
+                            label: 'Move down',
+                            icon: <ArrowDown />,
+                            onClick: () => act.moveInQueue(p.id, 1),
+                          },
+                          null,
+                          {
+                            label: 'Dismiss hand',
+                            icon: <X />,
+                            onClick: () => act.dismissHand(p.id),
+                          },
+                        ]}
+                      />
                     </div>
                   ))}
-                </>
+                </section>
               )}
 
-              <h3>In the call</h3>
-              {ordered.map((p) => {
-                const canMod = isModerator && p.id !== selfId && p.role !== ROLES.HOST;
-                const hostControls = isHost && p.id !== selfId && p.role !== ROLES.HOST;
-                return (
-                  <div className="mc-person" key={p.id}>
-                    <Avatar name={p.name} src={p.avatar} size={36} />
-                    <span className="mc-pname">
-                      {p.name}
-                      {p.id === selfId ? ' (you)' : ''}
-                      <small className={`mc-role ${p.role}`}>{ROLE_LABEL[p.role] ?? p.role}</small>
-                    </span>
-                    <span className="mc-pacts">
+              {/* everyone: Grant / Revoke or Mute on the row, the rest in ⋯ */}
+              <section className="pp-sec">
+                <h3 className="pp-sec-title">
+                  In the call <b>{participants.length}</b>
+                </h3>
+                {ordered.map((p) => {
+                  const canMod = isModerator && p.id !== selfId && p.role !== ROLES.HOST;
+                  const hostControls = isHost && p.id !== selfId && p.role !== ROLES.HOST;
+                  const chatOff = chatMuted.includes(p.id);
+                  const note = [
+                    moderated && p.role === ROLES.SPEAKER && 'Has the floor',
+                    moderated && p.role === ROLES.LISTENER && 'Listening',
+                    chatOff && 'Chat muted',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ');
+                  return (
+                    <div className="pp-person" key={p.id}>
+                      <Avatar name={p.name} src={p.avatar} size={36} />
+                      <span className="pp-who">
+                        <b>
+                          {p.name}
+                          {p.id === selfId && <em> (you)</em>}
+                        </b>
+                        {note && <small>{note}</small>}
+                      </span>
+                      {(p.role === ROLES.HOST || p.role === ROLES.COHOST) && (
+                        <span className={`pp-chip ${p.role}`}>
+                          {p.role === ROLES.HOST ? 'Host' : 'Cohost'}
+                        </span>
+                      )}
                       {canMod && moderated && p.role === ROLES.LISTENER && (
-                        <button type="button" className="go" onClick={() => act.grantFloor(p.id)}>
+                        <button
+                          type="button"
+                          className="pp-btn"
+                          onClick={() => act.grantFloor(p.id)}
+                        >
                           Grant
                         </button>
                       )}
                       {canMod && moderated && p.role === ROLES.SPEAKER && (
-                        <button type="button" onClick={() => act.revokeFloor(p.id)}>
+                        <button
+                          type="button"
+                          className="pp-btn"
+                          onClick={() => act.revokeFloor(p.id)}
+                        >
                           Revoke
                         </button>
                       )}
-                      {hostControls &&
-                        (p.id === cohostId ? (
-                          <button type="button" onClick={() => act.dropCohost(p)}>
-                            Remove cohost
-                          </button>
-                        ) : (
-                          <button type="button" onClick={() => act.makeCohost(p)}>
-                            Make cohost
-                          </button>
-                        ))}
                       {/* Moderated rooms run the mic through Grant / Revoke
-                    (listeners are silent anyway), so no Mute there. */}
+                          (listeners are silent anyway), so no Mute there. */}
                       {canMod && !moderated && (
-                        <button type="button" onClick={() => act.forceMute(p.id)}>
-                          Mute
-                        </button>
-                      )}
-                      {/* their chat: muted = they can read, not post
-                          (never the co-host — a moderator) */}
-                      {canMod && p.id !== cohostId && (
                         <button
                           type="button"
-                          onClick={() => act.setChatMute(p.id, !chatMuted.includes(p.id))}
+                          className="pp-icon"
+                          onClick={() => act.forceMute(p.id)}
+                          aria-label={`Mute ${p.name}`}
                         >
-                          {chatMuted.includes(p.id) ? 'Unmute chat' : 'Mute chat'}
+                          <Mic />
                         </button>
                       )}
                       {canMod && (
-                        <button
-                          type="button"
-                          className="bad"
-                          onClick={() => act.removeParticipant(p)}
-                        >
-                          Remove
-                        </button>
+                        <PersonMenu
+                          label={`More for ${p.name}`}
+                          items={[
+                            hostControls && {
+                              label: p.id === cohostId ? 'Remove cohost' : 'Make cohost',
+                              icon: <Star />,
+                              onClick: () =>
+                                p.id === cohostId ? act.dropCohost(p) : act.makeCohost(p),
+                            },
+                            // their chat: muted = they can read, not post
+                            // (never the co-host — a moderator)
+                            p.id !== cohostId && {
+                              label: chatOff ? 'Unmute chat' : 'Mute chat',
+                              icon: <ChatBubble />,
+                              onClick: () => act.setChatMute(p.id, !chatOff),
+                            },
+                            null,
+                            {
+                              label: 'Remove from meeting',
+                              icon: <UserX />,
+                              onClick: () => act.removeParticipant(p),
+                              danger: true,
+                            },
+                          ]}
+                        />
                       )}
-                    </span>
-                  </div>
-                );
-              })}
-            </>
+                    </div>
+                  );
+                })}
+              </section>
+            </div>
           )}
         </TabSwap>
       </div>
@@ -2368,65 +2438,6 @@ function PeopleSheet({
 }
 
 /* ---- the design's coloured icons --------------------------------------- */
-
-function SwapScreens() {
-  return (
-    <svg viewBox="0 0 48 48" width="44" height="44" aria-hidden="true">
-      <rect
-        x="4"
-        y="6"
-        width="20"
-        height="13"
-        rx="2"
-        fill="#cfe9ff"
-        stroke="#3d8fe0"
-        strokeWidth="1.6"
-      />
-      <path d="M10 22h8M14 19v3" stroke="#3d8fe0" strokeWidth="1.6" strokeLinecap="round" />
-      <rect
-        x="24"
-        y="26"
-        width="20"
-        height="13"
-        rx="2"
-        fill="#cfe9ff"
-        stroke="#3d8fe0"
-        strokeWidth="1.6"
-      />
-      <path d="M30 42h8M34 39v3" stroke="#3d8fe0" strokeWidth="1.6" strokeLinecap="round" />
-      <path
-        d="M30 8a9 9 0 0 1 9 9"
-        fill="none"
-        stroke="#2fbf71"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-      <path
-        d="m36 15 3 3 3-3"
-        fill="none"
-        stroke="#2fbf71"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M18 40a9 9 0 0 1-9-9"
-        fill="none"
-        stroke="#2fbf71"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-      <path
-        d="m12 33-3-3-3 3"
-        fill="none"
-        stroke="#2fbf71"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 function PopOutIcon() {
   return (
