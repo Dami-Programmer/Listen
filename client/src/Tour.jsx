@@ -23,15 +23,23 @@ const GAP = 12; // space between the spotlight and the card
 const EDGE = 12; // keep the card this far from the screen edges
 const SETTLE_MS = 450; // after `before()`, let things animate into place
 
-// Where the button is on screen right now, or null if it isn't showing.
+// Where the button is on screen right now, or null if it isn't showing. A
+// selector that matches several buttons (e.g. the camera AND mic, in one
+// "Camera and mic" step) gets one spotlight round all the visible ones.
 function rectOf(selector) {
-  const el = document.querySelector(selector);
-  if (!el) return null;
-  const r = el.getBoundingClientRect();
-  if (r.width < 2 || r.height < 2) return null;
-  const style = getComputedStyle(el);
-  if (style.visibility === 'hidden' || Number(style.opacity) === 0) return null;
-  return r;
+  const rects = [...document.querySelectorAll(selector)]
+    .filter((el) => {
+      const style = getComputedStyle(el);
+      return style.visibility !== 'hidden' && Number(style.opacity) !== 0;
+    })
+    .map((el) => el.getBoundingClientRect())
+    .filter((r) => r.width >= 2 && r.height >= 2);
+  if (!rects.length) return null;
+  const left = Math.min(...rects.map((r) => r.left));
+  const top = Math.min(...rects.map((r) => r.top));
+  const right = Math.max(...rects.map((r) => r.right));
+  const bottom = Math.max(...rects.map((r) => r.bottom));
+  return { left, top, right, bottom, width: right - left, height: bottom - top };
 }
 
 /**

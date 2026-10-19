@@ -6,8 +6,10 @@
 // each CHAT_MESSAGE / CHAT_TYPING — so this component is pure UI plus the
 // "send" / "attach" / "I'm typing" emits.
 //
-// Attachments travel as data: URLs over Socket.IO (no file storage, matching
-// the app's in-memory model). Images are downscaled to <=1600px JPEG before
+// Attachments are sent over Socket.IO; the server keeps them in storage (the
+// same place as recordings) and the chat message carries only a link to the
+// file (server/src/chatFiles.js). They're deleted when unsent, when the room
+// closes, or after a day. Images are downscaled to <=1600px JPEG before
 // sending, so the CHAT_FILE_MAX_BYTES cap mostly bites non-image files.
 //
 // Look (a group chat):

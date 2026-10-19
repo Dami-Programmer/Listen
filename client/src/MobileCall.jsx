@@ -527,29 +527,18 @@ export default function MobileCall({ call }) {
     {
       target: '.mc-dial-toggle',
       title: 'Your controls',
-      text: 'Camera, mic, sharing and leaving are tucked in here. Tap to open, tap anywhere else to close.',
+      text: 'Camera, mic, sharing, captions and Leave are tucked in here. Tap to open, swipe to roll it. Leaving? You get a minute to rejoin.',
       before: closeDial,
     },
     {
-      target: '.mc-dial-item .mc-leave',
-      title: 'Leave',
-      text: 'Leaves the call. Changed your mind? You get a minute to rejoin.',
-      before: openDial,
-    },
-    {
-      target: '.mc-dial-item .mc-cam',
-      title: 'Camera',
-      text: 'Turns your camera on or off. Press and hold to switch to another camera.',
-      before: openDial,
-    },
-    {
-      target: '.mc-dial-item .mc-mic',
-      title: 'Microphone',
+      // both buttons, in one spotlight
+      target: '.mc-dial-item .mc-cam, .mc-dial-item .mc-mic',
+      title: 'Camera and mic',
       text: isListener
-        ? 'Your mic is off while you’re listening. Raise your hand to ask for the floor.'
-        : `Mutes or unmutes you. Press and hold to pick another microphone${
+        ? 'Turn your camera on or off. Your mic is off while you’re listening: raise your hand to ask for the floor. Press and hold either to pick another one.'
+        : `Turn your camera on or off, and mute or unmute yourself. Press and hold either to pick another one${
             strongNoiseSupported
-              ? ' or turn noise reduction off. It’s on by default: the small sparkle on the mic.'
+              ? '. Holding the mic also has noise reduction, on by default: the small sparkle on the mic.'
               : '.'
           }`,
       before: openDial,

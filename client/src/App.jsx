@@ -1351,18 +1351,14 @@ export function CallView({ state, chat, typers, selfId, onLeave, media, iceServe
       text: 'Locked: you let each new person in. Open: anyone with the link walks straight in.',
     },
     {
-      target: '.cs-controls-center > .dp:nth-child(1)',
-      title: 'Camera',
-      text: 'Turns your camera on or off. The little arrow beside it picks another camera.',
-    },
-    {
-      target: '.cs-controls-center > .dp:nth-child(2)',
-      title: 'Microphone',
-      text: `${
-        isListener ? 'Your mic is off while you’re listening.' : 'Mutes or unmutes you.'
-      } The little arrow beside it picks another microphone${
+      // both device buttons, in one spotlight
+      target: '.cs-controls-center > .dp',
+      title: 'Camera and mic',
+      text: `Turn your camera on or off, and ${
+        isListener ? 'your mic (it’s off while you’re listening)' : 'mute or unmute yourself'
+      }. The little arrows pick another camera or microphone${
         strongNoiseSupported
-          ? ' and turns noise reduction on or off. It’s on by default: the small sparkle on the mic.'
+          ? '. The mic’s arrow also has noise reduction, on by default: the small sparkle on the mic.'
           : '.'
       }`,
     },
@@ -1410,14 +1406,9 @@ export function CallView({ state, chat, typers, selfId, onLeave, media, iceServe
         : 'Opens the side panel. Chat: photos and files too, and people who join late still see what was said. Questions: ask, and upvote the ones you want answered. Poll: vote when the host starts one.',
     },
     {
-      target: '.cs-top-right .theme-btn',
-      title: 'Light or dark',
-      text: 'Switch the look: match your device, light, or dark.',
-    },
-    {
       target: '.tour-replay',
       title: 'That’s it!',
-      text: 'Click ? any time to see this tour again.',
+      text: 'Click ? any time to see this tour again. The button next to it switches between light and dark.',
     },
   ].filter(Boolean);
 
