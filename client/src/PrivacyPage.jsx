@@ -107,9 +107,14 @@ export default function PrivacyPage() {
         <h2>Audio and video</h2>
         <p>
           Your camera and microphone are only used during a meeting, and only after your browser
-          asks your permission. Audio and video go straight to the other people in the meeting, or
-          through Cloudflare’s video relay when a direct connection isn’t possible. We don’t store
-          them — unless the host records the meeting (see above).
+          asks your permission. Audio and video are encrypted on the way and pass through
+          Cloudflare’s video service, which sends each person’s picture and sound to everyone else
+          in the meeting. We don’t store them — unless the host records the meeting (see above).
+        </p>
+        <p>
+          Like most video-call services, meetings aren’t end-to-end encrypted. Cloudflare could
+          technically access the audio and video it passes on, and our server sees chat messages,
+          questions and polls as it shares them with the meeting.
         </p>
 
         <h2>Live captions</h2>

@@ -17,21 +17,40 @@ export const JOIN_WITHIN_MS = 60_000;
 
 /**
  * The visitor's real address, and which header it came from (for the log).
+ * Used by BOTH kinds of limit — live connections here, and the web requests'
+ * limits in index.js (visitorIp) — so a visitor counts the same everywhere.
+ *
  * Requests reach the server through Cloudflare and Render's proxy, so the
- * raw address is the proxy's — the same for everyone. Cloudflare puts the
- * real one in CF-Connecting-IP (set by Cloudflare, so a visitor can't fake
- * it); failing that, the first X-Forwarded-For entry; failing that, the raw
- * address (local development).
+ * raw address is the proxy's — the same for everyone. In order:
+ *   1. CF-Connecting-IP: set by Cloudflare, so a visitor can't fake it
+ *   2. the LAST X-Forwarded-For entry: the one Render's own proxy added. (The
+ *      first entry is whatever the visitor's browser claimed — easy to fake,
+ *      which would let one person dodge the limits.)
+ *   3. the raw address (local development, no proxy)
+ * `handshake` is a Socket.IO handshake, or anything shaped like one:
+ * { headers, address }.
  */
 export function clientIp(handshake) {
   const h = handshake?.headers ?? {};
   const cf = String(h['cf-connecting-ip'] ?? '').trim();
   if (cf) return { ip: cf, from: 'cf-connecting-ip' };
   const xff = String(h['x-forwarded-for'] ?? '')
-    .split(',')[0]
-    .trim();
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .at(-1);
   if (xff) return { ip: xff, from: 'x-forwarded-for' };
   return { ip: String(handshake?.address ?? 'unknown'), from: 'socket' };
+}
+
+// Which header visitors' addresses come from, logged once per kind per server
+// start (never the address itself), so the proxy setup can be checked in the
+// logs: "cf-connecting-ip" is the expected one on Render.
+const sourcesSeen = new Set();
+export function noteAddressSource(from) {
+  if (sourcesSeen.has(from)) return;
+  sourcesSeen.add(from);
+  console.log(`[ip] visitor addresses are coming from: ${from}`);
 }
 
 /** Counts open connections per address; refuses beyond `max`. */

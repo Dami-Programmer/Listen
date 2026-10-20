@@ -685,3 +685,102 @@ describe('breakout rooms', () => {
     assert.equal(moveParticipant(id, uid('breakout'), uid('ghost')), null);
   });
 });
+
+// --- a fixed room's owner vs rejoin passes -----------------------------------------
+// (A fixed room = a claimed name or scheduled meeting; its owner joins with
+// the host key, which calls makeHost.)
+
+describe('a rejoin pass never outranks the owner', () => {
+  /** A fixed room: a guest got the host role first, then the owner arrived. */
+  function fixedRoom() {
+    const r = newRoom('guest', 'owner', 'ada');
+    makeHost(r.room, r.ids[1]); // the owner arrives with the host key
+    return r;
+  }
+
+  test('a stand-in host who left and rejoins does not take the room from the owner', () => {
+    const { id, room, ids } = newRoom('guest', 'ada');
+    // The guest is host until the owner turns up…
+    createPass(room, id, ids[0]);
+    const ticket = ticketOf(room, ids[0]);
+    removeParticipant(ids[0]); // …the guest leaves; ada inherits the host role
+    const owner = uid('owner');
+    addParticipant(id, owner, 'owner', null, 'Test meeting');
+    makeHost(room, owner); // the owner arrives with the host key
+    const back = uid('guest-back');
+    usePass(ticket, back); // the guest rejoins within the minute
+    assert.equal(room.hostId, owner);
+    assert.notEqual(roleOf(room, back), ROLES.HOST);
+  });
+
+  test('the owner’s own pass still gives them the host role back', () => {
+    const { id, room, ids } = fixedRoom();
+    createPass(room, id, ids[1]);
+    const ticket = ticketOf(room, ids[1]);
+    removeParticipant(ids[1]); // the owner steps out; someone else inherits
+    assert.notEqual(room.hostId, ids[1]);
+    const back = uid('owner-back');
+    usePass(ticket, back);
+    assert.equal(room.hostId, back);
+    assert.equal(room.ownerId, back);
+  });
+
+  test('a fixed room that closed reopens only for its owner', () => {
+    const { id, room, ids } = fixedRoom();
+    // Everyone but the stand-in leaves; then the stand-in leaves too.
+    removeParticipant(ids[1]);
+    removeParticipant(ids[2]);
+    createPass(room, id, ids[0]);
+    const ticket = ticketOf(room, ids[0]);
+    removeParticipant(ids[0]); // the room closes
+    assert.equal(getRoom(id), null);
+    assert.deepEqual(usePass(ticket, uid('guest-back')), { error: 'host-gone' });
+    assert.equal(getRoom(id), null); // still closed: they join and wait for the owner
+  });
+
+  test('the owner can reopen their closed room with their pass', () => {
+    const { id, room, ids } = fixedRoom();
+    removeParticipant(ids[0]);
+    removeParticipant(ids[2]);
+    createPass(room, id, ids[1]);
+    const ticket = ticketOf(room, ids[1]);
+    removeParticipant(ids[1]);
+    const back = uid('owner-back');
+    const result = usePass(ticket, back);
+    assert.equal(result.room.hostId, back);
+    assert.equal(result.room.fixed, true);
+  });
+
+  test('an ordinary (not fixed) room still reopens for whoever rejoins', () => {
+    const { id, room, ids } = newRoom('host');
+    createPass(room, id, ids[0]);
+    const ticket = ticketOf(room, ids[0]);
+    removeParticipant(ids[0]);
+    const back = uid('host-back');
+    assert.equal(usePass(ticket, back).room.hostId, back);
+  });
+});
+
+// --- the main room emptying during breakouts -------------------------------------
+
+describe('breakouts when the main room empties', () => {
+  test('the main room is kept, and the caller is told to bring everyone back', () => {
+    const { id, room, ids } = newRoom('host', 'ada', 'ben');
+    const breakoutId = `${id}~1`;
+    room.breakouts = { ids: [breakoutId], endsAt: null };
+    moveParticipant(id, breakoutId, ids[1], { breakoutOf: id });
+    moveParticipant(id, breakoutId, ids[2], { breakoutOf: id });
+    const result = removeParticipant(ids[0]); // the host leaves the main room
+    assert.equal(result.emptyDuringBreakouts, true);
+    assert.equal(getRoom(id), room); // not deleted
+    // Bringing them back (what endBreakouts does): the first one back hosts.
+    const main = moveParticipant(breakoutId, id, ids[1]);
+    assert.equal(main.hostId, ids[1]);
+  });
+
+  test('without breakouts, an empty room still closes as before', () => {
+    const { id, ids } = newRoom('host');
+    assert.equal(removeParticipant(ids[0]).room, null);
+    assert.equal(getRoom(id), null);
+  });
+});

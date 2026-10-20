@@ -82,6 +82,11 @@ function createRoom() {
     title: '', // meeting name typed by whoever created the room
     hostId: null,
     cohostId: null,
+    // A fixed room (a claimed name or scheduled meeting — names.js) and the
+    // socket of its owner: whoever joined with its host key (makeHost). A
+    // rejoin pass never outranks the owner (createPass / usePass).
+    fixed: false,
+    ownerId: null,
     locked: true, // a moderator admits newcomers (the first joiner bypasses)
     waiting: {},
     mode: MODES.OPEN,
@@ -204,6 +209,7 @@ export function rekey(room, oldId, newId) {
 
   if (room.hostId === oldId) room.hostId = newId;
   if (room.cohostId === oldId) room.cohostId = newId;
+  if (room.ownerId === oldId) room.ownerId = newId;
   if (room.recording?.recorderId === oldId) room.recording.recorderId = newId;
   room.queue = room.queue.map((id) => (id === oldId ? newId : id));
   room.speaking = room.speaking.filter((id) => id !== oldId);
@@ -266,6 +272,10 @@ export function createPass(room, roomId, socketId) {
     chatMuted: Boolean(room.chatMuted[socketId]), // so leaving + rejoining doesn't unmute
     oldId: socketId, // to hand their chat messages back to them
     cohostBefore: room.cohostId, // was the co-host the one who takes over?
+    // A fixed room: only its owner may reopen it, and only the owner's pass
+    // takes the host role back from the owner (usePass / restoreRole).
+    fixed: Boolean(room.fixed),
+    wasOwner: room.ownerId === socketId,
     heir: null, // filled in after they're removed: the new host
     timer: setTimeout(() => passes.delete(ticket), REJOIN_WINDOW_MS),
   };
@@ -287,9 +297,13 @@ export function usePass(ticket, socketId) {
 
   let room = rooms.get(pass.roomId);
   if (!room) {
+    // A fixed room that closed: only its owner reopens it. Anyone else joins
+    // the normal way and waits for the owner, like everybody else.
+    if (pass.fixed && !pass.wasOwner) return { error: 'host-gone' };
     // They were the last one out and the room closed — reopen it.
     room = createRoom();
     room.title = pass.title;
+    room.fixed = pass.fixed;
     rooms.set(pass.roomId, room);
   }
   // Straight into the room — no waiting-room knock, they were already in.
@@ -303,7 +317,13 @@ export function usePass(ticket, socketId) {
 // Give a rejoiner back the role they had when they left.
 function restoreRole(room, socketId, pass) {
   const me = room.participants[socketId];
+  if (pass.wasOwner) room.ownerId = socketId; // the owner, on a new socket
   if (room.hostId === socketId) return; // the room was empty: they're host anyway
+
+  // A stand-in host's pass never takes the room from its owner: if the owner
+  // is here, the stand-in comes back as a normal participant.
+  const ownerHere = room.ownerId && room.participants[room.ownerId];
+  if (pass.role === ROLES.HOST && !pass.wasOwner && ownerHere) return;
 
   if (pass.role === ROLES.HOST) {
     // Take the room back from whoever inherited it.
@@ -477,7 +497,12 @@ function normalRole(room) {
  */
 export function makeHost(room, socketId) {
   const me = room?.participants[socketId];
-  if (!me || room.hostId === socketId) return;
+  if (!me) return;
+  // Remember this is a fixed room and who owns it: a rejoin pass never
+  // outranks the owner (usePass / restoreRole).
+  room.fixed = true;
+  room.ownerId = socketId;
+  if (room.hostId === socketId) return;
   const stand = room.hostId;
   if (room.cohostId === socketId) room.cohostId = null;
   room.hostId = socketId;
@@ -877,7 +902,7 @@ export function moveParticipant(fromId, toId, socketId, create = {}) {
  * If the room is now empty but someone is waiting, admit the oldest waiter as
  * the new host so the room survives; otherwise delete it.
  *
- * Returns { roomId, room, admitted } — `room` is null when the room was
+ * Returns { roomId, room, admitted, emptyDuringBreakouts? } — `room` is null when the room was
  * deleted, `admitted` is the socketId promoted from the waiting room (or null).
  * Returns null if the socket wasn't a participant anywhere.
  */
@@ -902,6 +927,12 @@ export function removeParticipant(socketId) {
     const remaining = Object.keys(room.participants);
     if (remaining.length === 0) {
       const waiters = Object.keys(room.waiting);
+      if (waiters.length === 0 && room.breakouts) {
+        // The main room emptied while breakout rooms are running (the host
+        // and co-host left). Keep it: the caller brings everyone back now
+        // (index.js endBreakouts), so nobody is stranded in a breakout room.
+        return { roomId, room, admitted: null, emptyDuringBreakouts: true };
+      }
       if (waiters.length === 0) {
         rooms.delete(roomId);
         return { roomId, room: null, admitted: null };

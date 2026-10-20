@@ -533,7 +533,12 @@ export default function App() {
       setRejoining(false);
       setLeft(false);
       if (!ack?.ok) {
-        dropToLobby('It’s been too long to rejoin automatically. Join again to go back in.');
+        dropToLobby(
+          ack?.error === 'host-gone'
+            ? // a group's permanent room closed: only its owner can reopen it
+              'The meeting has ended. Join again to wait for the host.'
+            : 'It’s been too long to rejoin automatically. Join again to go back in.',
+        );
         return;
       }
       ticketRef.current = ack.ticket ?? null;

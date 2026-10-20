@@ -38,7 +38,10 @@ describe('connection limits', () => {
   });
 
   test('then the forwarding header, then the raw address (local development)', () => {
-    assert.equal(clientIp({ headers: { 'x-forwarded-for': '1.2.3.4, 10.0.0.1' } }).ip, '1.2.3.4');
+    // The LAST entry: added by our own proxy. The first is whatever the
+    // visitor claimed, so it can be faked to dodge the limits.
+    assert.equal(clientIp({ headers: { 'x-forwarded-for': '1.2.3.4, 10.0.0.1' } }).ip, '10.0.0.1');
+    assert.equal(clientIp({ headers: { 'x-forwarded-for': '5.6.7.8' } }).ip, '5.6.7.8');
     assert.deepEqual(clientIp({ address: '::1', headers: {} }), { ip: '::1', from: 'socket' });
   });
 });

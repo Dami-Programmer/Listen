@@ -49,7 +49,12 @@ import {
   sweepChatFiles,
   chatFileIdOf,
 } from './chatFiles.js';
-import { JOIN_WITHIN_MS, clientIp, createConnectionCounter } from './connLimits.js';
+import {
+  JOIN_WITHIN_MS,
+  clientIp,
+  createConnectionCounter,
+  noteAddressSource,
+} from './connLimits.js';
 import {
   claimName,
   isHostKey,
@@ -253,7 +258,7 @@ app.get('/names/:name', async (req, res) => {
 
 app.post('/names', async (req, res) => {
   const now = Date.now();
-  const recent = (claimHits.get(req.ip) ?? []).filter((t) => now - t < CLAIM_LIMIT.perMs);
+  const recent = (claimHits.get(visitorIp(req)) ?? []).filter((t) => now - t < CLAIM_LIMIT.perMs);
   if (recent.length >= CLAIM_LIMIT.max) {
     return res.status(429).json({ ok: false, error: 'Too many new names. Try again later.' });
   }
@@ -272,7 +277,7 @@ app.post('/names', async (req, res) => {
       return res.status(409).json({ ok: false, error: 'That name is taken.' });
     }
     recent.push(now);
-    claimHits.set(req.ip, recent);
+    claimHits.set(visitorIp(req), recent);
     console.log(`[names] "${name}" claimed`);
     res.json({ ok: true, name, hostKey: result.hostKey });
   } catch (err) {
@@ -300,7 +305,7 @@ app.get('/names/:name/info', async (req, res) => {
 // shown once).
 app.post('/schedules', async (req, res) => {
   const now = Date.now();
-  const recent = (claimHits.get(req.ip) ?? []).filter((t) => now - t < CLAIM_LIMIT.perMs);
+  const recent = (claimHits.get(visitorIp(req)) ?? []).filter((t) => now - t < CLAIM_LIMIT.perMs);
   if (recent.length >= CLAIM_LIMIT.max) {
     return res.status(429).json({ ok: false, error: 'Too many new meetings. Try again later.' });
   }
@@ -321,7 +326,7 @@ app.post('/schedules', async (req, res) => {
         .json({ ok: false, error: 'You can only schedule on a link you’re the host of.' });
     }
     recent.push(now);
-    claimHits.set(req.ip, recent);
+    claimHits.set(visitorIp(req), recent);
     console.log(`[names] meeting scheduled in ${result.room}`);
     res.json({ ok: true, room: result.room, hostKey: result.hostKey ?? null });
   } catch (err) {
@@ -384,7 +389,8 @@ app.get('/recordings/:id/parts/:n', async (req, res) => {
     const range = match
       ? { start: Number(match[1]), end: match[2] ? Number(match[2]) : null }
       : null;
-    if (range && range.start >= part.size) {
+    // Past the end, or backwards (like bytes=100-50): "can't serve that range".
+    if (range && (range.start >= part.size || (range.end !== null && range.end < range.start))) {
       return res.status(416).set('Content-Range', `bytes */${part.size}`).end();
     }
     const file = await getObject(key, range);
@@ -433,8 +439,19 @@ const FEEDBACK_LIMIT = { max: 5, perMs: 10 * 60 * 1000 }; // per IP: 5 every 10 
 const feedbackHits = new Map(); // ip -> timestamps inside the window
 
 // Render sits in front of the app as a proxy; trust it so req.ip is the
-// visitor's real address (used only for the rate limit above).
+// address Render saw (the fallback in visitorIp below).
 app.set('trust proxy', 1);
+
+// The visitor's address for the web requests' rate limits (name claims,
+// scheduling, feedback, error and security reports). The SAME rule as the
+// live connections' limit (connLimits.js clientIp): Cloudflare's header
+// first — behind Cloudflare, req.ip alone would be a Cloudflare address shared
+// by many visitors — then the last forwarding hop, then the raw address.
+function visitorIp(req) {
+  const { ip, from } = clientIp({ headers: req.headers, address: req.ip });
+  noteAddressSource(from);
+  return ip;
+}
 
 // One line of plain text from whatever the browser sent: a string, no line
 // breaks (it may end up in an email subject), and not too long.
@@ -447,12 +464,14 @@ const oneLine = (v, max) =>
 app.post('/feedback', async (req, res) => {
   // Rate limit, so nobody can flood the inbox.
   const now = Date.now();
-  const recent = (feedbackHits.get(req.ip) ?? []).filter((t) => now - t < FEEDBACK_LIMIT.perMs);
+  const recent = (feedbackHits.get(visitorIp(req)) ?? []).filter(
+    (t) => now - t < FEEDBACK_LIMIT.perMs,
+  );
   if (recent.length >= FEEDBACK_LIMIT.max) {
     return res.status(429).json({ ok: false, error: 'Too many reviews. Try again later.' });
   }
   recent.push(now);
-  feedbackHits.set(req.ip, recent);
+  feedbackHits.set(visitorIp(req), recent);
 
   const body = req.body && typeof req.body === 'object' ? req.body : {};
   const comment = (typeof body.comment === 'string' ? body.comment : '')
@@ -526,13 +545,13 @@ const CLIENT_ERROR_PAGES = new Set(['landing', 'demo', 'home', 'meeting', 'recor
 
 app.post('/client-errors', express.text({ type: 'text/plain', limit: '8kb' }), (req, res) => {
   const now = Date.now();
-  const recent = (clientErrorHits.get(req.ip) ?? []).filter(
+  const recent = (clientErrorHits.get(visitorIp(req)) ?? []).filter(
     (t) => now - t < CLIENT_ERROR_LIMIT.perMs,
   );
   // Over the limit: quietly drop it (the browser doesn't look at the answer).
   if (recent.length >= CLIENT_ERROR_LIMIT.max) return res.status(204).end();
   recent.push(now);
-  clientErrorHits.set(req.ip, recent);
+  clientErrorHits.set(visitorIp(req), recent);
 
   let body;
   try {
@@ -639,10 +658,10 @@ app.post(
   }),
   (req, res) => {
     const now = Date.now();
-    const recent = (cspHits.get(req.ip) ?? []).filter((t) => now - t < CSP_LIMIT.perMs);
+    const recent = (cspHits.get(visitorIp(req)) ?? []).filter((t) => now - t < CSP_LIMIT.perMs);
     if (recent.length >= CSP_LIMIT.max) return res.status(204).end();
     recent.push(now);
-    cspHits.set(req.ip, recent);
+    cspHits.set(visitorIp(req), recent);
 
     const raw = req.body;
     const reports = Array.isArray(raw)
@@ -672,6 +691,13 @@ setInterval(() => {
   }
   for (const [ip, hits] of cspHits) {
     if (hits.every((t) => now - t >= CSP_LIMIT.perMs)) cspHits.delete(ip);
+  }
+  // (and the name-claim / scheduling and feedback limits')
+  for (const [ip, hits] of claimHits) {
+    if (hits.every((t) => now - t >= CLAIM_LIMIT.perMs)) claimHits.delete(ip);
+  }
+  for (const [ip, hits] of feedbackHits) {
+    if (hits.every((t) => now - t >= FEEDBACK_LIMIT.perMs)) feedbackHits.delete(ip);
   }
   for (const [line, at] of cspSeen) if (now - at >= 60 * 60 * 1000) cspSeen.delete(line);
 }, CLIENT_ERROR_LIMIT.perMs).unref();
@@ -718,6 +744,15 @@ function finishLeave(socketId) {
   if (!result) return;
 
   const { roomId, room, admitted } = result;
+  // The last people left the main room during breakouts: bring everyone back
+  // to it now (the first one back becomes host), instead of leaving the
+  // breakout rooms running on their own with a countdown that never ends.
+  if (result.emptyDuringBreakouts) {
+    console.log(`[room ${roomId}] main room emptied during breakouts — ending them`);
+    endBreakouts(roomId);
+    if (wasRecorder) handOver(roomId, getRoom(roomId));
+    return;
+  }
   if (room === null) {
     console.log(`[room ${roomId}] closed (empty)`);
     // Its chat files go with it (chatFiles.js).
@@ -971,9 +1006,14 @@ function endBreakouts(mainId) {
   console.log(`[room ${mainId}] breakouts ended`);
 }
 
+// The biggest WebRTC signaling message passed on (RTC_SIGNAL), in characters
+// once turned to JSON: generous for a real SDP offer/answer (a few KB, more
+// with many tracks) and an ICE candidate (one short line).
+const SIGNAL_MAX_DESCRIPTION = 100_000;
+const SIGNAL_MAX_CANDIDATE = 2_000;
+
 // Per-socket rate limits (see `allow` in the connection handler). Generous for
-// a person, tight for a script. Events not listed here aren't limited
-// (WebRTC signaling in particular sends bursts of ICE candidates).
+// a person, tight for a script. Events not listed here aren't limited.
 const RATE_LIMITS = {
   [EVENTS.CHAT_SEND]: { max: 10, perMs: 10_000 },
   [EVENTS.CHAT_EDIT]: { max: 10, perMs: 10_000 },
@@ -988,6 +1028,9 @@ const RATE_LIMITS = {
   [EVENTS.RAISE_HAND]: { max: 10, perMs: 10_000 },
   [EVENTS.LOWER_HAND]: { max: 20, perMs: 10_000 },
   [EVENTS.SPEAKING]: { max: 60, perMs: 10_000 },
+  // peer-to-peer connection paperwork: a burst of ICE candidates per person
+  // when a call starts — roomy for a big call, but no endless stream
+  [EVENTS.RTC_SIGNAL]: { max: 300, perMs: 10_000 },
   // The video desk: a few calls each time someone joins, leaves, or turns a
   // camera / share on or off. Each one is a Cloudflare API call, so cap it.
   [EVENTS.SFU_SESSION]: { max: 10, perMs: 60_000 },
@@ -1078,6 +1121,7 @@ function enforceMedia(roomId) {
 const connections = createConnectionCounter();
 io.use((socket, next) => {
   const { ip, from } = clientIp(socket.handshake);
+  noteAddressSource(from); // (once per kind: shows the proxy setup in the log)
   if (!connections.tryAdd(ip)) {
     // (logged with the header the address came from, so a wrong guess about
     // the proxy — everyone looking like one address — would show up here)
@@ -1312,6 +1356,8 @@ io.on('connection', (socket) => {
   function handleRejoin(ticket, ack) {
     const back = usePass(ticket, socket.id);
     if (!back) return ack?.({ ok: false, error: 'expired' }); // too late, or server restarted
+    // A fixed room that closed: only its owner reopens it (rooms.js usePass).
+    if (back.error) return ack?.({ ok: false, error: back.error });
     const { roomId, room } = back;
     joinedRoomId = roomId;
     socket.join(roomId);
@@ -1875,6 +1921,11 @@ io.on('connection', (socket) => {
     const room = getRoom(joinedRoomId);
     // Both ends must be full participants (a waiter can't relay media).
     if (!room || !room.participants[socket.id] || !room.participants[targetId]) return;
+    // Real paperwork is small: an SDP offer/answer is a few KB, an ICE
+    // candidate one short line. Anything far bigger isn't passed on — so one
+    // person can't use this to push megabytes at everyone else.
+    if (JSON.stringify(description ?? '').length > SIGNAL_MAX_DESCRIPTION) return;
+    if (JSON.stringify(candidate ?? '').length > SIGNAL_MAX_CANDIDATE) return;
 
     io.to(targetId).emit(EVENTS.RTC_SIGNAL, {
       from: socket.id,
