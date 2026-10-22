@@ -90,6 +90,18 @@ const TIKTOK = () => (
     <path d="M16.6 3h-3.1v12.3a2.8 2.8 0 1 1-2.8-2.8c.3 0 .6 0 .9.1V9.4a6 6 0 1 0 5 5.9V9.1a7.6 7.6 0 0 0 4.4 1.4V7.4a4.4 4.4 0 0 1-4.4-4.4Z" />
   </svg>
 );
+// X (formerly Twitter): its "X" mark, filled
+const XLOGO = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M17.8 3h3.1l-6.8 7.7 8 10.3h-6.3l-4.9-6.3L5.3 21H2.2l7.3-8.3L1.9 3h6.4l4.4 5.8Zm-1.1 16.2h1.7L7.4 4.7H5.6Z" />
+  </svg>
+);
+// LinkedIn: the "in" mark, filled
+const LINKEDIN = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M4.98 3.5a2.48 2.48 0 1 1 0 4.96 2.48 2.48 0 0 1 0-4.96ZM3 9.75h3.96V21H3V9.75Zm6.44 0h3.8v1.54h.05c.53-1 1.82-2.05 3.75-2.05 4 0 4.74 2.64 4.74 6.06V21h-3.95v-5.06c0-1.2-.02-2.76-1.68-2.76-1.69 0-1.95 1.32-1.95 2.67V21H9.44V9.75Z" />
+  </svg>
+);
 const WHATSAPP = () => (
   <svg viewBox="0 0 24 24" fill="currentColor">
     <path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.4.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.7 11.9 11.9 0 0 0 4.6 4c1.7.7 2.4.8 3.2.7.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.2-.2-.5-.3Z" />
@@ -104,6 +116,8 @@ const WEB = () => (
 const SOCIAL = [
   [PROFILE.instagram, 'Instagram', IG],
   [PROFILE.tiktok, 'TikTok', TIKTOK],
+  [PROFILE.x, 'X', XLOGO],
+  [PROFILE.linkedin, 'LinkedIn', LINKEDIN],
   [PROFILE.contact, 'WhatsApp', WHATSAPP],
   [PROFILE.portfolio, 'Portfolio', WEB],
 ];

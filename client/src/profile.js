@@ -14,5 +14,7 @@ export const PROFILE = {
   email: 'Newtzdesign2020@gmail.com',
   instagram: 'https://www.instagram.com/newtz_dev',
   tiktok: 'https://www.tiktok.com/@newtz_dev',
+  x: 'https://x.com/Newtz_D',
+  linkedin: 'https://www.linkedin.com/in/david-nwinangi-622b33113/',
   basedIn: 'Nigeria',
 };
