@@ -3834,7 +3834,7 @@ img.pj-initials {
 }
 
 /* --- creator profile card (ProfileCard.jsx) --------------------------------
-   Stays dark in both themes: it's a photo card, like the video stage. */
+   Dark by default; light mode has its own version (end of this file). */
 .profile-backdrop {
   position: fixed;
   inset: 0;
@@ -5417,7 +5417,7 @@ img.pj-initials {
 }
 
 /* --- creator profile card (ProfileCard.jsx) --------------------------------
-   Dark card in both themes: picture + name + role, what Listen is about,
+   Dark card (a light version follows the theme — end of this file): picture + name + role, what Listen is about,
    then Portfolio and Contact. */
 .pcard {
   position: relative;
@@ -12717,4 +12717,57 @@ html:has(.landing) {
   .wait-center {
     animation: none;
   }
+}
+
+/* --- the creator profile card in light mode (ProfileCard.jsx) ----------------
+   Same card, flipped: a white card with a soft grey edge, dark text and grey
+   secondary lines, pale grey buttons. The photo keeps its own black circle,
+   the green "Available" dot and the WhatsApp green stay as they are. */
+:root[data-theme='light'] .profile-backdrop {
+  background: rgba(15, 23, 32, 0.28);
+}
+:root[data-theme='light'] .pcard {
+  background: linear-gradient(160deg, #ffffff 0%, #f4f6f8 100%);
+  border-color: rgba(15, 23, 32, 0.08);
+  box-shadow:
+    0 0 0 6px rgba(255, 255, 255, 0.55),
+    0 40px 90px -20px rgba(15, 23, 32, 0.35);
+  color: #16202a;
+}
+:root[data-theme='light'] .pcard .pcard-close {
+  background: rgba(15, 23, 32, 0.06);
+  color: #16202a;
+}
+:root[data-theme='light'] .pcard .pcard-close:hover {
+  background: rgba(15, 23, 32, 0.12);
+}
+:root[data-theme='light'] .pcard-status,
+:root[data-theme='light'] .pcard-role {
+  color: #5d6b78;
+}
+:root[data-theme='light'] .pcard-status i {
+  background: #1f9d55;
+  box-shadow: 0 0 0 3px rgba(31, 157, 85, 0.16);
+}
+:root[data-theme='light'] .pcard-name {
+  color: #16202a;
+}
+:root[data-theme='light'] .pcard-about {
+  color: #3d4955;
+}
+:root[data-theme='light'] .pcard-photo {
+  border-color: rgba(15, 23, 32, 0.1);
+}
+:root[data-theme='light'] .pcard-btn {
+  background: linear-gradient(180deg, #ffffff, #f1f3f5);
+  border-color: rgba(15, 23, 32, 0.12);
+  box-shadow: 0 1px 2px rgba(15, 23, 32, 0.06);
+  color: #16202a;
+}
+:root[data-theme='light'] .pcard-btn:hover {
+  background: linear-gradient(180deg, #ffffff, #e9ecef);
+  border-color: rgba(15, 23, 32, 0.22);
+}
+:root[data-theme='light'] .pcard-btn:focus-visible {
+  outline-color: #16202a;
 }
