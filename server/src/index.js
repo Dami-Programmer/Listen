@@ -340,6 +340,77 @@ app.post('/schedules', async (req, res) => {
 // knock like anyone else (the host lets them in).
 const awaitingHost = new Map();
 
+// Guests who opened a one-off scheduled meeting's link too early (more than
+// EARLY_JOIN_MS before it starts): they wait here — the host can't see or
+// admit them — until it's time. Then they go straight in if the host is
+// there, or wait for the host like above. (Permanent links aren't held: their
+// next scheduled time mustn't lock guests out of a call on the same link today.)
+// room id -> { opensAt, timer, guests: socketId -> { name, avatar } }
+const EARLY_JOIN_MS = 10 * 60_000;
+const awaitingStart = new Map();
+
+/** When guests may join a one-off scheduled meeting (ms), or 0 for any time. */
+function opensAtOf(record) {
+  return record?.scheduled && Number.isFinite(record.startsAt)
+    ? record.startsAt - EARLY_JOIN_MS
+    : 0;
+}
+
+function holdUntilStart(roomId, opensAt, socketId, who) {
+  let held = awaitingStart.get(roomId);
+  if (!held) {
+    held = { opensAt, timer: null, guests: new Map() };
+    awaitingStart.set(roomId, held);
+    armStartTimer(roomId);
+  }
+  held.guests.set(socketId, who);
+}
+
+// setTimeout can't wait longer than ~24 days (a longer delay fires at once),
+// so a far-off meeting's timer wakes up early and re-arms itself.
+function armStartTimer(roomId) {
+  const held = awaitingStart.get(roomId);
+  if (!held) return;
+  const left = held.opensAt - Date.now();
+  if (left > 0) {
+    held.timer = setTimeout(() => armStartTimer(roomId), Math.min(left, 2 ** 31 - 1));
+    return;
+  }
+  releaseAtStart(roomId);
+}
+
+// It's time: the early guests go straight in (no knock) if the host is in
+// the room, otherwise they move to "waiting for the host".
+function releaseAtStart(roomId) {
+  const held = awaitingStart.get(roomId);
+  awaitingStart.delete(roomId);
+  if (!held) return;
+  const room = getRoom(roomId);
+  let admitted = 0;
+  for (const [sid, who] of held.guests) {
+    const sock = io.sockets.sockets.get(sid);
+    if (!sock) continue; // left while waiting
+    if (room) {
+      addWaiting(room, sid, who.name, who.avatar);
+      admitWaiting(room, sid);
+      sock.join(roomId);
+      sock.emit(EVENTS.ADMITTED, {
+        selfId: sid,
+        state: snapshot(roomId),
+        chat: [...room.chat],
+        ticket: ticketOf(room, sid),
+      });
+      admitted++;
+    } else {
+      if (!awaitingHost.has(roomId)) awaitingHost.set(roomId, new Map());
+      awaitingHost.get(roomId).set(sid, who);
+      sock.emit(EVENTS.MEETING_OPEN);
+    }
+  }
+  console.log(`[room ${roomId}] start time — ${admitted} early guest(s) let in`);
+  if (admitted) broadcastRoom(roomId);
+}
+
 // --- Watching a recording (the ?rec=<id> page, RecordingPage.jsx) -----------
 // Recordings are stored in R2, but every viewer gets them from here — some
 // networks can't reach R2 directly. The long random id in the link is the
@@ -1247,6 +1318,23 @@ io.on('connection', (socket) => {
     // moderator. Waiters aren't in the Socket.IO room, so they get nothing
     // until they're admitted.
     const existing = getRoom(id);
+
+    // A one-off scheduled meeting that isn't on yet: wait for the time, even
+    // if the host is already in, setting up (see awaitingStart).
+    const opensAt = opensAtOf(record);
+    if (!owner && Date.now() < opensAt) {
+      joinedRoomId = id;
+      holdUntilStart(id, opensAt, socket.id, { name, avatar });
+      console.log(`[room ${id}] ~ ${socket.id} early — waiting for the start time`);
+      ack?.({
+        ok: true,
+        waiting: true,
+        startsAt: record.startsAt,
+        selfId: socket.id,
+        iceServers,
+      });
+      return;
+    }
 
     // A fixed room whose host hasn't arrived: wait for them.
     if (record && !owner && !existing) {
@@ -2394,6 +2482,16 @@ io.on('connection', (socket) => {
     if (joinedRoomId) {
       // Clear any lingering "typing" indicator for this socket right away.
       socket.to(joinedRoomId).emit(EVENTS.CHAT_TYPING, { id: socket.id, typing: false });
+    }
+
+    // Waiting for a scheduled meeting's start time? Just stop waiting.
+    const held = awaitingStart.get(joinedRoomId);
+    if (held?.guests.delete(socket.id)) {
+      if (!held.guests.size) {
+        clearTimeout(held.timer);
+        awaitingStart.delete(joinedRoomId);
+      }
+      return;
     }
 
     // Waiting for a fixed room's host to arrive? Just stop waiting.

@@ -39,6 +39,7 @@ import Tour from './Tour.jsx';
 import { hasSeenTour, useTour } from './useTour.js';
 import TourButton from './TourButton.jsx';
 import { trackEvent } from './analytics.js';
+import { whenText } from './calendar.js';
 import NoiseToggle, { NoiseBadge } from './NoiseToggle.jsx';
 import JoinRequestPill from './JoinRequestPill.jsx';
 import { useHoverGrow } from './useHoverGrow.js';
@@ -140,6 +141,8 @@ export default function App() {
   const [waiting, setWaiting] = useState(false);
   // ...and the room is a fixed one whose host isn't there yet.
   const [waitingForHost, setWaitingForHost] = useState(false);
+  // ...or a scheduled meeting we came early to: when it starts (ms), till then.
+  const [waitingForStart, setWaitingForStart] = useState(null);
   // Safety timers so a typer disappears even if their "stopped" ping is lost.
   const typerTimersRef = useRef({});
   // Set when the host kicks us OR turns us away at the door — shown on the join
@@ -280,7 +283,14 @@ export default function App() {
       setState(snap);
       setChat(history ?? []);
       setWaiting(false);
+      setWaitingForStart(null);
       setJoined(true);
+    }
+    // We came early to a scheduled meeting; it’s time now, but the host isn’t
+    // there yet — the screen switches to "waiting for the host".
+    function onMeetingOpen() {
+      setWaitingForStart(null);
+      setWaitingForHost(true);
     }
     // Breakout rooms: the server moved us into another room (EVENTS.MOVED).
     // Same call screen — just a new room's people, chat and ticket.
@@ -354,6 +364,7 @@ export default function App() {
     socket.on(EVENTS.ERROR, onRoomError);
     socket.on(EVENTS.REMOVED, onRemoved);
     socket.on(EVENTS.ADMITTED, onAdmitted);
+    socket.on(EVENTS.MEETING_OPEN, onMeetingOpen);
     socket.on(EVENTS.MOVED, onMoved);
     socket.on(EVENTS.DENIED, onDenied);
     socket.on(EVENTS.CHAT_MESSAGE, onChatMessage);
@@ -368,6 +379,7 @@ export default function App() {
       socket.off(EVENTS.ERROR, onRoomError);
       socket.off(EVENTS.REMOVED, onRemoved);
       socket.off(EVENTS.ADMITTED, onAdmitted);
+      socket.off(EVENTS.MEETING_OPEN, onMeetingOpen);
       socket.off(EVENTS.MOVED, onMoved);
       socket.off(EVENTS.DENIED, onDenied);
       socket.off(EVENTS.CHAT_MESSAGE, onChatMessage);
@@ -433,9 +445,11 @@ export default function App() {
         if (ack?.ok) setIceServers(ack.iceServers ?? null);
         if (ack?.ok && ack.waiting) {
           // Locked room — sit in the lobby until a moderator admits us.
-          // (`forHost`: a fixed room whose host hasn't arrived yet.)
+          // (`forHost`: a fixed room whose host hasn't arrived yet.
+          // `startsAt`: a scheduled meeting we're too early for.)
           setSelfId(ack.selfId);
           setWaitingForHost(Boolean(ack.forHost));
+          setWaitingForStart(ack.startsAt ?? null);
           setWaiting(true);
           trackEvent('knocked'); // (analytics.js — no names, no room)
         } else if (ack?.ok) {
@@ -576,6 +590,7 @@ export default function App() {
       <WaitingScreen
         roomId={roomId}
         forHost={waitingForHost}
+        startsAt={waitingForStart}
         name={name}
         avatar={avatar}
         onCancel={handleLeave}
@@ -640,11 +655,13 @@ export default function App() {
 // --- the locked-room lobby -----------------------------------------------
 // `forHost`: a fixed room whose host hasn't arrived — "Waiting for the host
 // to start". (When they arrive, it's the usual knock: they let you in.)
+// `startsAt`: a scheduled meeting we came early to — "Starts Sun 19 Oct,
+// 4:00 PM"; we're let in automatically when it's time.
 // One layout for desktop and phone (index.css, "Waiting to be let in"): the
 // Turnly mark top-left, then centred: your picture with soft rings going out
 // from it (you're knocking), the title, a line saying what happens next, the
 // meeting's code, three hopping dots, and Cancel.
-function WaitingScreen({ roomId, forHost = false, name = '', avatar, onCancel }) {
+function WaitingScreen({ roomId, forHost = false, startsAt = null, name = '', avatar, onCancel }) {
   return (
     <main className="wait-screen" aria-live="polite">
       <header className="wait-brand">
@@ -658,11 +675,13 @@ function WaitingScreen({ roomId, forHost = false, name = '', avatar, onCancel })
           <i />
           <Avatar name={name.trim() || '?'} src={avatar} size={96} />
         </div>
-        <h1>{forHost ? 'Almost there' : 'Knock knock'}</h1>
+        <h1>{startsAt ? 'You’re early' : forHost ? 'Almost there' : 'Knock knock'}</h1>
         <p className="wait-sub">
-          {forHost
-            ? 'The host hasn’t started this meeting yet. You’ll join as soon as they arrive.'
-            : 'The host knows you’re here. You’ll be let in as soon as they say yes.'}
+          {startsAt
+            ? `This meeting starts ${whenText(startsAt)}. You’ll be let in automatically a few minutes before.`
+            : forHost
+              ? 'The host hasn’t started this meeting yet. You’ll join as soon as they arrive.'
+              : 'The host knows you’re here. You’ll be let in as soon as they say yes.'}
         </p>
         <div className="wait-meeting">
           <span className="wait-meeting-ic">

@@ -82,11 +82,15 @@ export const EVENTS = {
   //   ADMITTED : server -> a waiter, with the same payload as a join ack
   //     ({ selfId, state, chat }).
   //   DENIED : server -> a waiter who was turned away.
+  //   MEETING_OPEN : server -> a guest who came early to a scheduled meeting:
+  //     it's time now, but the host isn't there — wait for them instead.
+  //     (If the host IS there at start time, they get ADMITTED.)
   ADMIT: 'admit',
   DENY: 'deny',
   SET_LOCK: 'set-lock',
   ADMITTED: 'admitted',
   DENIED: 'denied',
+  MEETING_OPEN: 'meeting-open',
 
   // In-call text chat (added after Phase 7). Independent of the speaker floor —
   // everyone in the room can post, including listeners.
