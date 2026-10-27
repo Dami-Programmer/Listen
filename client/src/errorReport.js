@@ -90,6 +90,15 @@ export function reportCallProblem(what, detail) {
   send('call', reason ? `${what}: ${reason}` : what, detail?.stack);
 }
 
+/**
+ * Report a call whose audio/video couldn't get through the network (sfu.js):
+ * `summary` the one-line message (which routes the browser found), `lines`
+ * the details, logged under it (which addresses it couldn't reach).
+ */
+export function reportNetworkProblem(summary, lines = []) {
+  send('call', summary, lines.join('\n'));
+}
+
 /** Catch every error nothing else caught. Called once, in main.jsx. */
 export function installErrorReporting() {
   window.addEventListener('error', (e) => {

@@ -6137,6 +6137,38 @@ body:has(.mc) {
 .reconnect-leave:hover {
   filter: brightness(1.1);
 }
+/* "Your audio and video can't connect" (MediaBlockedBanner.jsx): the same
+   banner, with an amber "!" instead of the spinner and a plain Dismiss. */
+.media-blocked {
+  max-width: min(560px, calc(100vw - 32px));
+}
+.media-blocked-ic {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1a1206;
+  background: #f5a524;
+}
+.media-blocked-dismiss {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border: 1px solid rgba(var(--ink, 255, 255, 255), 0.18);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.media-blocked-dismiss:hover {
+  background: rgba(var(--ink, 255, 255, 255), 0.08);
+}
 @keyframes reconnect-spin {
   to {
     transform: rotate(360deg);

@@ -30,7 +30,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { EVENTS } from '@listen/shared';
 import { socket } from './socket.js';
-import { reportCallProblem } from './errorReport.js';
+import { reportCallProblem, reportNetworkProblem } from './errorReport.js';
 
 // Cloudflare's own STUN server, plus the TURN relay the server handed us (for
 // networks that block direct routes, e.g. strict office / school Wi-Fi).
@@ -91,6 +91,45 @@ const CONNECT_MS = 15_000;
 const REBUILD_MS = 1000;
 const REBUILD_MAX_MS = 15_000;
 
+// --- when the network blocks the call -------------------------------------
+// While a connection comes up, the browser tries every route it has to
+// Cloudflare and tells us what it found (`diag`):
+//   local   the device's own address (always there)
+//   direct  its public address — ordinary call traffic (UDP) gets out
+//   relay   a route through the TURN relay, by how it got there: udp, tcp,
+//           or tls (encrypted, on port 443 — looks like normal web traffic)
+// ...and which relay / STUN addresses it couldn't reach, with the browser's
+// error code. If the connection never comes up, that's what gets reported
+// (once per call), so the server logs show exactly what the network blocks.
+const newDiag = () => ({
+  local: 0,
+  direct: 0,
+  relay: { udp: 0, tcp: 0, tls: 0, other: 0 },
+  failed: new Map(), // url -> error code
+});
+
+function noteCandidate(diag, candidate) {
+  if (candidate.type === 'host') diag.local += 1;
+  else if (candidate.type === 'srflx' || candidate.type === 'prflx') diag.direct += 1;
+  else if (candidate.type === 'relay') {
+    // (relayProtocol: Chrome / Safari; Firefox doesn't say)
+    const how = candidate.relayProtocol;
+    diag.relay[how in diag.relay ? how : 'other'] += 1;
+  }
+}
+
+function reportBlocked(diag, why) {
+  const r = diag.relay;
+  const relays = r.udp + r.tcp + r.tls + r.other;
+  reportNetworkProblem(
+    `audio/video blocked by the network: relay ${relays} (udp ${r.udp}, tcp ${r.tcp}, tls ${r.tls}), direct ${diag.direct}, local ${diag.local}`,
+    [
+      `gave up: ${why}`,
+      ...[...diag.failed].slice(0, 7).map(([url, code]) => `couldn't reach ${url} → ${code}`),
+    ],
+  );
+}
+
 // Ask our server for something and wait for its reply. Throws if it says no
 // (the error text is on `err.message`) or doesn't answer in time.
 async function ask(event, payload = {}) {
@@ -116,7 +155,10 @@ const isRefusal = (err) => /^(not allowed|already sending)/.test(err?.message ??
  * @param {boolean}     [args.recording]    I'm recording the meeting: nobody
  *                                          below half size (the recording is
  *                                          drawn bigger than my thumbnails)
- * @returns {{ remotes: Array, remoteScreens: Array }}  like the mesh's
+ * @returns {{ remotes: Array, remoteScreens: Array, blocked: boolean }}
+ *   remotes / remoteScreens like the mesh's; `blocked`: my audio/video
+ *   connection hasn't come up at all (likely the network) — the call screen
+ *   warns about it (MediaBlockedBanner.jsx)
  */
 export function useSfu({
   active,
@@ -131,6 +173,11 @@ export function useSfu({
 }) {
   // key -> the MediaStreamTrack I'm receiving for it. Drives the render.
   const [received, setReceived] = useState(() => new Map());
+  // My connection to Cloudflare timed out / failed without ever coming up.
+  // Cleared the moment one connects.
+  const [blocked, setBlocked] = useState(false);
+  // The network report goes once per call, not on every retry.
+  const reportedRef = useRef(false);
 
   // --- what I want right now (read by `sync`, which runs later) -------------
   const audio = localStream?.getAudioTracks()[0];
@@ -171,6 +218,8 @@ export function useSfu({
   // refused:  track ids the server won't take (see isRefusal)
   // misses:   key -> { tries, next } for tracks Cloudflare couldn't hand over
   //           yet: how many times, and when to ask again
+  // diag:     the routes this connection found / couldn't reach (newDiag)
+  // up:       it has been connected at least once
   const connRef = useRef(null);
   const fresh = () => ({
     pc: null,
@@ -178,6 +227,8 @@ export function useSfu({
     getting: new Map(),
     refused: new Set(),
     misses: new Map(),
+    diag: newDiag(),
+    up: false,
   });
   if (!connRef.current) connRef.current = fresh();
 
@@ -191,6 +242,8 @@ export function useSfu({
     const c = connRef.current;
     if (c.pc) {
       c.pc.onconnectionstatechange = null;
+      c.pc.onicecandidate = null;
+      c.pc.onicecandidateerror = null;
       c.pc.close();
     }
     connRef.current = fresh();
@@ -202,6 +255,16 @@ export function useSfu({
     const run = runRef.current;
     console.warn(`[sfu] starting the video connection over (${why})`);
     reportCallProblem('Cloudflare video connection started over', why);
+    // It never came up at all (not a drop mid-call): the network is probably
+    // blocking it. Warn, and report what the browser found — once.
+    const c = connRef.current;
+    if (c.pc && !c.up && /^connection (timed out|failed)/.test(why)) {
+      setBlocked(true);
+      if (!reportedRef.current) {
+        reportedRef.current = true;
+        reportBlocked(c.diag, why);
+      }
+    }
     teardown();
     clearTimeout(run.timer);
     run.timer = setTimeout(() => sync(), run.backoff);
@@ -244,9 +307,21 @@ export function useSfu({
       iceServers: [CF_STUN, ...(iceRef.current ?? [])],
       bundlePolicy: 'max-bundle', // Cloudflare carries everything on one route
     });
-    connRef.current.pc = pc;
+    const c = connRef.current;
+    c.pc = pc;
+    // What routes the browser finds, and which addresses it can't reach.
+    pc.onicecandidate = ({ candidate }) => {
+      if (candidate) noteCandidate(c.diag, candidate);
+    };
+    pc.onicecandidateerror = (e) => {
+      if (e.url) c.diag.failed.set(e.url, e.errorCode);
+    };
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'failed' && connRef.current.pc === pc) {
+      if (connRef.current.pc !== pc) return;
+      if (pc.connectionState === 'connected') {
+        c.up = true;
+        setBlocked(false);
+      } else if (pc.connectionState === 'failed') {
         rebuildLater('connection failed');
       }
     };
@@ -469,16 +544,24 @@ export function useSfu({
 
   // Our server came back after a drop: carry on (anything that failed while
   // it was gone gets retried).
+  // (While it's gone, "You lost your connection" says what's wrong — so no
+  // "blocked" warning on top of it.)
   useEffect(() => {
     const onConnect = () => sync();
+    const onDisconnect = () => setBlocked(false);
     socket.on('connect', onConnect);
-    return () => socket.off('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+    return () => {
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Leaving the call (or the SFU switched off): close everything.
   useEffect(() => {
     if (active) return undefined;
     teardown();
+    setBlocked(false);
     return undefined;
   }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
   // The call screen closing. Also left in a clean state (`fresh`), because in
@@ -618,5 +701,5 @@ export function useSfu({
     if (screen.length) remoteScreens.push({ id, stream: streamOf(`${id}:screen`, screen) });
   }
 
-  return { remotes, remoteScreens };
+  return { remotes, remoteScreens, blocked };
 }

@@ -1051,5 +1051,7 @@ export function useCall({
     stopShare,
     mediaError,
     isListener,
+    // My audio/video connection never came up — likely the network (sfu.js).
+    mediaBlocked: sfu ? viaSfu.blocked : false,
   };
 }

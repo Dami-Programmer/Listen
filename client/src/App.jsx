@@ -33,6 +33,7 @@ import MobileCall from './MobileCall.jsx';
 import useIsMobile from './useIsMobile.js';
 import { playKnock } from './knockSound.js';
 import ReconnectBanner from './ReconnectBanner.jsx';
+import MediaBlockedBanner from './MediaBlockedBanner.jsx';
 import LeftScreen from './LeftScreen.jsx';
 import AloneReminder from './AloneReminder.jsx';
 import Tour from './Tour.jsx';
@@ -851,6 +852,7 @@ export function CallView({ state, chat, typers, selfId, onLeave, media, iceServe
     stopShare,
     mediaError,
     isListener,
+    mediaBlocked,
   } = useCall({
     selfId,
     iceServers,
@@ -1525,12 +1527,15 @@ export function CallView({ state, chat, typers, selfId, onLeave, media, iceServe
         {aloneReminder}
         <ReactionsLayer />
         {breakoutOpen && <BreakoutPanel state={state} onClose={closeBreakout} />}
+        {mediaBlocked && <MediaBlockedBanner />}
       </>
     );
   }
 
   return (
     <main className="callscreen">
+      {/* My audio/video can’t get through (likely the network): say so. */}
+      {mediaBlocked && <MediaBlockedBanner />}
       {/* The top bar: the white Turnly mark with the meeting's name beside
             it, then any status chips (recording, captions, breakouts) — and
             on the right, soft rounded buttons: room mode (host), "N
