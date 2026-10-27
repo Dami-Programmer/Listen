@@ -13,8 +13,9 @@
 //
 // Scheduling (scheduleMeeting) uses the same thing: a scheduled meeting is a
 // claimed room — a fresh meeting code, or one of your names — with a start
-// time, so whoever scheduled it is the host and guests who come early wait.
-// One-off scheduled meetings are deleted a day after they end (sweepNames).
+// time, so whoever scheduled it is the host and guests who come early wait
+// (on your own names too — index.js, awaitingStart). One-off scheduled
+// meetings are deleted a day after they end (sweepNames).
 // Only a hash of the key is kept, so even someone who could read the
 // storage couldn't host your room.
 

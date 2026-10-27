@@ -340,20 +340,22 @@ app.post('/schedules', async (req, res) => {
 // knock like anyone else (the host lets them in).
 const awaitingHost = new Map();
 
-// Guests who opened a one-off scheduled meeting's link too early (more than
+// Guests who opened a scheduled meeting's link too early (more than
 // EARLY_JOIN_MS before it starts): they wait here — the host can't see or
 // admit them — until it's time. Then they go straight in if the host is
-// there, or wait for the host like above. (Permanent links aren't held: their
-// next scheduled time mustn't lock guests out of a call on the same link today.)
+// there, or wait for the host like above. Every scheduled meeting is held: a
+// fresh meeting code, and a meeting on one of your own names too (so while a
+// meeting is coming up on your link, guests can't use the link before it).
+// Once the start time has passed, the link is open again as usual.
 // room id -> { opensAt, timer, guests: socketId -> { name, avatar } }
 const EARLY_JOIN_MS = 10 * 60_000;
 const awaitingStart = new Map();
 
-/** When guests may join a one-off scheduled meeting (ms), or 0 for any time. */
+/** When guests may join a scheduled meeting (ms), or 0 for any time. */
 function opensAtOf(record) {
-  return record?.scheduled && Number.isFinite(record.startsAt)
-    ? record.startsAt - EARLY_JOIN_MS
-    : 0;
+  // (Any start time counts — not only one-off meetings' `scheduled` flag,
+  // which just marks them for deleting afterwards; see sweepNames.)
+  return Number.isFinite(record?.startsAt) ? record.startsAt - EARLY_JOIN_MS : 0;
 }
 
 function holdUntilStart(roomId, opensAt, socketId, who) {
