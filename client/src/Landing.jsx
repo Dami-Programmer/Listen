@@ -7,7 +7,7 @@
 // Meeting links (?room=…, /gracechurch) and recording links (?rec=…) never
 // show this page — they go straight to the meeting (see main.jsx).
 
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import Logo from './Logo.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
 import { PROFILE } from './profile.js';
@@ -17,6 +17,10 @@ import { markStartClick } from './startClick.js';
 import LandingDock from './LandingDock.jsx';
 
 const START = '/start'; // the app's home screen (start or join a meeting)
+
+// The server's address. (Read here rather than from socket.js, so this page
+// doesn't have to load the Socket.IO client just to say hello.)
+const SERVER = import.meta.env.VITE_SIGNALING_URL ?? 'http://localhost:3001';
 
 // ---- the words (edit here) ------------------------------------------------
 const FEATURES = [
@@ -173,6 +177,15 @@ const STARS = [
 ];
 
 export default function Landing() {
+  // Wake the server up while people read this page. On Render's free plan it
+  // falls asleep after ~15 idle minutes and takes up to a minute to start
+  // again — starting it now means it's usually awake by the time they click
+  // through to a meeting (the lobby, PreJoin.jsx, does the same). The answer
+  // itself doesn't matter.
+  useEffect(() => {
+    fetch(`${SERVER}/health`).catch(() => {});
+  }, []);
+
   return (
     // id="top": where the dock's "Back to top" goes
     <div className="landing" id="top">
